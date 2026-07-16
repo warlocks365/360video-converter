@@ -1,0 +1,4007 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>360° Video Converter</title>
+<style>
+/* ── Theme Variables ──────────────────────────── */
+:root[data-theme="light"] {
+  --bg: #f0f2f5; --surface: #ffffff; --surface-hover: #f8f9fa;
+  --border: #e2e8f0; --border-strong: #cbd5e1;
+  --text: #1e293b; --text-secondary: #64748b; --text-muted: #94a3b8;
+  --primary: #2563eb; --primary-hover: #1d4ed8; --primary-light: #dbeafe;
+  --success: #16a34a; --success-light: #dcfce7;
+  --warning: #d97706; --warning-light: #fef3c7;
+  --error: #dc2626; --error-light: #fee2e2;
+  --accent: #8b5cf6; --accent-light: #ede9fe;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,0.1);
+}
+:root[data-theme="dark"] {
+  --bg: #0f172a; --surface: #1e293b; --surface-hover: #334155;
+  --border: #334155; --border-strong: #475569;
+  --text: #f1f5f9; --text-secondary: #94a3b8; --text-muted: #64748b;
+  --primary: #3b82f6; --primary-hover: #60a5fa; --primary-light: #1e3a5f;
+  --success: #22c55e; --success-light: #14532d;
+  --warning: #f59e0b; --warning-light: #78350f;
+  --error: #ef4444; --error-light: #7f1d1d;
+  --accent: #a78bfa; --accent-light: #3b2f6f;
+  --shadow: 0 1px 3px rgba(0,0,0,0.3);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,0.4);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg); color: var(--text);
+  line-height: 1.5; transition: background 0.2s, color 0.2s;
+}
+
+/* ── Layout ───────────────────────────────────── */
+.app { max-width: 1200px; margin: 0 auto; padding: 20px; }
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 0; margin-bottom: 16px; border-bottom: 2px solid var(--border);
+}
+.header h1 { font-size: 1.5rem; font-weight: 700; }
+.header h1 span { color: var(--primary); }
+.header-actions { display: flex; gap: 8px; align-items: center; }
+
+/* ── Cards ────────────────────────────────────── */
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px; margin-bottom: 16px;
+  box-shadow: var(--shadow); transition: border-color 0.2s;
+}
+.card:hover { border-color: var(--border-strong); }
+.card-title {
+  font-size: 0.875rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--text-secondary);
+  margin-bottom: 16px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.card-title .badge {
+  background: var(--primary-light); color: var(--primary);
+  padding: 2px 8px; border-radius: 6px; font-size: 0.75rem;
+}
+.card-title .badge-accent {
+  background: var(--accent-light); color: var(--accent);
+  padding: 2px 8px; border-radius: 6px; font-size: 0.75rem;
+}
+.section-divider {
+  border-top: 1px solid var(--border); margin: 16px 0;
+  padding-top: 12px; font-size: 0.8rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary);
+}
+
+/* ── Mode Tabs ────────────────────────────────── */
+.mode-tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+.mode-tab {
+  flex: 1; padding: 12px 20px; text-align: center;
+  background: var(--surface); border: 2px solid var(--border);
+  border-radius: 10px; cursor: pointer; font-weight: 600;
+  font-size: 0.95rem; color: var(--text-secondary);
+  transition: all 0.2s;
+}
+.mode-tab:hover { border-color: var(--border-strong); }
+.mode-tab.active {
+  border-color: var(--primary); background: var(--primary-light);
+  color: var(--primary);
+}
+
+/* ── Form Elements ───────────────────────────── */
+.field { margin-bottom: 14px; }
+.field-label {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 0.8rem; font-weight: 600;
+  color: var(--text-secondary); margin-bottom: 6px;
+}
+
+/* ── Tooltip System (JS-driven, viewport-aware) ── */
+.tip-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--text-muted); color: var(--surface);
+  font-size: 0.65rem; font-weight: 700; cursor: help;
+  position: relative; flex-shrink: 0;
+  transition: background 0.2s;
+}
+.tip-icon:hover { background: var(--primary); }
+.global-tooltip {
+  position: fixed; z-index: 100000;
+  background: var(--text); color: var(--surface);
+  padding: 10px 14px; border-radius: 10px;
+  font-size: 0.78rem; font-weight: 400; line-height: 1.6;
+  white-space: pre-line; width: 300px; max-width: 320px;
+  text-align: left;
+  box-shadow: var(--shadow-lg);
+  display: none; pointer-events: none;
+  opacity: 0; transition: opacity 0.15s ease;
+}
+.global-tooltip.visible { opacity: 1; }
+.global-tooltip::after {
+  content: ''; position: absolute;
+  border: 6px solid transparent;
+}
+.global-tooltip.arrow-bottom::after {
+  top: 100%; left: var(--arrow-x, 50%);
+  transform: translateX(-50%);
+  border-top-color: var(--text); border-bottom: 0;
+}
+.global-tooltip.arrow-top::after {
+  bottom: 100%; left: var(--arrow-x, 50%);
+  transform: translateX(-50%);
+  border-bottom-color: var(--text); border-top: 0;
+}
+.opt-rec { color: var(--success); font-weight: 700; font-size: 0.72rem; }
+.input, .select {
+  width: 100%; padding: 9px 12px; border: 1px solid var(--border-strong);
+  border-radius: 8px; background: var(--surface); color: var(--text);
+  font-size: 0.9rem; transition: border-color 0.2s, box-shadow 0.2s;
+}
+.input:focus, .select:focus {
+  outline: none; border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+}
+.input-group { display: flex; gap: 8px; }
+.input-group .input { flex: 1; }
+
+.btn {
+  padding: 9px 16px; border: 1px solid var(--border-strong);
+  border-radius: 8px; background: var(--surface); color: var(--text);
+  font-size: 0.875rem; font-weight: 600; cursor: pointer;
+  transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--surface-hover); border-color: var(--text-muted); }
+.btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-success { background: var(--success); color: #fff; border-color: var(--success); }
+.btn-success:hover { filter: brightness(0.9); }
+.btn-danger { background: var(--error); color: #fff; border-color: var(--error); }
+.btn-danger:hover { filter: brightness(0.9); }
+.btn-accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-accent:hover { filter: brightness(0.9); }
+.btn-warning { background: var(--warning); color: #fff; border-color: var(--warning); }
+.btn-warning:hover { filter: brightness(0.9); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-sm { padding: 6px 10px; font-size: 0.8rem; }
+
+/* ── Grid ─────────────────────────────────────── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+@media (max-width: 768px) {
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+}
+
+/* ── Checkbox ─────────────────────────────────── */
+.check {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  padding: 6px 0; font-size: 0.9rem;
+}
+.check input[type="checkbox"] {
+  width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer;
+}
+.check-group {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 14px; margin-top: 6px;
+}
+
+/* ── Progress ──────────────────────────────────── */
+.progress-bar {
+  height: 8px; background: var(--border); border-radius: 4px;
+  overflow: hidden; position: relative;
+}
+.progress-fill {
+  height: 100%; background: var(--primary); border-radius: 4px;
+  transition: width 0.3s ease;
+}
+.progress-fill.success { background: var(--success); }
+.progress-label {
+  display: flex; justify-content: space-between;
+  font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 4px;
+}
+.time-info {
+  display: flex; justify-content: space-between; gap: 12px;
+  font-size: 0.75rem; color: var(--text-muted); margin-top: 6px;
+  flex-wrap: wrap;
+}
+.time-info strong { color: var(--text-secondary); font-weight: 600; }
+
+/* ── Table ─────────────────────────────────────── */
+.table-wrap { overflow-x: auto; max-height: 360px; overflow-y: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+th {
+  text-align: left; padding: 10px 12px; border-bottom: 2px solid var(--border);
+  color: var(--text-secondary); font-weight: 600; font-size: 0.75rem;
+  text-transform: uppercase; letter-spacing: 0.05em; position: sticky; top: 0;
+  background: var(--surface); z-index: 1;
+}
+td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+tr:hover td { background: var(--surface-hover); }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; }
+.status-pending { background: var(--text-muted); }
+.status-running { background: var(--warning); animation: pulse 1.5s infinite; }
+.status-done { background: var(--success); }
+.status-fail { background: var(--error); }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* ── Log ───────────────────────────────────────── */
+.log-box {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px; height: 220px;
+  overflow-y: auto; font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 0.78rem; line-height: 1.6;
+}
+.log-line { display: flex; gap: 8px; }
+.log-ts { color: var(--text-muted); flex-shrink: 0; }
+.log-msg.info { color: var(--text-secondary); }
+.log-msg.success { color: var(--success); }
+.log-msg.warn { color: var(--warning); }
+.log-msg.error { color: var(--error); }
+
+/* ── Modal ─────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  display: none; align-items: center; justify-content: center; z-index: 100;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: var(--surface); border-radius: 14px; padding: 0;
+  width: 90%; max-width: 600px; max-height: 80vh; display: flex;
+  flex-direction: column; box-shadow: var(--shadow-lg);
+}
+.modal.large { max-width: 900px; }
+.modal-header {
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-header h3 { font-size: 1rem; }
+.modal-body { flex: 1; overflow-y: auto; padding: 8px; }
+.modal-footer {
+  padding: 12px 20px; border-top: 1px solid var(--border);
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+.dir-item {
+  padding: 10px 16px; cursor: pointer; border-radius: 6px;
+  display: flex; align-items: center; gap: 10px; font-size: 0.9rem;
+  transition: background 0.15s;
+}
+.dir-item:hover { background: var(--surface-hover); }
+.dir-item.current { color: var(--primary); font-weight: 600; }
+.dir-item.selected { background: var(--primary); color: #fff; font-weight: 600; }
+.file-item { color: var(--text-secondary); }
+.path-crumb {
+  padding: 8px 16px; font-size: 0.85rem; color: var(--text-secondary);
+  border-bottom: 1px solid var(--border); word-break: break-all;
+}
+
+/* ── Formula Variables ────────────────────────── */
+.var-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.var-chip {
+  background: var(--primary-light); color: var(--primary);
+  padding: 3px 10px; border-radius: 6px; font-size: 0.75rem;
+  font-family: monospace; cursor: pointer; transition: transform 0.15s;
+  border: 1px solid transparent;
+}
+.var-chip:hover { transform: scale(1.05); border-color: var(--primary); }
+
+/* ── Theme Toggle ─────────────────────────────── */
+.theme-btn {
+  width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--border-strong);
+  background: var(--surface); cursor: pointer; font-size: 1.1rem;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.theme-btn:hover { background: var(--surface-hover); }
+
+/* ── Dropdown (About menu) ─────────────────────── */
+.dropdown { position: relative; display: inline-block; }
+.dropdown-menu {
+  position: absolute; right: 0; top: calc(100% + 6px);
+  min-width: 168px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: var(--shadow-lg); padding: 6px; z-index: 200;
+  display: none;
+}
+.dropdown-menu.active { display: block; }
+.dropdown-item {
+  padding: 9px 12px; border-radius: 6px; cursor: pointer;
+  font-size: 0.85rem; color: var(--text);
+  display: flex; align-items: center; gap: 8px;
+  transition: background 0.15s;
+}
+.dropdown-item:hover { background: var(--bg-secondary); }
+
+/* ── Collapsible ───────────────────────────────── */
+.collapse-toggle {
+  cursor: pointer; user-select: none; display: flex;
+  align-items: center; gap: 6px;
+}
+.collapse-toggle::after {
+  content: '\25BE'; margin-left: auto; transition: transform 0.2s;
+}
+.collapse-toggle.collapsed::after { transform: rotate(-90deg); }
+.collapse-content { overflow: hidden; transition: max-height 0.3s; }
+.collapse-content.hidden { max-height: 0; }
+
+/* ── Action Bar ───────────────────────────────── */
+.action-bar {
+  display: flex; gap: 12px; align-items: center;
+  padding: 16px 0; border-top: 1px solid var(--border); margin-top: 8px;
+}
+.action-bar .progress-section { flex: 1; }
+.spinner {
+  width: 16px; height: 16px; border: 2px solid var(--border);
+  border-top-color: var(--primary); border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Map Modal ────────────────────────────────── */
+#mapContainer { width: 100%; height: 400px; border-radius: 8px; overflow: hidden; }
+.map-search-bar {
+  display: flex; gap: 8px; padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.map-search-bar .input { flex: 1; }
+.search-results {
+  max-height: 180px; overflow-y: auto; border-bottom: 1px solid var(--border);
+}
+.search-result-item {
+  padding: 10px 16px; cursor: pointer; border-bottom: 1px solid var(--border);
+  font-size: 0.85rem; transition: background 0.15s;
+}
+.search-result-item:hover { background: var(--surface-hover); }
+.search-result-item .name { font-weight: 600; }
+.search-result-item .addr { color: var(--text-muted); font-size: 0.78rem; }
+.search-result-item .coords { color: var(--accent); font-size: 0.75rem; font-family: monospace; }
+.location-info {
+  padding: 12px 20px; border-top: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center;
+}
+.location-info .selected-name { font-weight: 600; }
+.location-info .selected-coords { color: var(--accent); font-family: monospace; font-size: 0.8rem; }
+
+/* ── Info Box ─────────────────────────────────── */
+.info-box {
+  background: var(--primary-light); border: 1px solid var(--primary);
+  border-radius: 8px; padding: 10px 14px; font-size: 0.82rem;
+  color: var(--primary); margin-bottom: 12px;
+}
+.info-box.warning { background: var(--warning-light); border-color: var(--warning); color: var(--warning); }
+
+/* ── Codec Badge ─────────────────────────────── */
+.codec-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.codec-badge.cpu { background: #dbeafe; color: #2563eb; }
+.codec-badge.cuda { background: #d1fae5; color: #059669; }
+.codec-badge.qsv { background: #fef3c7; color: #d97706; }
+.codec-badge.amf { background: #fce7f3; color: #db2777; }
+
+/* ── Date Preview ─────────────────────────────── */
+.date-preview {
+  background: var(--success-light); border: 1px solid var(--success);
+  border-radius: 6px; padding: 8px 12px; font-size: 0.82rem;
+  color: var(--success); margin-top: 6px;
+}
+.date-preview.no-date {
+  background: var(--warning-light); border-color: var(--warning); color: var(--warning);
+}
+
+/* ── Toggle Switch ────────────────────────────── */
+.toggle-row {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 14px 0; border-bottom: 1px solid var(--border);
+}
+.toggle-row:last-child { border-bottom: none; }
+.toggle-switch {
+  position: relative; display: inline-block;
+  width: 46px; height: 26px; flex-shrink: 0; margin-top: 2px;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; cursor: pointer; inset: 0;
+  background: var(--border-strong); border-radius: 26px;
+  transition: 0.3s;
+}
+.toggle-slider::before {
+  content: ''; position: absolute; height: 20px; width: 20px;
+  left: 3px; bottom: 3px; background: #fff; border-radius: 50%;
+  transition: 0.3s; box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--success);
+}
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(20px);
+}
+.toggle-label { flex: 1; }
+.toggle-label strong { display: block; font-size: 0.9rem; margin-bottom: 2px; }
+.toggle-label small { color: var(--text-secondary); font-size: 0.8rem; }
+.toggle-options {
+  margin-left: 60px; padding: 12px 16px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; margin-bottom: 8px; margin-top: -4px;
+}
+
+/* ── Metadata Tool Specifics ────────────────────── */
+.meta-file-list {
+  max-height: 280px; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 8px;
+  margin-top: 8px;
+}
+.meta-file-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+.meta-file-item:last-child { border-bottom: none; }
+.meta-file-item .fname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta-file-item .fdate { color: var(--success); font-size: 0.75rem; white-space: nowrap; }
+.meta-file-item .fsize { color: var(--text-muted); font-size: 0.75rem; white-space: nowrap; }
+
+.hidden { display: none !important; }
+
+/* ── Report ───────────────────────────────────── */
+.report-item {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px; margin-bottom: 14px;
+}
+.report-item-header {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--border);
+}
+.report-item-header .fname { font-weight: 700; font-size: 0.95rem; word-break: break-all; }
+.report-item-header .fpath { color: var(--text-muted); font-size: 0.78rem; word-break: break-all; }
+.report-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.report-section { margin-bottom: 10px; }
+.report-section-title { font-size: 0.78rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px; }
+.report-row { display: flex; gap: 8px; font-size: 0.82rem; padding: 3px 0; }
+.report-row .label { color: var(--text-muted); min-width: 120px; }
+.report-row .value { color: var(--text); font-weight: 500; word-break: break-all; }
+.report-row .value.ok { color: var(--success); }
+.report-row .value.warn { color: var(--warning); }
+@media (max-width: 768px) { .report-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Header -->
+  <div class="header">
+    <h1><span>360</span>&deg; Video Converter <span id="appVersionTag" style="font-size:0.6em;font-weight:400;color:var(--text-muted);"></span></h1>
+    <div class="header-actions">
+      <button class="btn btn-sm" onclick="openSettings()" id="settingsBtn">API Key</button>
+      <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">&#127769;</button>
+      <div class="dropdown">
+        <button class="btn btn-sm" onclick="toggleAboutMenu(event)">&#8505; 关于</button>
+        <div class="dropdown-menu" id="aboutMenu">
+          <div class="dropdown-item" onclick="openAbout('version')">&#128225; 版本号</div>
+          <div class="dropdown-item" onclick="openAbout('help')">&#128218; 使用说明</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mode Selection -->
+  <div class="mode-tabs">
+    <div class="mode-tab active" data-mode="single" onclick="switchMode('single')">&#128249; 单文件转换</div>
+    <div class="mode-tab" data-mode="merge" onclick="switchMode('merge')">&#128279; 合并转换</div>
+    <div class="mode-tab" data-mode="batch" onclick="switchMode('batch')">&#128194; 批量转换</div>
+    <div class="mode-tab" data-mode="metadata" onclick="switchMode('metadata')">&#128295; 元数据工具</div>
+    <div class="mode-tab" data-mode="report" onclick="switchMode('report')">&#128202; 元数据报告</div>
+  </div>
+
+  <!-- 目录批量导入（仅列出媒体候选，不直接成为任务） -->
+    <div class="card hidden" id="batchImportPanel">
+      <div class="card-title">
+        目录批量导入 <span class="badge" id="scanCountSrc"></span>
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn btn-sm" onclick="saveCurrentTasks()">&#128190; 保存任务</button>
+          <button class="btn btn-sm" onclick="loadSavedTasks()">&#128194; 加载任务</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">扫描（递归遍历所有子文件夹）</label>
+        <div class="input-group">
+          <input class="input" id="batchDir" placeholder="选择或输入源路径（支持网络映射盘符）..." onkeydown="if(event.key==='Enter')scanDirectory()">
+          <button class="btn" onclick="openFileBrowser('batchDir', true)">浏览...</button>
+          <button class="btn btn-primary" onclick="scanDirectory()">扫描视频</button>
+        </div>
+      </div>
+
+      <!-- 输出设置：作为新任务的默认参数，之后每行任务可单独修改 -->
+      <div class="field" style="margin-top:4px;">
+        <label class="field-label">输出设置（新任务默认参数，可在任务中单独修改）</label>
+        <div class="check-group">
+          <label class="check">
+            <input type="radio" name="batchOutMode" value="unified" checked onchange="toggleBatchOutMode()">
+            统一输出 &mdash; 所有文件输出到同一文件夹
+          </label>
+          <label class="check">
+            <input type="radio" name="batchOutMode" value="formula" onchange="toggleBatchOutMode()">
+            按公式生成 &mdash; 使用模板变量为每个文件生成输出路径
+          </label>
+        </div>
+
+        <div id="unifiedOutput" class="field">
+          <label class="field-label">统一输出</label>
+          <div class="input-group">
+            <input class="input" id="batchOutDir" placeholder="选择或输入输出路径...">
+            <button class="btn" onclick="openFileBrowser('batchOutDir', true)">浏览...</button>
+          </div>
+        </div>
+
+        <div id="formulaOutput" class="hidden">
+          <div class="field">
+            <label class="field-label">项目输出 <span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">（用于公式变量 {project_dir}）</span></label>
+            <div class="input-group">
+              <input class="input" id="projectDir" placeholder="选择或输入项目输出路径...">
+              <button class="btn" onclick="openFileBrowser('projectDir', true)">浏览...</button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label">输出路径公式</label>
+            <input class="input" id="batchFormula" value="{project_dir}/{name}_360.mp4">
+            <div class="var-chips">
+              <span class="var-chip" data-tip="源文件名（不含扩展名）&#10;示例：video_001" onclick="insertVar('{name}')">{name} 源文件名</span>
+              <span class="var-chip" data-tip="源文件完整名（含扩展名）&#10;示例：video_001.mp4" onclick="insertVar('{filename}')">{filename} 源文件名(含扩展名)</span>
+              <span class="var-chip" data-tip="源文件扩展名（不含点）&#10;示例：mp4" onclick="insertVar('{ext}')">{ext} 扩展名</span>
+              <span class="var-chip" data-tip="源文件所在路径的完整路径&#10;示例：D:\Videos\原片" onclick="insertVar('{source_dir}')">{source_dir} 源路径</span>
+              <span class="var-chip" data-tip="源文件所在文件夹的名称（非完整路径）&#10;示例：原片" onclick="insertVar('{parent}')">{parent} 上级名</span>
+              <span class="var-chip" data-tip="项目输出（由上方输入框设置）&#10;示例：D:\Videos\输出" onclick="insertVar('{project_dir}')">{project_dir} 项目路径</span>
+              <span class="var-chip" data-tip="从源文件名中提取的日期（保持原格式YYYYMMDD，需文件名中包含8位连续数字日期）&#10;示例：20260715" onclick="insertVar('{file_date}')">{file_date} 文件名日期</span>
+              <span class="var-chip" data-tip="当前日期（年-月-日）&#10;示例：2026-07-15" onclick="insertVar('{date}')">{date} 日期</span>
+              <span class="var-chip" data-tip="当前时间（时-分-秒）&#10;示例：14-30-25" onclick="insertVar('{time}')">{time} 时间</span>
+              <span class="var-chip" data-tip="当前年份（4位）&#10;示例：2026" onclick="insertVar('{yyyy}')">{yyyy} 年</span>
+              <span class="var-chip" data-tip="当前月份（2位，01-12）&#10;示例：07" onclick="insertVar('{mm}')">{mm} 月</span>
+              <span class="var-chip" data-tip="当前日期（2位，01-31）&#10;示例：15" onclick="insertVar('{dd}')">{dd} 日</span>
+              <span class="var-chip" data-tip="编码分辨率参数&#10;示例：3840x1920" onclick="insertVar('{resolution}')">{resolution} 分辨率</span>
+              <span class="var-chip" data-tip="编码预设名称&#10;示例：high" onclick="insertVar('{profile}')">{profile} 编码预设</span>
+            </div>
+          </div>
+          <button class="btn btn-sm" onclick="recomputeOutputs()">刷新预览</button>
+        </div>
+      </div>
+
+      <!-- 候选媒体列表 -->
+      <div class="table-wrap" style="margin-top:8px;">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:36px;"><input type="checkbox" id="importSelectAll" onchange="selectAllImport(this.checked)"></th>
+              <th>#</th><th>文件名</th><th>源路径</th><th>大小</th><th>文件名日期</th>
+            </tr>
+          </thead>
+          <tbody id="importCandidatesBody">
+            <tr><td colspan="6" style="text-align:center;color:var(--text-muted)">扫描目录后，遍历到的所有媒体文件将列在此处</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+        <button class="btn btn-primary" onclick="addSelectedToTasks()">&#10133; 将选中添加到任务</button>
+        <span id="importCount" style="font-size:0.8rem;color:var(--text-muted);"></span>
+      </div>
+    </div>
+
+    
+
+<!-- Encoding Parameters -->
+<div class="card" id="encodePanel">
+    <div class="card-title collapse-toggle" onclick="toggleCollapse('encodeParams')">
+      编码参数
+      <select class="select" style="width:auto;margin-left:12px" id="presetSelect" onchange="loadPreset()">
+        <option value="">&mdash; 选择预设 &mdash;</option>
+      </select>
+      <button class="btn btn-sm" onclick="savePresetDialog()">保存预设</button>
+      <button class="btn btn-sm" onclick="deletePreset()">删除</button>
+    </div>
+    <div class="collapse-content" id="encodeParams">
+
+      <!-- Codec Selection -->
+      <div class="section-divider">编码方案选择</div>
+      <div class="grid-2">
+        <div class="field">
+          <label class="field-label">视频编码器<span class="tip-icon" data-tip="选择视频编码方案。H.264 兼容性最广（几乎所有设备支持）；H.265 压缩率更高（同等质量文件更小）但旧设备可能不支持。软件编码（libx264/libx265）质量最好但速度慢；硬件编码（NVENC/QSV/AMF）速度快 5-20 倍但质量略低。360° 全景视频因分辨率高，推荐使用硬件编码加速。">?</span></label>
+          <select class="select" id="p_codec" onchange="onCodecChange()">
+            <option value="libx264">H.264 (libx264 软件编码) （推荐）</option>
+            <option value="libx265">H.265/HEVC (libx265 软件编码)</option>
+            <option value="h264_nvenc">H.264 (NVIDIA NVENC 硬件编码)</option>
+            <option value="hevc_nvenc">H.265/HEVC (NVIDIA NVENC 硬件编码)</option>
+            <option value="h264_qsv">H.264 (Intel QSV 硬件编码)</option>
+            <option value="hevc_qsv">H.265/HEVC (Intel QSV 硬件编码)</option>
+            <option value="h264_amf">H.264 (AMD AMF 硬件编码)</option>
+            <option value="hevc_amf">H.265/HEVC (AMD AMF 硬件编码)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">编码器状态<span class="tip-icon" data-tip="显示系统上可用的编码器列表。绿色=CPU软件编码，蓝色=NVIDIA GPU，黄色=Intel 核显，粉色=AMD 显卡。若硬件编码器显示不可用，说明未检测到对应硬件或驱动。点击「重新检测」可在安装驱动后重新扫描。">?</span> <button id="recheckBtn" onclick="checkCodecs()" style="font-size:0.72rem;padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted);">重新检测</button></label>
+          <div id="codecStatus" style="padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:0.82rem;">
+            <span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span>
+            检测中...
+          </div>
+          <div id="codecWarning" style="margin-top:4px;font-size:0.78rem;display:none;"></div>
+        </div>
+      </div>
+
+      <!-- Video -->
+      <div class="section-divider">视频编码参数</div>
+      <div class="grid-4">
+        <div class="field">
+          <label class="field-label">分辨率<span class="tip-icon" data-tip="输出视频的分辨率。360° 全景视频为 2:1 宽高比（等距柱状投影）。4096x2048 适合高端 VR 头显；3840x1920 适合普通 4K 显示器；2880x1440 适合手机 VR；2048x1024 适合网络分享。分辨率越高画质越好但文件越大、编码越慢。">?</span></label>
+          <select class="select" id="p_resolution">
+            <option value="4096x2048">4096x2048 (4K 全景) （推荐）</option>
+            <option value="3840x1920">3840x1920</option>
+            <option value="2880x1440">2880x1440</option>
+            <option value="2048x1024">2048x1024</option>
+            <option value="original">原始分辨率 (不缩放)</option>
+          </select>
+        </div>
+        <div class="field" id="field_profile">
+          <label class="field-label">Profile<span class="tip-icon" data-tip="H.264/H.265 编码档次。High：支持 CABAC 熵编码和 B 帧，压缩效率最高（推荐）；Main：中等压缩，兼容性更广；Baseline：无 B 帧和 CABAC，文件最大但兼容性最好（老旧设备适用）。">?</span></label>
+          <select class="select" id="p_profile">
+            <option value="high">High (CABAC+B帧) （推荐）</option>
+            <option value="main">Main</option>
+            <option value="baseline">Baseline</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">Level<span class="tip-icon" data-tip="编码级别限制最大码率、分辨率和帧率。5.1 支持 4K@30fps（推荐）；5.0 支持 4K@24fps；4.2 适合 1080p@60fps；4.1 适合 1080p@30fps。若播放设备不支持高 Level 会无法播放。">?</span></label>
+          <select class="select" id="p_level">
+            <option value="5.1">5.1 （推荐）</option>
+            <option value="5.0">5.0</option>
+            <option value="4.2">4.2</option>
+            <option value="4.1">4.1</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">像素格式<span class="tip-icon" data-tip="色彩采样格式。yuv420p：色度垂直/水平均半采样，兼容性最广（几乎所有设备支持，推荐）；yuv422p：色度水平半采样，垂直全采样，文件更大；yuv444p：色度无降采样，文件最大，仅专业用途。">?</span></label>
+          <select class="select" id="p_pix_fmt">
+            <option value="yuv420p">yuv420p （推荐）</option>
+            <option value="yuv422p">yuv422p</option>
+            <option value="yuv444p">yuv444p</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid-4">
+        <div class="field">
+          <label class="field-label">色彩范围<span class="tip-icon" data-tip="亮度信号范围。TV (limited/16-235)：广播标准，大部分视频使用此范围（推荐）；PC (full/0-255)：计算机显示全范围，黑色更黑白色更白，但若播放器未正确配置会导致画面发灰或过曝。">?</span></label>
+          <select class="select" id="p_color_range">
+            <option value="tv">TV (limited) （推荐）</option>
+            <option value="pc">PC (full)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">色彩空间<span class="tip-icon" data-tip="色彩矩阵标准。BT.709：高清视频标准（1080p/4K SDR），绝大多数显示器支持（推荐）；BT.2020：超广色域，适合 HDR 内容，需 HDR 显示器才能完整显示；SMPTE 170M：标清视频标准（旧式 NTSC）。">?</span></label>
+          <select class="select" id="p_color_space">
+            <option value="bt709">BT.709 （推荐）</option>
+            <option value="bt2020nc">BT.2020</option>
+            <option value="smpte170m">SMPTE 170M</option>
+          </select>
+        </div>
+        <div class="field" id="field_bf">
+          <label class="field-label">B 帧数量<span class="tip-icon" data-tip="B 帧（双向预测帧）数量。更多 B 帧可提高压缩效率但编码更慢。3 是质量与速度的良好平衡（推荐）。设为 0 可加速编码但文件更大。NVENC/QSV 硬件编码可能对此参数支持有限。">?</span></label>
+          <input class="input" id="p_bf" type="number" value="3" min="0" max="16">
+        </div>
+        <div class="field" id="field_refs">
+          <label class="field-label">参考帧<span class="tip-icon" data-tip="P 帧可参考的前向帧数。更多参考帧可提高压缩效率但内存占用增加、编码更慢。5 是推荐值。仅软件编码（libx264/libx265）支持此参数。">?</span></label>
+          <input class="input" id="p_refs" type="number" value="5" min="1" max="16">
+        </div>
+      </div>
+
+      <div class="grid-4">
+        <div class="field">
+          <label class="field-label">GOP 大小<span class="tip-icon" data-tip="GOP（图像组）大小，即两个关键帧之间的帧数。较小 GOP = 频繁关键帧，利于拖拽跳转但压缩效率低；较大 GOP = 压缩效率高但跳转响应慢。48 适合 30fps（约 1.6 秒一个关键帧，推荐）。360° 视频建议 GOP = 帧率 × 1~2 秒。">?</span></label>
+          <input class="input" id="p_gop" type="number" value="48" min="1">
+        </div>
+        <div class="field">
+          <label class="field-label">码率模式<span class="tip-icon" data-tip="码率控制策略。CRF/CQ（恒定质量）：编码器根据画面复杂度自动调整码率，质量稳定且单次编码速度快（推荐）；2-pass VBR（两次编码可变码率）：第一次分析码率分布，第二次精确编码，可控制最终文件大小但耗时翻倍。">?</span></label>
+          <select class="select" id="p_rate_mode" onchange="toggleRateMode()">
+            <option value="crf">CRF/CQ (质量优先, 1-pass) （推荐）</option>
+            <option value="2pass">2-pass VBR (精确码率)</option>
+          </select>
+        </div>
+        <div class="field" id="crfField">
+          <label class="field-label" id="crfLabel">CRF 值 (越小质量越高)<span class="tip-icon" data-tip="CRF（恒定速率因子）控制质量。H.264 推荐 18-28：18 视觉无损，23 平衡（推荐），28 可接受但有瑕疵。H.265 推荐 24-34（同等质量比 H.264 高约 5-6）。值越小质量越好但文件越大。360° 视频因沉浸观看建议适当降低（H.264 用 20-23）。">?</span></label>
+          <input class="input" id="p_crf" type="number" value="23" min="0" max="51">
+        </div>
+        <div class="field" id="targetBitrateField" style="display:none">
+          <label class="field-label">目标码率<span class="tip-icon" data-tip="2-pass 模式下的目标平均码率。50000k (50Mbps) 适合 4K 全景视频。值越大质量越好但文件越大。360° 视频因高分辨率通常需要较高码率。">?</span></label>
+          <input class="input" id="p_target_bitrate" value="50000k">
+        </div>
+      </div>
+
+      <div class="grid-4">
+        <div class="field">
+          <label class="field-label">最大码率<span class="tip-icon" data-tip="CRF 模式下的码率上限（VBR 约束模式），防止复杂场景码率飙升。40M (40Mbps) 适合 4K 全景视频。与缓冲大小配合使用：maxrate 越低文件越可控但复杂场景可能出现块效应。">?</span></label>
+          <input class="input" id="p_maxrate" value="40M">
+        </div>
+        <div class="field">
+          <label class="field-label">缓冲大小<span class="tip-icon" data-tip="码率控制缓冲区大小，决定码率波动的平滑程度。bufsize 越大编码器越灵活（允许短时码率峰值），越小码率越平滑。通常设为 maxrate 的一半到一倍。20M 适合搭配 40M maxrate。">?</span></label>
+          <input class="input" id="p_bufsize" value="20M">
+        </div>
+        <div class="field">
+          <label class="field-label" id="presetLabel">编码预设<span class="tip-icon" data-tip="编码速度与压缩效率的平衡。越慢压缩效率越高（同质量文件更小）但编码耗时越长。ultrafast 极快但文件最大；fast 速度与质量良好平衡（推荐）；slow/slower 质量最佳但耗时显著增加。360° 视频因分辨率高，建议 fast 或 medium。">?</span></label>
+          <select class="select" id="p_preset">
+            <option value="ultrafast">ultrafast</option>
+            <option value="superfast">superfast</option>
+            <option value="veryfast">veryfast</option>
+            <option value="faster">faster</option>
+            <option value="fast" selected>fast （推荐）</option>
+            <option value="medium">medium</option>
+            <option value="slow">slow</option>
+            <option value="slower">slower</option>
+          </select>
+        </div>
+        <div class="field" id="field_x264_params">
+          <label class="field-label">x264 参数<span class="tip-icon" data-tip="传递给 libx264 编码器的额外参数，用冒号分隔。hrd=1 启用 HRD 兼容性（符合蓝光标准）；pic_init_qp=26 设置初始 QP。高级用户可自定义，普通用户保持默认即可。">?</span></label>
+          <input class="input" id="p_x264_params" value="hrd=1:pic_init_qp=26">
+        </div>
+        <div class="field" id="field_x265_params" style="display:none">
+          <label class="field-label">x265 参数<span class="tip-icon" data-tip="传递给 libx265 编码器的额外参数，用冒号分隔。留空使用默认设置。高级用户可添加如 'pools=4' 控制线程池或 'aq-mode=3' 调整自适应量化。">?</span></label>
+          <input class="input" id="p_x265_params" value="">
+        </div>
+      </div>
+
+      <!-- Audio -->
+      <div class="section-divider">音频编码</div>
+      <div class="grid-4">
+        <div class="field">
+          <label class="field-label">音频码率<span class="tip-icon" data-tip="音频编码比特率。96k 适合普通立体声（推荐）；128k 适合高品质音乐；192k+ 适合 5.1 声道。码率越高音质越好但文件越大。360° 视频音频通常不是重点，96k 足够。">?</span></label>
+          <input class="input" id="p_audio_bitrate" value="96k">
+        </div>
+        <div class="field">
+          <label class="field-label">采样率<span class="tip-icon" data-tip="音频采样频率。48000 Hz 是视频行业标准（推荐）；44100 Hz 是 CD 音频标准。大多数视频设备录制为 48kHz，保持一致可避免重采样失真。">?</span></label>
+          <select class="select" id="p_audio_sample_rate">
+            <option value="48000">48000 Hz （推荐）</option>
+            <option value="44100">44100 Hz</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">声道<span class="tip-icon" data-tip="音频声道数。2（立体声）：左右双声道，适合普通播放（推荐）；6（5.1 环绕声）：前置3+后置2+低音1，适合影院级体验但文件更大。360° 视频除非有空间音频需求，立体声足够。">?</span></label>
+          <select class="select" id="p_audio_channels">
+            <option value="2">2 (立体声) （推荐）</option>
+            <option value="6">6 (5.1)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="field-label">音频 Profile<span class="tip-icon" data-tip="AAC 编码档次。AAC LC（低复杂度）：兼容性最广，所有设备支持（推荐）；AAC HE（高效率）：压缩率更高（同等质量码率减半）但旧设备可能不支持，适合低码率场景。">?</span></label>
+          <select class="select" id="p_audio_profile">
+            <option value="aac_low">AAC LC （推荐）</option>
+            <option value="aac_he">AAC HE</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Container & Spherical Metadata -->
+      <div class="section-divider">容器与全景元数据</div>
+      <div class="grid-2">
+        <div>
+          <label class="check">
+            <input type="checkbox" id="p_inject_spherical" checked onchange="toggleSphericalOptions(this, 'p')">
+            注入 GSpherical 全景元数据<span class="tip-icon" data-tip="将 Spherical / Equirectangular 等 GSpherical 元数据写入 MP4 容器。这是群晖 Photos、YouTube、Facebook 等平台识别 360° 全景视频的必需标记。不勾选则输出普通视频，播放器不会以全景模式显示。强烈建议保持勾选。">?</span>（群晖 Photos 识别必需）
+          </label>
+          <div id="p_spherical_options" style="margin-left:26px;margin-top:8px;">
+            <label class="field-label" style="font-size:0.75rem;">全景模式<span class="tip-icon" data-tip="选择视频的投影类型和立体模式组合：&#10;&#10;180°（单目全景）：VR180格式，2D画面&#10;360°（单目全景）：完整360°全景，2D画面&#10;180°（双目VR左右）：VR180格式，左右眼画面左右并排&#10;180°（双目VR上下）：VR180格式，左右眼画面上下排列&#10;360°（双目VR左右）：完整360°全景，左右眼画面左右并排&#10;360°（双目VR上下）：完整360°全景，左右眼画面上下排列">?</span></label>
+            <select class="input" id="p_spherical_mode" style="width:auto;padding:4px 8px;font-size:0.8rem;">
+              <option value="180-mono">180°（单目全景）</option>
+              <option value="360-mono" selected>360°（单目全景）</option>
+              <option value="180-left-right">180°（双目VR左右）</option>
+              <option value="180-top-bottom">180°（双目VR上下）</option>
+              <option value="360-left-right">360°（双目VR左右）</option>
+              <option value="360-top-bottom">360°（双目VR上下）</option>
+            </select>
+          </div>
+          <label class="check">
+            <input type="checkbox" id="p_faststart" checked>
+            Faststart<span class="tip-icon" data-tip="将 MP4 的 moov atom（索引信息）移到文件开头。启用后视频可边下载边播放（无需等待完整下载），对网络播放和拖拽跳转至关重要。几乎不影响文件大小和编码时间，建议始终开启。">?</span>（moov 前置，利于网络播放）
+          </label>
+        </div>
+        <div class="field">
+          <label class="field-label">MP4 Brand<span class="tip-icon" data-tip="MP4 容器的兼容性标识。mp42 兼容大部分播放器和设备（推荐）；mp41 较旧标准；isom 通用标识。某些平台（如苹果生态）对 brand 有特定要求，通常 mp42 即可。">?</span></label>
+          <input class="input" id="p_brand" value="mp42">
+        </div>
+      </div>
+
+      <!-- Date Metadata -->
+      <div class="section-divider">日期元数据 (从文件名提取)<span class="tip-icon" data-tip="从视频文件名中自动提取拍摄日期（支持 YYYYMMDD、YYYY-MM-DD 等格式），并将该日期写入视频元数据和文件系统属性。适用于修复拍摄设备未正确记录日期的视频。">?</span></div>
+      <div class="check-group">
+        <label class="check">
+          <input type="checkbox" id="p_date_from_filename" onchange="updateDatePreview()">
+          从文件名提取日期并写入视频元数据<span class="tip-icon" data-tip="勾选后自动从文件名中识别日期模式（如 20240115、2024-01-15、2024_01_15 等），支持纯数字和分隔符格式。">?</span>
+        </label>
+        <div id="dateOptions" class="hidden" style="margin-left:26px;margin-top:6px;">
+          <label class="check">
+            <input type="checkbox" id="p_set_creation_time" checked>
+            写入拍摄日期标签<span class="tip-icon" data-tip="将提取的日期写入视频的 creation_time 元数据标签。这是播放器和照片管理软件读取拍摄日期的主要来源。">?</span> (creation_time 元数据)
+          </label>
+          <label class="check">
+            <input type="checkbox" id="p_set_file_created" checked>
+            修改文件创建日期<span class="tip-icon" data-tip="修改 Windows 文件系统的「创建日期」属性。群晖 Photos 等媒体服务器会按此日期排序和分组。">?</span> (文件系统)
+          </label>
+          <label class="check">
+            <input type="checkbox" id="p_set_file_modified" checked>
+            修改文件修改日期<span class="tip-icon" data-tip="修改 Windows 文件系统的「修改日期」属性。某些文件管理器按此日期排序。">?</span> (文件系统)
+          </label>
+          <div class="field" style="margin-top:8px;">
+            <label class="field-label">手动指定日期<span class="tip-icon" data-tip="手动输入日期将覆盖文件名自动提取的结果。留空则使用文件名提取。支持格式：2024-01-15（仅日期）或 2024-01-15T14:30:00（日期+时间）。适用于文件名无日期或需要修正的场景。">?</span> (覆盖文件名提取, 留空则自动提取)</label>
+            <input class="input" id="p_manual_date" type="text" placeholder="格式: 2024-01-15 或 2024-01-15T14:30:00">
+          </div>
+          <div id="datePreviewContainer"></div>
+        </div>
+      </div>
+
+      <!-- Location Metadata -->
+      <div class="section-divider">拍摄位置元数据 (GPS)<span class="tip-icon" data-tip="将 GPS 经纬度坐标写入视频元数据（ISO 6709 格式），使照片管理软件能按地点分类和显示视频位置。需配合高德地图 API 使用。">?</span></div>
+      <div class="check-group">
+        <label class="check">
+          <input type="checkbox" id="p_set_location" onchange="toggleLocation()">
+          写入拍摄位置标签<span class="tip-icon" data-tip="勾选后可使用高德地图选取拍摄位置，将 GPS 经纬度和地点名称写入视频元数据。支持模糊搜索地点名称。">?</span> (GPS 经纬度 + 地点名称)
+        </label>
+        <div id="locationOptions" class="hidden" style="margin-left:26px;margin-top:8px;">
+          <div class="field">
+            <label class="field-label">拍摄地点<span class="tip-icon" data-tip="点击右侧按钮打开高德地图，支持模糊搜索地点名称（如「故宫博物院」），在地图上选取精确位置后会自动填充经纬度。">?</span></label>
+            <div class="input-group">
+              <input class="input" id="p_location_name" placeholder="点击右侧按钮在地图上选取..." readonly>
+              <button class="btn btn-accent" onclick="openMapPicker()">&#128205; 选取位置</button>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label class="field-label">纬度 (Latitude)<span class="tip-icon" data-tip="纬度范围 -90 到 90，正值北纬、负值南纬。北京约 39.9，上海约 31.2。由地图选取自动填充，也可手动输入。">?</span></label>
+              <input class="input" id="p_location_lat" type="text" placeholder="如: 39.9042">
+            </div>
+            <div class="field">
+              <label class="field-label">经度 (Longitude)<span class="tip-icon" data-tip="经度范围 -180 到 180，正值东经、负值西经。北京约 116.4，上海约 121.5。由地图选取自动填充，也可手动输入。">?</span></label>
+              <input class="input" id="p_location_lon" type="text" placeholder="如: 116.4074">
+            </div>
+          </div>
+          <div id="locationInfo" class="info-box hidden"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+
+
+  <!-- Single File Mode -->
+  <div id="singleMode">
+    <div class="card">
+      <div class="card-title">源文件与输出路径</div>
+      <div class="field">
+        <label class="field-label">原片文件</label>
+        <div class="input-group">
+          <input class="input" id="singleInput" placeholder="选择或输入视频文件路径...">
+          <button class="btn" onclick="openFileBrowser('singleInput', false, 'video')">浏览...</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">输出文件</label>
+        <div class="input-group">
+          <input class="input" id="singleOutput" placeholder="选择或输入输出文件路径...">
+          <button class="btn" onclick="openSingleOutputDialog()">浏览...</button>
+        </div>
+      </div>
+      <div id="singleDatePreview"></div>
+    </div>
+  </div>
+
+  <!-- Merge Mode -->
+  <div id="mergeMode" class="hidden">
+    <div class="card">
+      <div class="card-title">
+        &#128279; 合并转换 &mdash; 多文件按序合并为一个
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn btn-sm" onclick="addMergeFiles()">&#128193; 添加文件</button>
+          <button class="btn btn-sm" onclick="clearMergeList()">&#10005; 清空</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">待合并文件列表（按顺序合并）<span class="tip-icon" data-tip="点击"添加文件"选择多个视频文件，合并顺序即为列表顺序。可使用上下箭头调整顺序。合并后执行编码和元数据注入。">?</span></label>
+        <table style="width:100%;font-size:0.8rem;border-collapse:collapse;">
+          <thead>
+            <tr style="text-align:left;color:var(--text-muted);border-bottom:1px solid var(--border);">
+              <th style="width:36px;">#</th><th>文件名</th><th>大小</th><th style="width:80px;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="mergeTableBody">
+            <tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">点击"添加文件"选择要合并的视频</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="field">
+        <label class="field-label">输出文件</label>
+        <div class="input-group">
+          <input class="input" id="mergeOutput" placeholder="选择或输入输出文件路径...">
+          <button class="btn" onclick="openSingleOutputDialog('mergeOutput')">浏览...</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batch Mode -->
+  <div id="batchMode" class="hidden">
+
+    <!-- 批量任务队列 -->
+    <div class="card">
+      <div class="card-title">
+        任务列表
+        <span class="badge" id="scanCount"></span>
+        <span class="badge badge-accent" id="queueCount"></span>
+        <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn btn-sm" onclick="selectAllBatch(true)">全选</button>
+          <button class="btn btn-sm" onclick="selectAllBatch(false)">全不选</button>
+          <button class="btn btn-sm" onclick="removeSelectedTasks()">移除选中</button>
+          <button class="btn btn-sm btn-danger" onclick="removeUnselectedBatch()">仅保留选中</button>
+          <button class="btn btn-sm btn-primary" onclick="applySettingsToSelected()">&#9881; 应用设置到选中任务</button>
+        </div>
+      </div>
+      <div class="info-box" style="margin-bottom:8px;font-size:0.78rem;">
+        编辑任务：勾选一行后在上方「编码参数」中修改，再点击「应用设置到选中任务」即可更新（支持多选批量修改）。
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:36px;"><input type="checkbox" id="batchSelectAll" onchange="selectAllBatch(this.checked)"></th>
+              <th>#</th><th>源文件</th><th>大小</th><th>文件名日期</th><th>输出路径</th><th>参数</th><th>状态</th><th>耗时</th><th style="width:80px;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="batchTableBody">
+            <tr><td colspan="10" style="text-align:center;color:var(--text-muted)">将媒体文件添加到任务后显示任务列表</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Metadata Tool Mode -->
+  <div id="metadataMode" class="hidden">
+    <div class="card">
+      <div class="card-title">&#128295; 元数据工具 &mdash; 无需重编码</div>
+      <div class="info-box">
+        直接为视频文件添加元数据，不重新编码（使用 ffmpeg <code>-c copy</code> 流复制）。可独立使用以下功能，也可组合使用。
+      </div>
+
+      <!-- File Mode -->
+      <div class="field">
+        <label class="check">
+          <input type="radio" name="metaFileMode" value="single" checked onchange="toggleMetaFileMode()">
+          单个文件
+        </label>
+        <label class="check">
+          <input type="radio" name="metaFileMode" value="batch" onchange="toggleMetaFileMode()">
+          批量（递归扫描）
+        </label>
+      </div>
+
+      <div id="metaSingleFile" class="field">
+        <label class="field-label">视频文件</label>
+        <div class="input-group">
+          <input class="input" id="metaInput" placeholder="选择或输入视频文件路径...">
+          <button class="btn" onclick="openFileBrowser('metaInput', false, 'video')">浏览...</button>
+        </div>
+        <label class="check" style="margin-top:8px;">
+          <input type="checkbox" id="metaInPlace" checked>
+          原地修改（覆盖原文件）
+        </label>
+        <div id="metaOutputField" class="field hidden" style="margin-top:8px;">
+          <label class="field-label">输出文件</label>
+          <div class="input-group">
+            <input class="input" id="metaOutput" placeholder="选择或输入输出文件路径...">
+            <button class="btn" onclick="openMetaOutputDialog()">浏览...</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="metaBatchFile" class="hidden">
+        <div class="field">
+          <label class="field-label">扫描</label>
+          <div class="input-group">
+            <input class="input" id="metaBatchDir" placeholder="选择或输入源路径（支持网络映射盘符）..." onkeydown="if(event.key==='Enter')scanMetaDirectory()">
+            <button class="btn" onclick="openFileBrowser('metaBatchDir', true)">浏览...</button>
+            <button class="btn btn-primary" onclick="scanMetaDirectory()">扫描视频</button>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label">输出（留空 = 原地修改）</label>
+          <div class="input-group">
+            <input class="input" id="metaBatchOutDir" placeholder="输出 (留空则原地修改)...">
+            <button class="btn" onclick="openFileBrowser('metaBatchOutDir', true)">浏览...</button>
+          </div>
+        </div>
+        <div id="metaFileList" class="meta-file-list hidden"></div>
+      </div>
+    </div>
+
+    <!-- Feature Toggles -->
+    <div class="card">
+      <div class="card-title">功能开关（可多选）<span class="tip-icon" data-tip="以下三个功能可独立开启或组合使用。使用 ffmpeg -c copy 流复制模式，不重新编码视频/音频，处理速度极快（仅复制和修改元数据）。">?</span></div>
+
+      <!-- Date Toggle -->
+      <div class="toggle-row">
+        <label class="toggle-switch">
+          <input type="checkbox" id="m_apply_date" onchange="toggleMetaDate()">
+          <span class="toggle-slider"></span>
+        </label>
+        <div class="toggle-label">
+          <strong>&#128197; 日期元数据 <span class="tip-icon" data-tip="从视频文件名中自动提取拍摄日期（支持 YYYYMMDD 等格式），写入视频 creation_time 标签和文件系统属性。处理速度极快（不重编码）。">?</span></strong>
+          <small>从文件名提取日期，写入拍摄日期标签 / 文件创建时间 / 修改时间</small>
+        </div>
+      </div>
+      <div id="metaDateOptions" class="toggle-options hidden">
+        <label class="check">
+          <input type="checkbox" id="m_date_from_filename" checked onchange="updateMetaDatePreview()">
+          从文件名提取日期
+        </label>
+        <label class="check">
+          <input type="checkbox" id="m_set_creation_time" checked>
+          写入拍摄日期标签 (creation_time)
+        </label>
+        <label class="check">
+          <input type="checkbox" id="m_set_file_created" checked>
+          修改文件创建日期 (文件系统)
+        </label>
+        <label class="check">
+          <input type="checkbox" id="m_set_file_modified" checked>
+          修改文件修改日期 (文件系统)
+        </label>
+        <div class="field" style="margin-top:8px;">
+          <label class="field-label">手动指定日期 (覆盖文件名提取, 留空则自动提取)</label>
+          <input class="input" id="m_manual_date" type="text" placeholder="格式: 2024-01-15 或 2024-01-15T14:30:00">
+        </div>
+        <div id="metaDatePreview"></div>
+      </div>
+
+      <!-- Location Toggle -->
+      <div class="toggle-row">
+        <label class="toggle-switch">
+          <input type="checkbox" id="m_apply_location" onchange="toggleMetaLocation()">
+          <span class="toggle-slider"></span>
+        </label>
+        <div class="toggle-label">
+          <strong>&#128205; 拍摄位置 GPS <span class="tip-icon" data-tip="通过高德地图选取位置，将 GPS 经纬度以 ISO 6709 格式写入视频元数据。支持模糊搜索地点名称。处理速度极快（不重编码）。">?</span></strong>
+          <small>通过高德地图选取位置，写入 GPS 经纬度标签</small>
+        </div>
+      </div>
+      <div id="metaLocationOptions" class="toggle-options hidden">
+        <div class="field">
+          <label class="field-label">拍摄地点</label>
+          <div class="input-group">
+            <input class="input" id="m_location_name" placeholder="点击右侧按钮在地图上选取..." readonly>
+            <button class="btn btn-accent" onclick="openMapPicker('meta')">&#128205; 选取位置</button>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="field">
+            <label class="field-label">纬度 (Latitude)</label>
+            <input class="input" id="m_location_lat" type="text" placeholder="如: 39.9042">
+          </div>
+          <div class="field">
+            <label class="field-label">经度 (Longitude)</label>
+            <input class="input" id="m_location_lon" type="text" placeholder="如: 116.4074">
+          </div>
+        </div>
+        <div id="metaLocationInfo" class="info-box hidden"></div>
+      </div>
+
+      <!-- Spherical Toggle -->
+      <div class="toggle-row">
+        <label class="toggle-switch">
+          <input type="checkbox" id="m_apply_spherical" onchange="toggleSphericalOptions(this, 'm')">
+          <span class="toggle-slider"></span>
+        </label>
+        <div class="toggle-label">
+          <strong>&#127760; GSpherical 全景元数据 <span class="tip-icon" data-tip="注入 Spherical / Equirectangular 等 GSpherical 标签到 MP4 容器，使群晖 Photos、YouTube 等平台识别为 360° 全景视频。这是全景视频播放的关键标记。">?</span></strong>
+          <small>注入全景映射元数据（群晖 Photos 识别必需）</small>
+          <div id="m_spherical_options" class="hidden" style="margin-top:8px;">
+            <label class="field-label" style="font-size:0.75rem;">全景模式<span class="tip-icon" data-tip="选择视频的投影类型和立体模式组合：&#10;&#10;180°（单目全景）：VR180格式，2D画面&#10;360°（单目全景）：完整360°全景，2D画面&#10;180°（双目VR左右）：VR180格式，左右眼画面左右并排&#10;180°（双目VR上下）：VR180格式，左右眼画面上下排列&#10;360°（双目VR左右）：完整360°全景，左右眼画面左右并排&#10;360°（双目VR上下）：完整360°全景，左右眼画面上下排列">?</span></label>
+            <select class="input" id="m_spherical_mode" style="width:auto;padding:4px 8px;font-size:0.8rem;">
+              <option value="180-mono">180°（单目全景）</option>
+              <option value="360-mono" selected>360°（单目全景）</option>
+              <option value="180-left-right">180°（双目VR左右）</option>
+              <option value="180-top-bottom">180°（双目VR上下）</option>
+              <option value="360-left-right">360°（双目VR左右）</option>
+              <option value="360-top-bottom">360°（双目VR上下）</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Action Bar for Metadata -->
+    <div class="action-bar">
+      <button class="btn btn-accent" id="metaApplyBtn" onclick="startMetadataApply()" style="font-size:1rem;padding:12px 28px">&#9889; 应用元数据</button>
+      <button class="btn btn-warning" id="metaPauseBtn" onclick="togglePause()" style="display:none">&#9208; 暂停</button>
+      <button class="btn btn-danger" id="metaCancelBtn" onclick="cancelConversion()" style="display:none">&#9209; 取消</button>
+      <div class="progress-section">
+        <div class="progress-label">
+          <span id="metaProgressLabel">就绪</span>
+          <span id="metaProgressPercent">0%</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="metaOverallProgress" style="width:0%"></div></div>
+        <div class="progress-label" style="margin-top:6px">
+          <span id="metaCurrentFileLabel"></span>
+          <span id="metaFileProgressPercent"></span>
+        </div>
+        <div class="progress-bar" style="height:4px"><div class="progress-fill" id="metaFileProgress" style="width:0%;background:var(--accent)"></div></div>
+        <div class="time-info" id="metaTimeInfo" style="display:none;">
+          <span>&#9201; 已耗时: <strong id="metaElapsed">--</strong></span>
+          <span>预计剩余: <strong id="metaRemaining">--</strong></span>
+          <span>预计总时间: <strong id="metaTotal">--</strong></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Metadata Report Mode -->
+  <div id="reportMode" class="hidden">
+    <div class="card">
+      <div class="card-title">&#128202; 视频元数据与编码信息报告</div>
+      <div class="field">
+        <label class="check">
+          <input type="radio" name="reportMode" value="single" checked onchange="toggleReportMode()">
+          单个文件
+        </label>
+        <label class="check">
+          <input type="radio" name="reportMode" value="batch" onchange="toggleReportMode()">
+          批量（递归扫描）
+        </label>
+      </div>
+      <div id="reportSingleFile" class="field">
+        <label class="field-label">视频文件</label>
+        <div class="input-group">
+          <input class="input" id="reportInput" placeholder="选择或输入视频文件路径...">
+          <button class="btn" onclick="openFileBrowser('reportInput', false, 'video')">浏览...</button>
+          <button class="btn btn-primary" onclick="generateReport()">&#128269; 读取元数据</button>
+        </div>
+      </div>
+      <div id="reportBatchFile" class="hidden">
+        <div class="field">
+          <label class="field-label">扫描</label>
+          <div class="input-group">
+            <input class="input" id="reportBatchDir" placeholder="选择或输入源路径（支持网络映射盘符）..." onkeydown="if(event.key==='Enter')generateBatchReport()">
+            <button class="btn" onclick="openFileBrowser('reportBatchDir', true)">浏览...</button>
+            <button class="btn btn-primary" onclick="generateBatchReport()">&#128269; 批量读取</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">
+        &#128203; 报告结果
+        <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn btn-sm" onclick="saveReport()">&#128190; 保存报告</button>
+          <button class="btn btn-sm" onclick="clearReport()">&#10005; 清除</button>
+        </div>
+      </div>
+      <div id="reportResult" style="min-height:200px;">
+        <div style="padding:40px;text-align:center;color:var(--text-muted);">
+          选择视频文件后点击"读取元数据"生成报告
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Action Bar -->
+  <div class="action-bar">
+    <button class="btn btn-primary" id="startBtn" onclick="startConversion()" style="font-size:1rem;padding:12px 28px">&#9654; 开始转换</button>
+    <button class="btn" id="addToBatchBtn" onclick="addToBatchQueue()" style="font-size:0.9rem;padding:12px 18px;white-space:nowrap;">&#128203; 加入批量队列</button>
+    <button class="btn btn-warning" id="pauseBtn" onclick="togglePause()" style="display:none">&#9208; 暂停</button>
+    <button class="btn btn-danger" id="cancelBtn" onclick="cancelConversion()" style="display:none">&#9209; 取消</button>
+    <label class="check" style="white-space:nowrap;">
+      <input type="checkbox" id="testEncode" onchange="toggleTestEncode()">
+      测试输出<span class="tip-icon" data-tip="勾选后仅编码指定秒数的片段用于测试参数效果，无需等待整个文件编码完成。输出文件名会自动添加 _test 后缀。适合调试编码参数（码率、分辨率、CRF 等）后再进行完整编码。">?</span>
+    </label>
+    <div id="testDurationField" class="hidden" style="display:flex;align-items:center;gap:4px;">
+      <input class="input" id="testDuration" type="number" value="10" min="1" max="600" style="width:70px;">
+      <span style="font-size:0.8rem;color:var(--text-secondary);">秒</span>
+    </div>
+    <div class="progress-section">
+      <div class="progress-label">
+        <span id="progressLabel">就绪</span>
+        <span id="progressPercent">0%</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="overallProgress" style="width:0%"></div></div>
+      <div class="progress-label" style="margin-top:6px">
+        <span id="currentFileLabel"></span>
+        <span id="fileProgressPercent"></span>
+      </div>
+      <div class="progress-bar" style="height:4px"><div class="progress-fill" id="fileProgress" style="width:0%;background:var(--accent)"></div></div>
+      <div class="time-info" id="encodeTimeInfo" style="display:none;">
+        <span>&#9201; 已耗时: <strong id="encodeElapsed">--</strong></span>
+        <span>预计剩余: <strong id="encodeRemaining">--</strong></span>
+        <span>预计总时间: <strong id="encodeTotal">--</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="card">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+      实时日志
+      <button onclick="exportEncodeLog()" id="exportLogBtn" style="font-size:0.7rem;padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted);display:none;">📄 导出日志</button>
+    </div>
+    <div class="log-box" id="logBox">
+      <div class="log-line"><span class="log-ts">--:--:--</span><span class="log-msg info">等待开始转换...</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- File Browser Modal -->
+<!-- File browser modal removed - now using native Windows dialogs -->
+<div class="modal-overlay" id="browserModal" style="display:none;"></div>
+
+<!-- Map Picker Modal -->
+<div class="modal-overlay" id="mapModal">
+  <div class="modal large">
+    <div class="modal-header">
+      <h3>&#128205; 选取拍摄位置 (高德地图)</h3>
+      <button class="btn btn-sm" onclick="closeMapPicker()">&#10005;</button>
+    </div>
+    <div class="map-search-bar">
+      <input class="input" id="mapSearchInput" placeholder="输入地点名称进行模糊搜索 (如: 故宫博物院)..." onkeydown="if(event.key==='Enter')searchMap()">
+      <button class="btn btn-primary" onclick="searchMap()">搜索</button>
+    </div>
+    <div class="search-results" id="mapSearchResults"></div>
+    <div id="mapContainer"></div>
+    <div class="location-info" id="mapLocationInfo">
+      <span class="selected-name" id="mapSelectedName">未选择位置</span>
+      <span class="selected-coords" id="mapSelectedCoords"></span>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="clearMapSelection()">清除选择</button>
+      <button class="btn btn-primary" onclick="confirmMapSelection()">确认位置</button>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal (API Key) -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>设置 - 高德地图 API Key</h3>
+      <button class="btn btn-sm" onclick="closeSettings()">&#10005;</button>
+    </div>
+    <div class="modal-body" style="padding:20px;">
+      <div class="info-box">
+        高德地图 API Key 用于地点模糊搜索和地图显示。<br>
+        免费申请: <a href="https://lbs.amap.com/" target="_blank" style="color:inherit;font-weight:600;">https://lbs.amap.com/</a> &rarr; 注册 &rarr; 创建应用 &rarr; 获取 Web服务 Key
+      </div>
+      <div class="field">
+        <label class="field-label">高德地图 API Key (Web服务)</label>
+        <input class="input" id="settings_amap_key" type="text" placeholder="粘贴你的高德地图 Web服务 API Key...">
+      </div>
+      <div class="field">
+        <label class="field-label">高德地图 JS API 安全密钥 (可选, 部分功能需要)</label>
+        <input class="input" id="settings_amap_security" type="text" placeholder="安全密钥 (securityJsCode)...">
+      </div>
+      <div class="section-divider">任务管理</div>
+      <label class="check">
+        <input type="checkbox" id="settings_auto_load">
+        启动时自动加载上次任务列表
+      </label>
+      <div class="section-divider">FFmpeg 路径 (硬件编码)</div>
+      <div class="info-box" style="font-size:0.8rem;">
+        如果内置 ffmpeg 不支持硬件编码（NVENC/QSV/AMF），可指定一个支持硬件编码的 ffmpeg.exe 路径。<br>
+        推荐: 从 <a href="https://www.gyan.dev/ffmpeg/builds/" target="_blank" style="color:inherit;font-weight:600;">gyan.dev</a> 下载 "full" 版本（含 NVENC + QSV + AMF 支持）。
+      </div>
+      <div class="field">
+        <label class="field-label">自定义 ffmpeg.exe 路径 (可选)</label>
+        <div class="input-group">
+          <input class="input" id="settings_custom_ffmpeg" type="text" placeholder="如 C:\ffmpeg\bin\ffmpeg.exe (留空使用内置)">
+          <button class="btn btn-sm" onclick="browseCustomFfmpeg()">浏览</button>
+          <button class="btn btn-sm btn-accent" onclick="testCustomFfmpeg()">测试</button>
+        </div>
+      </div>
+      <div id="ffmpegTestResult" style="display:none;margin-top:8px;"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeSettings()">取消</button>
+      <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="aboutModal" onclick="if(event.target===this)closeAbout()">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="aboutTitle">关于</h3>
+      <button class="btn btn-sm" onclick="closeAbout()">&#10005;</button>
+    </div>
+    <div class="modal-body" id="aboutBody" style="padding:20px;line-height:1.7;"></div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" onclick="closeAbout()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────
+let currentMode = 'single';
+// Batch is now task-list-centric: each entry carries its own export params + output.
+let batchTasks = [];
+// Directory import is decoupled from the task list: this is just the scanned media
+// candidate pool (source path / size / date). User multi-selects then adds to tasks.
+let importCandidates = [];
+let jobId = null;
+let pollTimer = null;
+let currentParams = {};
+
+let codecInfo = {};       // codec profiles from API
+let codecAvailability = {}; // which codecs are available
+let codecErrorDetails = {};  // error messages per codec
+let codecFfmpegInfo = {};     // ffmpeg version info
+let codecRuntimeDlls = {};   // runtime DLL check results
+let codecFixHints = {};       // fix hints per codec
+
+let mapInstance = null;
+let mapMarker = null;
+let mapSelectedLocation = null;  // {name, lat, lon, address}
+
+const DEFAULT_PARAMS = {
+  codec:'libx264', resolution:'4096x2048', profile:'high', level:'5.1', pix_fmt:'yuv420p',
+  color_range:'tv', color_space:'bt709', color_primaries:'bt709', color_trc:'bt709',
+  bf:3, refs:5, gop:48, sc_threshold:0, rate_mode:'crf', crf:23,
+  maxrate:'40M', bufsize:'20M', target_bitrate:'50000k', preset:'fast',
+  x264_params:'hrd=1:pic_init_qp=26', x265_params:'',
+  audio_codec:'aac', audio_profile:'aac_low',
+  audio_bitrate:'96k', audio_sample_rate:'48000', audio_channels:2,
+  brand:'mp42', faststart:true, inject_spherical:true,
+  pano_type:'360', stereo_mode:'mono',
+  date_from_filename:false, set_creation_time:true, set_file_created:true,
+  set_file_modified:true, manual_date:'',
+  set_location:false, location_name:'', location_lat:'', location_lon:'',
+};
+
+// ── Theme ──────────────────────────────────────────
+function toggleTheme() {
+  const html = document.documentElement;
+  const cur = html.getAttribute('data-theme');
+  const next = cur === 'light' ? 'dark' : 'light';
+  html.setAttribute('data-theme', next);
+  document.getElementById('themeBtn').innerHTML = next === 'light' ? '&#127769;' : '&#9728;&#65039;';
+  localStorage.setItem('theme', next);
+}
+(function() {
+  const saved = localStorage.getItem('theme') || 'light';
+  document.documentElement.setAttribute('data-theme', saved);
+  document.getElementById('themeBtn').innerHTML = saved === 'light' ? '&#127769;' : '&#9728;&#65039;';
+})();
+
+// ── Mode Switching ─────────────────────────────────
+function switchMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll('.mode-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.mode === mode);
+  });
+  document.getElementById('singleMode').classList.toggle('hidden', mode !== 'single');
+  document.getElementById('mergeMode').classList.toggle('hidden', mode !== 'merge');
+  document.getElementById('batchMode').classList.toggle('hidden', mode !== 'batch');
+  document.getElementById('metadataMode').classList.toggle('hidden', mode !== 'metadata');
+  document.getElementById('reportMode').classList.toggle('hidden', mode !== 'report');
+  // Show/hide encoding params and main action bar based on mode
+  const showEncode = mode === 'single' || mode === 'merge' || mode === 'batch';
+  const encodePanel = document.getElementById('encodePanel');
+  if (encodePanel) encodePanel.style.display = showEncode ? '' : 'none';
+  // Directory batch import panel is batch-only, sits above the encoding panel
+  const batchImportPanel = document.getElementById('batchImportPanel');
+  if (batchImportPanel) batchImportPanel.classList.toggle('hidden', mode !== 'batch');
+  document.getElementById('startBtn').closest('.action-bar').style.display = showEncode ? '' : 'none';
+  // Show "加入批量队列" button only in single and merge modes
+  const addToBatchBtn = document.getElementById('addToBatchBtn');
+  if (addToBatchBtn) addToBatchBtn.style.display = (mode === 'single' || mode === 'merge') ? '' : 'none';
+  if (mode === 'single') updateSingleDatePreview();
+}
+
+// ── Collapse ───────────────────────────────────────
+function toggleCollapse(id) {
+  const el = document.getElementById(id);
+  const toggle = el.previousElementSibling || el.closest('.card-title');
+  el.classList.toggle('hidden');
+  if (toggle && toggle.classList.contains('collapse-toggle'))
+    toggle.classList.toggle('collapsed', el.classList.contains('hidden'));
+}
+
+// ── Rate Mode Toggle ───────────────────────────────
+function toggleRateMode() {
+  const mode = document.getElementById('p_rate_mode').value;
+  document.getElementById('crfField').style.display = mode === 'crf' ? '' : 'none';
+  document.getElementById('targetBitrateField').style.display = mode === '2pass' ? '' : 'none';
+  // Hardware encoders don't support 2-pass (except CPU)
+  const codec = document.getElementById('p_codec').value;
+  const ci = codecInfo[codec];
+  if (ci && ci.group !== 'cpu' && mode === '2pass') {
+    alert('硬件编码器不支持 2-pass 模式，已切换为 CRF/CQ 模式');
+    document.getElementById('p_rate_mode').value = 'crf';
+    toggleRateMode();
+  }
+}
+
+// ── Codec Change Handler ───────────────────────────
+async function onCodecChange() {
+  const codec = document.getElementById('p_codec').value;
+  const ci = codecInfo[codec];
+  if (!ci) return;
+
+  // Update codec status to highlight current selection
+  renderCodecStatus();
+
+  // Show/hide warning for unavailable codecs
+  const warnEl = document.getElementById('codecWarning');
+  if (codecAvailability[codec] === false) {
+    const group = ci.group;
+    const errDetail = codecErrorDetails[codec] || '';
+    const fixHint = codecFixHints[codec] || '';
+    let hint = '未检测到对应硬件或驱动';
+    if (group === 'cuda') hint = '未检测到 NVIDIA GPU 或 NVENC 驱动。请确认已安装 NVIDIA 显卡驱动。';
+    else if (group === 'qsv') hint = '未检测到 Intel 核显或 QSV 运行时。请确认已安装 Intel 显卡驱动 (含 Media SDK 运行时)。';
+    else if (group === 'amf') hint = '未检测到 AMD 显卡或 AMF 驱动。请确认已安装 AMD 显卡驱动。';
+    let warnHtml = '<span style="color:var(--warning);">&#9888; ' + esc(hint);
+    if (errDetail) {
+      warnHtml += ' <span style="font-size:0.7rem;color:var(--text-muted);">(' + esc(errDetail) + ')</span>';
+    }
+    warnHtml += ' <span style="color:var(--text-muted);font-size:0.7rem;cursor:pointer;text-decoration:underline;" onclick="showEncoderDetail(\'' + codec + '\')">查看详情</span>';
+    warnHtml += '</span>';
+    if (fixHint) {
+      warnHtml += '<div style="margin-top:4px;padding:6px 8px;background:var(--bg-secondary);border-radius:4px;font-size:0.72rem;white-space:pre-wrap;color:var(--text);line-height:1.5;">' + esc(fixHint) + '</div>';
+    }
+    warnEl.innerHTML = warnHtml;
+    warnEl.style.display = 'block';
+  } else {
+    // Codec is available — clear warning
+    warnEl.innerHTML = '';
+    warnEl.style.display = 'none';
+  }
+
+  // Update preset dropdown options
+  const presetSel = document.getElementById('p_preset');
+  presetSel.innerHTML = '';
+  ci.presets.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p; opt.textContent = p;
+    if (p === ci.default_preset) opt.selected = true;
+    presetSel.appendChild(opt);
+  });
+
+  // Update CRF label
+  const crfLabel = document.getElementById('crfLabel');
+  if (ci.group === 'cpu') {
+    crfLabel.textContent = codec === 'libx265' ? 'CRF 值 (H.265 推荐 28)' : 'CRF 值 (越小质量越高)';
+  } else if (ci.group === 'cuda') {
+    crfLabel.textContent = 'CQ 值 (NVENC 质量等级, 越小越高)';
+  } else if (ci.group === 'qsv') {
+    crfLabel.textContent = 'Global Quality (QSV, 越小越高)';
+  } else if (ci.group === 'amf') {
+    crfLabel.textContent = 'QP 值 (AMF, 越小越高)';
+  }
+
+  // Show/hide profile field
+  document.getElementById('field_profile').style.display = ci.has_profile ? '' : 'none';
+
+  // Show/hide B-frames, refs
+  document.getElementById('field_bf').style.display = ci.has_bf_refs ? '' : 'none';
+  document.getElementById('field_refs').style.display = (ci.has_bf_refs && ci.group === 'cpu') ? '' : 'none';
+
+  // Show/hide x264/x265 params
+  document.getElementById('field_x264_params').style.display = ci.has_x264_params ? '' : 'none';
+  document.getElementById('field_x265_params').style.display = ci.x265_params ? '' : 'none';
+
+  // Update CRF default
+  const crfInput = document.getElementById('p_crf');
+  if (parseInt(crfInput.value) === 23 && codec === 'libx265') {
+    crfInput.value = ci.default_crf;
+  }
+
+  toggleRateMode();
+}
+
+// ── Date Extraction Preview ────────────────────────
+async function updateDatePreview() {
+  const enabled = document.getElementById('p_date_from_filename').checked;
+  document.getElementById('dateOptions').classList.toggle('hidden', !enabled);
+
+  if (currentMode === 'single') {
+    updateSingleDatePreview();
+  } else {
+    updateBatchDatePreview();
+  }
+}
+
+async function updateSingleDatePreview() {
+  if (!document.getElementById('p_date_from_filename').checked) {
+    document.getElementById('singleDatePreview').innerHTML = '';
+    return;
+  }
+  const filename = document.getElementById('singleInput').value;
+  if (!filename) {
+    document.getElementById('singleDatePreview').innerHTML = '';
+    return;
+  }
+  const r = await fetch('/api/extract_date', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({filename: filename.split(/[\/\\]/).pop()})
+  });
+  const data = await r.json();
+  const container = document.getElementById('singleDatePreview');
+  if (data.date_str) {
+    container.innerHTML = `<div class="date-preview">&#128197; 从文件名提取日期: <strong>${data.date_str}</strong></div>`;
+  } else {
+    container.innerHTML = `<div class="date-preview no-date">&#9888; 文件名中未找到日期信息</div>`;
+  }
+}
+
+function updateBatchDatePreview() {
+  // Date info is already shown in the batch table
+}
+
+// ── Location Toggle ────────────────────────────────
+function toggleLocation() {
+  const enabled = document.getElementById('p_set_location').checked;
+  document.getElementById('locationOptions').classList.toggle('hidden', !enabled);
+}
+
+function toggleSphericalOptions(cb, prefix) {
+  const opts = document.getElementById(prefix + '_spherical_options');
+  if (opts) opts.style.display = cb.checked ? 'block' : 'none';
+}
+
+// ── Map Picker ──────────────────────────────────────
+function getAmapKey() {
+  return localStorage.getItem('amap_api_key') || '';
+}
+function getAmapSecurity() {
+  return localStorage.getItem('amap_security') || '';
+}
+
+function openMapPicker() {
+  document.getElementById('mapModal').classList.add('active');
+  const key = getAmapKey();
+  if (!key) {
+    document.getElementById('mapContainer').innerHTML =
+      '<div style="padding:40px;text-align:center;color:var(--text-muted);">' +
+      '请先在右上角"API Key"中设置高德地图 API Key<br>' +
+      '<button class="btn btn-primary" style="margin-top:12px;" onclick="closeMapPicker();openSettings();">前往设置</button></div>';
+    return;
+  }
+  initMap();
+}
+
+function initMap() {
+  const key = getAmapKey();
+  const security = getAmapSecurity();
+
+  // Set security code if provided
+  if (security) {
+    window._AMapSecurityConfig = { securityJsCode: security };
+  }
+
+  // Load AMap JS API if not already loaded
+  if (typeof AMap === 'undefined') {
+    const script = document.createElement('script');
+    script.src = `https://webapi.amap.com/maps?v=2.0&key=${key}`;
+    script.onload = () => createMapInstance();
+    script.onerror = () => {
+      document.getElementById('mapContainer').innerHTML =
+        '<div style="padding:40px;text-align:center;color:var(--error);">地图加载失败，请检查 API Key 是否正确</div>';
+    };
+    document.head.appendChild(script);
+  } else {
+    createMapInstance();
+  }
+}
+
+function createMapInstance() {
+  mapInstance = new AMap.Map('mapContainer', {
+    zoom: 5,
+    center: [116.397428, 39.90923],  // Default: Beijing
+    mapStyle: 'amap://styles/normal'
+  });
+
+  // Click to select location
+  mapInstance.on('click', (e) => {
+    const lng = e.lnglat.getLng();
+    const lat = e.lnglat.getLat();
+    reverseGeocode(lat, lng);
+  });
+}
+
+async function searchMap() {
+  const query = document.getElementById('mapSearchInput').value.trim();
+  if (!query) return;
+  const key = getAmapKey();
+  if (!key) { alert('请先设置高德地图 API Key'); return; }
+
+  const r = await fetch(`/api/geocode?q=${encodeURIComponent(query)}&key=${encodeURIComponent(key)}`);
+  const data = await r.json();
+
+  const resultsEl = document.getElementById('mapSearchResults');
+  if (data.error) {
+    resultsEl.innerHTML = `<div style="padding:12px;color:var(--error);">${data.error}</div>`;
+    return;
+  }
+
+  if (!data.pois || data.pois.length === 0) {
+    resultsEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);">未找到相关地点</div>';
+    return;
+  }
+
+  resultsEl.innerHTML = data.pois.slice(0, 15).map(poi => {
+    const [lon, lat] = poi.location ? poi.location.split(',').map(parseFloat) : [0, 0];
+    return `<div class="search-result-item" onclick="selectSearchResult(${lat}, ${lon}, '${escapeStr(poi.name)}', '${escapeStr(poi.address || '')}')">
+      <div class="name">${poi.name}</div>
+      <div class="addr">${poi.address || poi.cityname || ''}</div>
+      <div class="coords">${lat.toFixed(4)}, ${lon.toFixed(4)}</div>
+    </div>`;
+  }).join('');
+}
+
+function selectSearchResult(lat, lon, name, address) {
+  if (mapMarker) mapInstance.remove(mapMarker);
+  mapMarker = new AMap.Marker({
+    position: [lon, lat],
+    title: name
+  });
+  mapInstance.add(mapMarker);
+  mapInstance.setZoomAndCenter(15, [lon, lat]);
+
+  mapSelectedLocation = { name, lat, lon, address };
+  document.getElementById('mapSelectedName').textContent = name;
+  document.getElementById('mapSelectedCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+}
+
+async function reverseGeocode(lat, lon) {
+  const key = getAmapKey();
+  if (mapMarker) mapInstance.remove(mapMarker);
+  mapMarker = new AMap.Marker({ position: [lon, lat] });
+  mapInstance.add(mapMarker);
+
+  // Try reverse geocode
+  try {
+    const url = `https://restapi.amap.com/v3/geocode/regeo?location=${lon},${lat}&key=${key}&extensions=all`;
+    const r = await fetch(`/api/geocode?q=__regeo__&key=${key}&location=${lon},${lat}`);
+    // Fallback: just use coordinates
+    mapSelectedLocation = {
+      name: `${lat.toFixed(4)}, ${lon.toFixed(4)}`,
+      lat, lon, address: ''
+    };
+    document.getElementById('mapSelectedName').textContent = mapSelectedLocation.name;
+    document.getElementById('mapSelectedCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+  } catch(e) {
+    mapSelectedLocation = { name: `位置 ${lat.toFixed(4)}, ${lon.toFixed(4)}`, lat, lon, address: '' };
+    document.getElementById('mapSelectedName').textContent = mapSelectedLocation.name;
+    document.getElementById('mapSelectedCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+  }
+}
+
+function clearMapSelection() {
+  if (mapMarker) { mapInstance.remove(mapMarker); mapMarker = null; }
+  mapSelectedLocation = null;
+  document.getElementById('mapSelectedName').textContent = '未选择位置';
+  document.getElementById('mapSelectedCoords').textContent = '';
+  document.getElementById('mapSearchResults').innerHTML = '';
+  document.getElementById('mapSearchInput').value = '';
+}
+
+function confirmMapSelection() {
+  if (!mapSelectedLocation) {
+    alert('请先在地图上选择一个位置');
+    return;
+  }
+  document.getElementById('p_location_name').value = mapSelectedLocation.name;
+  document.getElementById('p_location_lat').value = mapSelectedLocation.lat.toFixed(6);
+  document.getElementById('p_location_lon').value = mapSelectedLocation.lon.toFixed(6);
+
+  const info = document.getElementById('locationInfo');
+  info.classList.remove('hidden');
+  info.innerHTML = `已选择: <strong>${mapSelectedLocation.name}</strong> &mdash; 纬度 ${mapSelectedLocation.lat.toFixed(4)}, 经度 ${mapSelectedLocation.lon.toFixed(4)}`;
+
+  closeMapPicker();
+}
+
+function closeMapPicker() {
+  document.getElementById('mapModal').classList.remove('active');
+}
+
+// ── Settings ────────────────────────────────────────
+async function openSettings() {
+  document.getElementById('settings_amap_key').value = getAmapKey();
+  document.getElementById('settings_amap_security').value = getAmapSecurity();
+  document.getElementById('ffmpegTestResult').style.display = 'none';
+  // Load settings from backend
+  try {
+    const r = await fetch('/api/settings');
+    const s = await r.json();
+    document.getElementById('settings_auto_load').checked = s.auto_load_tasks || false;
+    document.getElementById('settings_custom_ffmpeg').value = s.custom_ffmpeg_path || '';
+  } catch(e) {}
+  document.getElementById('settingsModal').classList.add('active');
+}
+function closeSettings() {
+  document.getElementById('settingsModal').classList.remove('active');
+}
+
+// ── About menu & modals ───────────────────────────
+function toggleAboutMenu(e) {
+  e.stopPropagation();
+  const m = document.getElementById('aboutMenu');
+  if (m) m.classList.toggle('active');
+  if (!window.__aboutOutsideBound) {
+    window.__aboutOutsideBound = true;
+    document.addEventListener('click', function() {
+      const mm = document.getElementById('aboutMenu');
+      if (mm) mm.classList.remove('active');
+    });
+  }
+}
+function closeAboutMenu() {
+  const m = document.getElementById('aboutMenu');
+  if (m) m.classList.remove('active');
+}
+function closeAbout() {
+  const m = document.getElementById('aboutModal');
+  if (m) m.classList.remove('active');
+}
+async function openAbout(section) {
+  closeAboutMenu();
+  const modal = document.getElementById('aboutModal');
+  const titleEl = document.getElementById('aboutTitle');
+  const bodyEl = document.getElementById('aboutBody');
+  if (section === 'version') {
+    titleEl.textContent = '版本信息';
+    let ver = 'unknown';
+    try {
+      const r = await fetch('/api/version');
+      const d = await r.json();
+      ver = d.version || 'unknown';
+    } catch (e) {}
+    bodyEl.innerHTML =
+      '<div style="padding:4px 2px;">' +
+        '<div style="font-size:1.8rem;font-weight:700;letter-spacing:0.5px;">360° Video Converter</div>' +
+        '<div style="margin-top:10px;color:var(--text-muted);">当前版本：<b style="color:var(--text);font-size:1.05rem;">v' + esc(ver) + '</b></div>' +
+        '<div style="margin-top:8px;color:var(--text-muted);font-size:0.82rem;line-height:1.6;">' +
+        '360° 全景视频转换工具 · 支持 H.264 / H.265 软件与 NVENC / QSV / AMF 硬件编码<br>' +
+        '可将单文件、合并片段或整目录批量转换为带球面元数据（Google Spherical）的全景视频。' +
+        '</div>' +
+      '</div>';
+  } else {
+    titleEl.textContent = '使用说明';
+    bodyEl.innerHTML =
+      '<div style="font-size:0.86rem;line-height:1.8;">' +
+      '<p style="margin:0 0 10px;"><b>五种模式</b></p>' +
+      '<ul style="margin:0 0 12px;padding-left:18px;">' +
+      '<li><b>单文件转换</b>：选择一个视频，设置编码参数后转换。</li>' +
+      '<li><b>合并转换</b>：选择多个片段按顺序合并为一个视频再编码。</li>' +
+      '<li><b>批量转换</b>：见下方「批量工作流」。</li>' +
+      '<li><b>元数据工具</b>：不重新编码，仅为已有视频写入 / 修改 360° 球面元数据（2D/3D、180/360）。</li>' +
+      '<li><b>元数据报告</b>：扫描目录，生成所有视频的编码信息与元数据报告。</li>' +
+      '</ul>' +
+      '<p style="margin:0 0 10px;"><b>批量工作流</b></p>' +
+      '<ol style="margin:0 0 12px;padding-left:18px;">' +
+      '<li>在「目录批量导入」中填入或浏览源目录，点击<b>扫描视频</b>，递归遍历出所有媒体文件并列入候选列表（仅列出，不直接成为任务）。</li>' +
+      '<li>在候选列表中<b>勾选</b>要处理的媒体，可全选 / 全不选；下方「输出设置」作为新任务的默认参数。</li>' +
+      '<li>点击<b>将选中添加到任务</b>，把勾选的媒体加入下方「任务列表」队列。</li>' +
+      '<li>在「编码参数」面板设置编码方案、分辨率、码率等；<b>单个</b>任务可勾选后自动载入面板修改，再点<b>应用设置到选中任务</b>批量更新。</li>' +
+      '<li>点「开始转换」启动队列，可逐任务暂停 / 恢复 / 跳过。</li>' +
+      '</ol>' +
+      '<p style="margin:0 0 10px;"><b>输出路径公式</b></p>' +
+      '<p style="margin:0;color:var(--text-muted);">选择「按公式生成」时可使用变量：<code>{name}</code> 源文件名、<code>{ext}</code> 扩展名、<code>{source_dir}</code> 源路径、<code>{parent}</code> 上级文件夹名、<code>{project_dir}</code> 项目输出、<code>{file_date}</code> 文件名日期、<code>{date}</code> / <code>{yyyy}</code> / <code>{mm}</code> / <code>{dd}</code> 当前日期、<code>{time}</code> 时间、<code>{resolution}</code> 分辨率、<code>{profile}</code> 编码预设。点击变量芯片即可插入。</p>' +
+      '</div>';
+  }
+  modal.classList.add('active');
+}
+async function saveSettings() {
+  localStorage.setItem('amap_api_key', document.getElementById('settings_amap_key').value.trim());
+  localStorage.setItem('amap_security', document.getElementById('settings_amap_security').value.trim());
+  const autoLoad = document.getElementById('settings_auto_load').checked;
+  const customFfmpeg = document.getElementById('settings_custom_ffmpeg').value.trim();
+  try {
+    await fetch('/api/settings', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({auto_load_tasks: autoLoad, custom_ffmpeg_path: customFfmpeg})
+    });
+  } catch(e) {}
+  closeSettings();
+  // Re-check codecs if custom ffmpeg path was set
+  if (customFfmpeg) {
+    setTimeout(() => init(), 500);
+  }
+}
+
+function browseCustomFfmpeg() {
+  openFileBrowser('settings_custom_ffmpeg', false, 'exe');
+}
+
+async function testCustomFfmpeg() {
+  const path = document.getElementById('settings_custom_ffmpeg').value.trim();
+  const resultEl = document.getElementById('ffmpegTestResult');
+  if (!path) {
+    resultEl.style.display = 'block';
+    resultEl.innerHTML = '<div style="color:var(--warning);font-size:0.82rem;">请先输入 ffmpeg.exe 路径</div>';
+    return;
+  }
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = '<div style="color:var(--text-muted);font-size:0.82rem;">正在测试...</div>';
+  try {
+    const r = await fetch('/api/test_ffmpeg', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({path: path})
+    });
+    const data = await r.json();
+    if (data.error) {
+      resultEl.innerHTML = '<div style="color:var(--error);font-size:0.82rem;">&#10007; ' + esc(data.error) + '</div>';
+      return;
+    }
+    let html = '<div style="font-size:0.82rem;line-height:1.8;">';
+    html += '<div style="color:var(--success);font-weight:600;">&#10003; ' + esc(data.version || 'ffmpeg detected') + '</div>';
+    const encs = data.encoders || {};
+    const labels = {
+      h264_nvenc: 'H.264 NVENC (NVIDIA)', hevc_nvenc: 'H.265 NVENC (NVIDIA)',
+      h264_qsv: 'H.264 QSV (Intel)', hevc_qsv: 'H.265 QSV (Intel)',
+      h264_amf: 'H.264 AMF (AMD)', hevc_amf: 'H.265 AMF (AMD)',
+    };
+    for (const [key, info] of Object.entries(encs)) {
+      // Support both old format (boolean) and new format ({available, error})
+      const avail = typeof info === 'boolean' ? info : info.available;
+      const err = typeof info === 'boolean' ? '' : (info.error || '');
+      const icon = avail ? '&#10003;' : '&#10007;';
+      const color = avail ? 'var(--success)' : 'var(--text-muted)';
+      let line = '<div style="color:' + color + ';">' + icon + ' ' + esc(labels[key] || key);
+      if (!avail && err) {
+        line += ' <span style="font-size:0.7rem;color:var(--text-muted);">(' + esc(err) + ')</span>';
+      }
+      line += '</div>';
+      html += line;
+    }
+    html += '</div>';
+    resultEl.innerHTML = html;
+  } catch(e) {
+    resultEl.innerHTML = '<div style="color:var(--error);font-size:0.82rem;">&#10007; 测试失败: ' + esc(e.message) + '</div>';
+  }
+}
+
+// ── Task Save/Load ──────────────────────────────────
+async function saveCurrentTasks() {
+  if (batchTasks.length === 0) { alert('当前没有任务可保存'); return; }
+  const params = collectParams();
+  const outMode = document.querySelector('input[name="batchOutMode"]:checked')?.value || 'unified';
+  const items = batchTasks.map(t => ({
+    input: t.path,
+    output: t.output || t.custom_output || '',
+    name: t.name,
+    custom_output: t.custom_output || '',
+    is_merge: t.is_merge || false,
+    inputs: t.inputs || null,
+    is_manual: t.is_manual || false,
+    size_mb: t.size_mb,
+    size_str: t.size_str,
+    dir: t.dir,
+    date_in_name: t.date_in_name,
+    // Per-task export params + output config (task-list-centric)
+    params: t.params || params,
+    out_mode: t.out_mode || outMode,
+    out_dir: t.out_dir || '',
+    formula: t.formula || '',
+    project_dir: t.project_dir || ''
+  }));
+  const data = {
+    mode: 'batch',
+    items: items,
+    params: params,
+    batch_formula: document.getElementById('batchFormula')?.value || '',
+    batch_out_dir: document.getElementById('batchOutDir')?.value || '',
+    project_dir: document.getElementById('projectDir')?.value || '',
+  };
+  try {
+    const r = await fetch('/api/tasks/save', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(data)
+    });
+    const result = await r.json();
+    if (result.ok) {
+      alert(`任务已保存 (${batchTasks.length} 个文件)`);
+    } else {
+      alert('保存失败: ' + (result.error || '未知错误'));
+    }
+  } catch(e) {
+    alert('保存失败: ' + e.message);
+  }
+}
+
+async function loadSavedTasks() {
+  try {
+    const r = await fetch('/api/tasks/load');
+    if (!r.ok) {
+      const err = await r.json();
+      alert('无保存的任务: ' + (err.error || ''));
+      return;
+    }
+    const data = await r.json();
+    if (!data.items || data.items.length === 0) {
+      alert('保存的任务为空');
+      return;
+    }
+    // Restore task list from saved items (each carries its own params + output config)
+    batchTasks = data.items.map(item => {
+      const path = item.input || item.path || '';
+      const name = item.name || path.split(/[\/\\]/).pop() || '';
+      const dir = item.dir || path.split(/[\/\\]/).slice(0, -1).join('\\');
+      return {
+        path: path,
+        name: name,
+        dir: dir,
+        size_str: item.size_str || null,
+        size_mb: item.size_mb || 0,
+        date_in_name: item.date_in_name || null,
+        is_merge: item.is_merge || false,
+        inputs: item.inputs || null,
+        is_manual: item.is_manual || false,
+        custom_output: item.custom_output || '',
+        params: item.params || {},
+        out_mode: item.out_mode || 'unified',
+        out_dir: item.out_dir || '',
+        formula: item.formula || '',
+        project_dir: item.project_dir || '',
+        output: item.output || item.custom_output || '',
+        skipped: false, ok: null, error: null
+      };
+    });
+    // Re-extract dates if missing
+    for (const t of batchTasks) {
+      if (!t.date_in_name && t.name) {
+        try {
+          const dr = await fetch('/api/extract_date', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({filename: t.name})
+          });
+          const d = await dr.json();
+          t.date_in_name = d.date_str;
+        } catch(e) {}
+      }
+    }
+    // Restore global output defaults (used for NEW tasks) from the saved file
+    if (data.params) {
+      applyParams({...DEFAULT_PARAMS, ...data.params});
+    }
+    if (data.batch_formula) document.getElementById('batchFormula').value = data.batch_formula;
+    if (data.batch_out_dir) document.getElementById('batchOutDir').value = data.batch_out_dir;
+    if (data.project_dir) document.getElementById('projectDir').value = data.project_dir;
+    // Set global output-mode radio to the first non-manual task's mode (no bulk-apply)
+    const firstMode = batchTasks.find(t => !t.custom_output)?.out_mode || 'unified';
+    const radio = document.querySelector(`input[name="batchOutMode"][value="${firstMode}"]`);
+    if (radio) radio.checked = true;
+    document.getElementById('unifiedOutput').classList.toggle('hidden', firstMode !== 'unified');
+    document.getElementById('formulaOutput').classList.toggle('hidden', firstMode !== 'formula');
+    document.getElementById('scanCount').textContent = `${batchTasks.length} 个文件`;
+    await recomputeOutputs();
+    alert(`已加载 ${batchTasks.length} 个文件的任务列表`);
+  } catch(e) {
+    alert('加载失败: ' + e.message);
+  }
+}
+
+// ── Collect Params from UI ─────────────────────────
+function collectParams() {
+  const params = {
+    codec: val('p_codec'),
+    resolution: val('p_resolution'), profile: val('p_profile'),
+    level: val('p_level'), pix_fmt: val('p_pix_fmt'),
+    color_range: val('p_color_range'), color_space: val('p_color_space'),
+    color_primaries: val('p_color_space') === 'bt2020nc' ? 'bt2020' : 'bt709',
+    color_trc: val('p_color_space') === 'bt2020nc' ? 'smpte2084' : 'bt709',
+    bf: num('p_bf'), refs: num('p_refs'), gop: num('p_gop'),
+    rate_mode: val('p_rate_mode'), crf: num('p_crf'),
+    maxrate: val('p_maxrate'), bufsize: val('p_bufsize'),
+    target_bitrate: val('p_target_bitrate'),
+    preset: val('p_preset'), x264_params: val('p_x264_params'),
+    x265_params: val('p_x265_params'),
+    audio_bitrate: val('p_audio_bitrate'),
+    audio_sample_rate: val('p_audio_sample_rate'),
+    audio_channels: num('p_audio_channels'),
+    audio_profile: val('p_audio_profile'),
+    brand: val('p_brand'),
+    faststart: document.getElementById('p_faststart').checked,
+    inject_spherical: document.getElementById('p_inject_spherical').checked,
+    pano_type: (function(){ var m=val('p_spherical_mode')||'360-mono'; var i=m.indexOf('-'); return m.substring(0,i); })(),
+    stereo_mode: (function(){ var m=val('p_spherical_mode')||'360-mono'; var i=m.indexOf('-'); return m.substring(i+1); })(),
+    // Date metadata
+    date_from_filename: document.getElementById('p_date_from_filename').checked,
+    set_creation_time: document.getElementById('p_set_creation_time').checked,
+    set_file_created: document.getElementById('p_set_file_created').checked,
+    set_file_modified: document.getElementById('p_set_file_modified').checked,
+    manual_date: val('p_manual_date'),
+    // Location metadata
+    set_location: document.getElementById('p_set_location').checked,
+    location_name: val('p_location_name'),
+    location_lat: val('p_location_lat'),
+    location_lon: val('p_location_lon'),
+    amap_api_key: getAmapKey(),
+  };
+  // Test encoding duration
+  const testCb = document.getElementById('testEncode');
+  if (testCb && testCb.checked) {
+    params.test_duration = parseInt(document.getElementById('testDuration').value) || 10;
+  }
+  return params;
+}
+function val(id) { return document.getElementById(id).value; }
+function num(id) { return parseInt(document.getElementById(id).value) || 0; }
+
+function toggleTestEncode() {
+  const cb = document.getElementById('testEncode');
+  const field = document.getElementById('testDurationField');
+  if (cb.checked) {
+    field.classList.remove('hidden');
+    field.style.display = 'flex';
+  } else {
+    field.classList.add('hidden');
+    field.style.display = 'none';
+  }
+}
+
+// ── Apply Params to UI ─────────────────────────────
+function applyParams(p) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('p_codec', p.codec || 'libx264');
+  set('p_resolution', p.resolution); set('p_profile', p.profile);
+  set('p_level', p.level); set('p_pix_fmt', p.pix_fmt);
+  set('p_color_range', p.color_range); set('p_color_space', p.color_space);
+  set('p_bf', p.bf); set('p_refs', p.refs); set('p_gop', p.gop);
+  set('p_rate_mode', p.rate_mode); set('p_crf', p.crf);
+  set('p_maxrate', p.maxrate); set('p_bufsize', p.bufsize);
+  set('p_target_bitrate', p.target_bitrate);
+  set('p_preset', p.preset); set('p_x264_params', p.x264_params);
+  set('p_x265_params', p.x265_params || '');
+  set('p_audio_bitrate', p.audio_bitrate);
+  set('p_audio_sample_rate', p.audio_sample_rate);
+  set('p_audio_channels', p.audio_channels);
+  set('p_audio_profile', p.audio_profile);
+  set('p_brand', p.brand);
+  document.getElementById('p_faststart').checked = p.faststart;
+  document.getElementById('p_inject_spherical').checked = p.inject_spherical;
+  set('p_spherical_mode', (p.pano_type || '360') + '-' + (p.stereo_mode || 'mono'));
+  // Date
+  document.getElementById('p_date_from_filename').checked = p.date_from_filename || false;
+  document.getElementById('p_set_creation_time').checked = p.set_creation_time !== false;
+  document.getElementById('p_set_file_created').checked = p.set_file_created !== false;
+  document.getElementById('p_set_file_modified').checked = p.set_file_modified !== false;
+  set('p_manual_date', p.manual_date || '');
+  // Location
+  document.getElementById('p_set_location').checked = p.set_location || false;
+  set('p_location_name', p.location_name || '');
+  set('p_location_lat', p.location_lat || '');
+  set('p_location_lon', p.location_lon || '');
+  // Test-encode toggle (global action bar control) — restore from task params
+  const te = document.getElementById('testEncode');
+  const td = document.getElementById('testDuration');
+  if (te && td) {
+    if (p.test_duration) { te.checked = true; td.value = p.test_duration; }
+    else { te.checked = false; }
+    toggleTestEncode();
+  }
+  // Update UI state
+  onCodecChange();
+  toggleRateMode();
+  updateDatePreview();
+  toggleLocation();
+}
+
+// ── Presets ─────────────────────────────────────────
+async function refreshPresets() {
+  const r = await fetch('/api/presets');
+  const data = await r.json();
+  const sel = document.getElementById('presetSelect');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">&mdash; 选择预设 &mdash;</option>';
+  data.presets.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.name;
+    opt.textContent = p.name;
+    sel.appendChild(opt);
+  });
+  if (cur) sel.value = cur;
+}
+
+async function loadPreset() {
+  const name = document.getElementById('presetSelect').value;
+  if (!name) return;
+  const r = await fetch('/api/presets');
+  const data = await r.json();
+  const preset = data.presets.find(p => p.name === name);
+  if (preset) {
+    applyParams({...DEFAULT_PARAMS, ...preset.params});
+    if (preset.batch_formula) {
+      document.getElementById('batchFormula').value = preset.batch_formula;
+    }
+    if (preset.project_dir) {
+      const pdEl = document.getElementById('projectDir');
+      if (pdEl) pdEl.value = preset.project_dir;
+    }
+  }
+}
+
+async function savePresetDialog() {
+  const name = prompt('预设名称:');
+  if (!name) return;
+  const params = collectParams();
+  const formula = document.getElementById('batchFormula').value;
+  const projectDir = document.getElementById('projectDir')?.value || '';
+  await fetch('/api/presets', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, params, batch_formula: formula, project_dir: projectDir})
+  });
+  await refreshPresets();
+  document.getElementById('presetSelect').value = name;
+}
+
+async function deletePreset() {
+  const name = document.getElementById('presetSelect').value;
+  if (!name || !confirm(`删除预设 "${name}"?`)) return;
+  await fetch(`/api/presets/${encodeURIComponent(name)}`, {method: 'DELETE'});
+  await refreshPresets();
+}
+
+// ── Native File Dialogs ─────────────────────────────
+// Uses Windows native file dialogs via backend API.
+// Remembers last-used paths separately for open and save dialogs.
+
+async function openFileBrowser(targetId, isDir, fileFilter) {
+  const dialogType = isDir ? 'open_dir' : 'open_file';
+  const title = isDir ? '选择文件夹' : '选择文件';
+  // Pass current input value as initial_dir so dialog opens at the user's typed path
+  const el = document.getElementById(targetId);
+  const currentVal = el ? el.value.trim() : '';
+  try {
+    const r = await fetch('/api/native_dialog', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        type: dialogType,
+        title: title,
+        file_filter: fileFilter || '',
+        path_type: 'open',
+        initial_dir: currentVal || ''
+      })
+    });
+    const data = await r.json();
+    if (data.error) { alert(data.error); return; }
+    if (data.path) {
+      if (el) {
+        el.value = data.path;
+        // Trigger change event for any listeners
+        el.dispatchEvent(new Event('change', {bubbles: true}));
+      }
+      if (targetId === 'singleInput') {
+        updateSingleDatePreview();
+        // Clear output path since the filename no longer matches
+        const outEl = document.getElementById('singleOutput');
+        if (outEl) outEl.value = '';
+      }
+      if (targetId === 'metaInput') {
+        // Clear output path when input changes
+        const outEl = document.getElementById('metaOutput');
+        if (outEl) outEl.value = '';
+      }
+    }
+  } catch(e) {
+    alert('打开文件对话框失败: ' + e.message);
+  }
+}
+
+async function openSaveDialog(defaultName, callback, fileFilter) {
+  try {
+    const r = await fetch('/api/native_dialog', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        type: 'save_file',
+        title: '选择保存位置',
+        file_filter: fileFilter || 'txt',
+        default_name: defaultName || '',
+        path_type: 'save'
+      })
+    });
+    const data = await r.json();
+    if (data.error) { alert(data.error); return; }
+    if (data.path && callback) {
+      callback(data.path);
+    }
+  } catch(e) {
+    alert('打开保存对话框失败: ' + e.message);
+  }
+}
+
+// ── Single File Output Save Dialog ─────────────────
+async function openSingleOutputDialog(targetId) {
+  // If targetId is provided, use it instead of the default 'singleOutput'
+  const tid = targetId || 'singleOutput';
+  const inpEl = document.getElementById(tid === 'mergeOutput' ? 'mergeOutput' : 'singleInput');
+  let defaultName = '';
+  if (inpEl && inpEl.value && tid !== 'mergeOutput') {
+    // Use the input filename as the default output name
+    defaultName = inpEl.value.split(/[\\/]/).pop();
+  }
+  await openSaveDialog(defaultName, function(path) {
+    const el = document.getElementById(tid);
+    if (el) {
+      el.value = path;
+      el.dispatchEvent(new Event('change', {bubbles: true}));
+    }
+  }, 'video');
+}
+
+// ── Meta Output Save Dialog ────────────────────────
+async function openMetaOutputDialog() {
+  const inp = document.getElementById('metaInput').value;
+  let defaultName = '';
+  if (inp) {
+    defaultName = inp.split(/[\\/]/).pop();
+  }
+  await openSaveDialog(defaultName, function(path) {
+    const el = document.getElementById('metaOutput');
+    if (el) {
+      el.value = path;
+      el.dispatchEvent(new Event('change', {bubbles: true}));
+    }
+  }, 'video');
+}
+
+// ── Batch model: task-list-centric ────────────────
+// Each entry in batchTasks carries its OWN export params + output config,
+// so every row is independent (no shared parameter set).
+
+function buildTaskConfig() {
+  const mode = document.querySelector('input[name="batchOutMode"]:checked')?.value || 'unified';
+  return {
+    params: JSON.parse(JSON.stringify(collectParams())),
+    out_mode: mode,
+    out_dir: document.getElementById('batchOutDir')?.value || '',
+    formula: document.getElementById('batchFormula')?.value || '',
+    project_dir: document.getElementById('projectDir')?.value || '',
+  };
+}
+
+function makeTask(file, cfg) {
+  return {
+    path: file.path,
+    name: file.name,
+    dir: file.dir || '',
+    size_str: file.size_str || null,
+    size_mb: file.size_mb || 0,
+    date_in_name: file.date_in_name || null,
+    is_merge: file.is_merge || false,
+    inputs: file.inputs || null,
+    is_manual: file.is_manual || false,
+    custom_output: file.custom_output || '',
+    params: JSON.parse(JSON.stringify(cfg.params)),
+    out_mode: cfg.out_mode,
+    out_dir: cfg.out_dir,
+    formula: cfg.formula,
+    project_dir: cfg.project_dir,
+    output: '',
+    skipped: false,
+    ok: null,
+    error: null
+  };
+}
+
+// ── Scan Directory -> Candidate List ──────────────
+async function scanDirectory() {
+  const dir = document.getElementById('batchDir').value.trim();
+  if (!dir) { alert('请先选择扫描路径'); return; }
+  const r = await fetch('/api/scan', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({directory: dir, recursive: true})
+  });
+  const data = await r.json();
+  const files = data.files || [];
+  // Directory import is decoupled from the task list: just collect media candidates.
+  const existing = new Set(importCandidates.map(c => c.path));
+  let added = 0;
+  for (const f of files) {
+    if (!existing.has(f.path)) {
+      importCandidates.push({
+        path: f.path,
+        name: f.name,
+        dir: f.dir || '',
+        size_str: f.size_str || null,
+        size_mb: f.size_mb || 0,
+        date_in_name: f.date_in_name || null
+      });
+      added++;
+    }
+  }
+  document.getElementById('scanCountSrc').textContent = `${importCandidates.length} 个媒体`;
+  renderImportList();
+  if (files.length === 0 && data.message) {
+    alert(data.message);
+  }
+}
+
+function renderImportList() {
+  const tbody = document.getElementById('importCandidatesBody');
+  if (importCandidates.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">扫描目录后，遍历到的所有媒体文件将列在此处</td></tr>';
+    updateImportCount();
+    return;
+  }
+  tbody.innerHTML = importCandidates.map((c, i) => {
+    const escapedPath = (c.dir || '').replace(/</g, '&lt;');
+    const dateInName = c.date_in_name ? `<span style="color:var(--success);">&#128197; ${c.date_in_name.split('T')[0]}</span>` : '<span style="color:var(--text-muted);">&mdash;</span>';
+    const sizeDisplay = c.size_str || c.size_mb || '--';
+    return `<tr>
+      <td><input type="checkbox" class="import-check" data-idx="${i}" checked onchange="updateImportCount()"></td>
+      <td>${i+1}</td>
+      <td>${c.name}</td>
+      <td title="${escapedPath}" style="max-width:320px;overflow:hidden;text-overflow:ellipsis;font-size:0.78rem;color:var(--text-muted);">${escapedPath}</td>
+      <td>${sizeDisplay} ${c.size_str ? '' : 'MB'}</td>
+      <td>${dateInName}</td>
+    </tr>`;
+  }).join('');
+  updateImportCount();
+}
+
+function updateImportCount() {
+  const checked = document.querySelectorAll('.import-check:checked').length;
+  const el = document.getElementById('importCount');
+  if (el) el.textContent = `已选 ${checked} / 共 ${importCandidates.length} 个媒体`;
+}
+
+function selectAllImport(checked) {
+  document.querySelectorAll('.import-check').forEach(cb => { cb.checked = checked; });
+  const sa = document.getElementById('importSelectAll');
+  if (sa) sa.checked = checked;
+  updateImportCount();
+}
+
+// Multi-select candidates -> batch task list (snapshots current encoding + output settings)
+async function addSelectedToTasks() {
+  const cfg = buildTaskConfig();
+  const selected = [];
+  importCandidates.forEach((c, i) => {
+    const cb = document.querySelector(`.import-check[data-idx="${i}"]`);
+    if (cb && cb.checked) selected.push(c);
+  });
+  if (selected.length === 0) { alert('请先在上方勾选要添加的媒体文件'); return; }
+  const existing = new Set(batchTasks.map(t => t.path));
+  let added = 0;
+  for (const c of selected) {
+    if (!existing.has(c.path)) {
+      batchTasks.push(makeTask(c, cfg));
+      added++;
+    }
+  }
+  document.getElementById('scanCount').textContent = `${batchTasks.length} 个任务`;
+  await recomputeOutputs();
+  showToast(`已添加 ${added} 个任务（共 ${batchTasks.length} 个）`, 'success');
+}
+
+function renderBatchTable() {
+  const tbody = document.getElementById('batchTableBody');
+  const sc = document.getElementById('scanCount');
+  if (sc) sc.textContent = `${batchTasks.length} 个任务`;
+  if (batchTasks.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);">将媒体文件添加到任务后显示任务列表</td></tr>';
+    updateQueueCount();
+    return;
+  }
+  tbody.innerHTML = batchTasks.map((t, i) => {
+    const escaped = (t.output || '').replace(/</g, '&lt;');
+    const dateInName = t.date_in_name ? `<span style="color:var(--success);">&#128197; ${t.date_in_name.split('T')[0]}</span>` : '<span style="color:var(--text-muted);">&mdash;</span>';
+    const manualBadge = t.is_manual ? ' <span class="badge badge-accent" style="font-size:0.65rem;padding:1px 6px;">手动</span>' : '';
+    const mergeIcon = t.is_merge ? '🔀 ' : '';
+    const sizeDisplay = t.size_str || t.size_mb || '--';
+    const paramsSummary = summarizeParams(t);
+    return `<tr>
+      <td><input type="checkbox" class="batch-check" data-idx="${i}" checked onchange="onTaskCheckChange()"></td>
+      <td>${i+1}</td>
+      <td title="${t.path}">${mergeIcon}${t.name}${manualBadge}<br><small style="color:var(--text-muted);">${t.dir}</small></td>
+      <td>${sizeDisplay} ${t.size_str ? '' : 'MB'}</td>
+      <td>${dateInName}</td>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis" title="${escaped}">${escaped || '&mdash;'}</td>
+      <td style="font-size:0.72rem;line-height:1.4;">${paramsSummary}</td>
+      <td class="status-cell"><span class="status-dot status-pending"></span></td>
+      <td class="time-cell" style="font-size:0.75rem;color:var(--text-muted);">&mdash;</td>
+      <td><button class="btn btn-sm btn-danger" onclick="removeBatchItem(${i})" title="移除">&#10005;</button></td>
+    </tr>`;
+  }).join('');
+  updateQueueCount();
+}
+
+function summarizeParams(t) {
+  const p = t.params || {};
+  const codecMap = {libx264:'H.264', libx265:'H.265', h264_nvenc:'NVENC H.264', hevc_nvenc:'NVENC H.265', h264_qsv:'QSV H.264', hevc_qsv:'QSV H.265', h264_amf:'AMF H.264', hevc_amf:'AMF H.265'};
+  const codec = t.custom_output ? '手动' : (codecMap[p.codec] || p.codec || '?');
+  const res = p.resolution || '';
+  let pano = '';
+  if (p.inject_spherical) {
+    const pt = p.pano_type || '360';
+    const sm = p.stereo_mode || 'mono';
+    const ptLabel = pt === '180' ? '180°' : pt === '360' ? '360°' : pt;
+    const smLabel = sm === 'mono' ? '单目' : sm === 'left-right' ? '左右' : sm === 'top-bottom' ? '上下' : sm;
+    pano = ' · ' + ptLabel + smLabel;
+  }
+  const test = p.test_duration ? ' · 测试' : '';
+  const outMode = t.custom_output ? '固定' : (t.out_mode === 'formula' ? '公式' : '统一');
+  return `${codec} · ${res} · ${outMode}${pano}${test}`;
+}
+
+function updateQueueCount() {
+  const checked = document.querySelectorAll('.batch-check:checked').length;
+  const el = document.getElementById('queueCount');
+  if (el) el.textContent = `${checked} 已选`;
+}
+
+function selectAllBatch(checked) {
+  document.querySelectorAll('.batch-check').forEach(cb => { cb.checked = checked; });
+  const selectAll = document.getElementById('batchSelectAll');
+  if (selectAll) selectAll.checked = checked;
+  updateQueueCount();
+}
+
+async function removeBatchItem(idx) {
+  batchTasks.splice(idx, 1);
+  renderBatchTable();
+  await recomputeOutputs();
+}
+
+async function removeUnselectedBatch() {
+  batchTasks = batchTasks.filter((t, i) => {
+    const cb = document.querySelector(`.batch-check[data-idx="${i}"]`);
+    return cb && cb.checked;
+  });
+  renderBatchTable();
+  await recomputeOutputs();
+}
+
+// When exactly one task is checked, load its config into the encoding panel + output controls
+function onTaskCheckChange() {
+  updateQueueCount();
+  const checked = [...document.querySelectorAll('.batch-check:checked')];
+  if (checked.length === 1) {
+    const idx = parseInt(checked[0].dataset.idx);
+    const t = batchTasks[idx];
+    if (t) loadTaskIntoEditor(t);
+  }
+}
+
+function loadTaskIntoEditor(t) {
+  // Encoding params -> the shared encoding panel (no modal)
+  applyParams({...DEFAULT_PARAMS, ...(t.params || {})});
+  // Output config -> the import-panel "batch param settings"
+  if (!t.custom_output) {
+    const radio = document.querySelector(`input[name="batchOutMode"][value="${t.out_mode || 'unified'}"]`);
+    if (radio) radio.checked = true;
+    document.getElementById('batchOutDir').value = t.out_dir || '';
+    document.getElementById('batchFormula').value = t.formula || '';
+    document.getElementById('projectDir').value = t.project_dir || '';
+    toggleBatchOutMode();
+  }
+}
+
+async function removeSelectedTasks() {
+  const checked = [...document.querySelectorAll('.batch-check:checked')];
+  if (checked.length === 0) { alert('请先勾选要移除的任务'); return; }
+  const idxs = checked.map(cb => parseInt(cb.dataset.idx)).sort((a, b) => b - a);
+  for (const i of idxs) batchTasks.splice(i, 1);
+  renderBatchTable();
+  await recomputeOutputs();
+}
+
+// ── Per-task output recompute ─────────────────────
+async function recomputeOutputs() {
+  // Unified & manual are computed synchronously
+  batchTasks.forEach(t => {
+    if (t.custom_output) {
+      t.output = t.custom_output;
+    } else if (t.out_mode === 'unified') {
+      t.output = t.out_dir ? `${t.out_dir}\\${t.name}` : '';
+    }
+  });
+  // Formula tasks: group by (formula, project_dir, params) to minimize API calls
+  const groups = {};
+  batchTasks.forEach(t => {
+    if (!t.custom_output && t.out_mode === 'formula') {
+      const key = JSON.stringify({f: t.formula, p: t.project_dir, pr: t.params});
+      (groups[key] = groups[key] || []).push(t);
+    }
+  });
+  for (const key of Object.keys(groups)) {
+    const grp = groups[key];
+    try {
+      const r = await fetch('/api/preview_formula', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({formula: grp[0].formula, params: grp[0].params, files: grp.map(t => t.path), project_dir: grp[0].project_dir})
+      });
+      const data = await r.json();
+      grp.forEach((t, k) => { t.output = (data.results[k] && data.results[k].output) || ''; });
+    } catch(e) {
+      grp.forEach(t => { t.output = ''; });
+    }
+  }
+  renderBatchTable();
+}
+
+// ── Batch Output Mode (default for NEW tasks) ──────
+function toggleBatchOutMode() {
+  const mode = document.querySelector('input[name="batchOutMode"]:checked').value;
+  document.getElementById('unifiedOutput').classList.toggle('hidden', mode !== 'unified');
+  document.getElementById('formulaOutput').classList.toggle('hidden', mode !== 'formula');
+}
+
+// Apply the current encoding panel + output controls to all selected tasks (multi-select batch edit).
+async function applySettingsToSelected() {
+  const checked = [...document.querySelectorAll('.batch-check:checked')];
+  if (checked.length === 0) { alert('请先勾选要更新的任务'); return; }
+  const params = collectParams();
+  const outMode = document.querySelector('input[name="batchOutMode"]:checked')?.value || 'unified';
+  const outDir = document.getElementById('batchOutDir')?.value || '';
+  const formula = document.getElementById('batchFormula')?.value || '';
+  const projectDir = document.getElementById('projectDir')?.value || '';
+  let updated = 0;
+  for (const cb of checked) {
+    const idx = parseInt(cb.dataset.idx);
+    const t = batchTasks[idx];
+    if (!t) continue;
+    t.params = JSON.parse(JSON.stringify(params));
+    if (!t.custom_output) {
+      t.out_mode = outMode;
+      t.out_dir = outDir;
+      t.formula = formula;
+      t.project_dir = projectDir;
+    }
+    updated++;
+  }
+  await recomputeOutputs();
+  showToast(`已应用设置到 ${updated} 个任务`, 'success');
+}
+
+function insertVar(v) {
+  const input = document.getElementById('batchFormula');
+  const start = input.selectionStart;
+  input.value = input.value.slice(0, start) + v + input.value.slice(input.selectionEnd);
+  input.focus();
+  input.setSelectionRange(start + v.length, start + v.length);
+}
+
+// ── Add to Batch Queue ────────────────────────────────
+function addToBatchQueue() {
+  const cfg = buildTaskConfig();
+  if (currentMode === 'single') {
+    const inp = document.getElementById('singleInput').value.trim();
+    const out = document.getElementById('singleOutput').value.trim();
+    if (!inp) { alert('请先选择源文件'); return; }
+    if (!out) { alert('请先选择输出文件路径'); return; }
+
+    const parts = inp.split(/[\\/]/);
+    const name = parts.pop();
+    const dir = parts.join('\\');
+
+    batchTasks.push(makeTask({
+      path: inp, name: name, dir: dir,
+      size_str: '--', size_mb: 0, date_in_name: null,
+      is_manual: true, custom_output: out
+    }, cfg));
+
+    document.getElementById('scanCount').textContent = `${batchTasks.length} 个文件`;
+    renderBatchTable();
+    showToast(`已添加到批量队列（共 ${batchTasks.length} 项）`, 'success');
+    switchMode('batch');
+
+  } else if (currentMode === 'merge') {
+    if (mergeFiles.length < 2) { alert('合并转换至少需要选择2个文件'); return; }
+    const out = document.getElementById('mergeOutput').value.trim();
+    if (!out) { alert('请先选择输出文件路径'); return; }
+
+    const inputPaths = mergeFiles.map(f => f.path);
+    const inputNames = mergeFiles.map(f => f.name);
+    const displayName = `🔀 合并 ${inputNames.length} 个文件`;
+
+    batchTasks.push(makeTask({
+      path: inputPaths[0], name: displayName, dir: inputNames.join(' + '),
+      size_str: '--', size_mb: 0, date_in_name: null,
+      is_merge: true, inputs: inputPaths, is_manual: true, custom_output: out
+    }, cfg));
+
+    document.getElementById('scanCount').textContent = `${batchTasks.length} 个文件`;
+    renderBatchTable();
+    showToast(`已添加合并任务到批量队列（共 ${batchTasks.length} 项）`, 'success');
+    switchMode('batch');
+  }
+}
+
+function showToast(msg, type) {
+  let toast = document.getElementById('toastNotification');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'toastNotification';
+    toast.style.cssText = 'position:fixed;top:20px;right:20px;z-index:100001;padding:14px 24px;border-radius:10px;font-size:0.9rem;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,0.3);transition:opacity 0.3s,transform 0.3s;opacity:0;transform:translateY(-10px);';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.background = type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--danger)' : 'var(--accent)';
+  toast.style.color = '#fff';
+  toast.style.opacity = '1';
+  toast.style.transform = 'translateY(0)';
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-10px)';
+  }, 2500);
+}
+
+// ── Merge Mode ───────────────────────────────────────
+let mergeFiles = [];
+
+async function addMergeFiles() {
+  // Use the directory of the last added file as initial dir
+  let initialDir = '';
+  if (mergeFiles.length > 0) {
+    const lastPath = mergeFiles[mergeFiles.length - 1].path;
+    const parts = lastPath.split(/[\\/]/);
+    parts.pop();
+    initialDir = parts.join('\\');
+  }
+  try {
+    const r = await fetch('/api/native_dialog', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        type: 'open_files',
+        title: '选择要合并的视频文件',
+        file_filter: 'video',
+        path_type: 'merge',
+        initial_dir: initialDir
+      })
+    });
+    const data = await r.json();
+    if (data.error) { alert(data.error); return; }
+    if (data.paths && data.paths.length > 0) {
+      for (const p of data.paths) {
+        mergeFiles.push({path: p, name: p.split(/[\\/]/).pop()});
+      }
+      renderMergeTable();
+    }
+  } catch(e) {
+    alert('打开文件对话框失败: ' + e.message);
+  }
+}
+
+function renderMergeTable() {
+  const tbody = document.getElementById('mergeTableBody');
+  if (mergeFiles.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px;">点击"添加文件"选择要合并的视频</td></tr>';
+    return;
+  }
+  tbody.innerHTML = mergeFiles.map((f, i) => {
+    let sizeStr = '';
+    // We don't have size info from the dialog, so we'll skip it
+    return `<tr>
+      <td>${i+1}</td>
+      <td title="${f.path}">${f.name}<br><small style="color:var(--text-muted);">${f.path}</small></td>
+      <td style="color:var(--text-muted);">--</td>
+      <td>
+        <button class="btn btn-sm" onclick="moveMergeItem(${i},-1)" title="上移" ${i===0?'disabled':''}>&#8593;</button>
+        <button class="btn btn-sm" onclick="moveMergeItem(${i},1)" title="下移" ${i===mergeFiles.length-1?'disabled':''}>&#8595;</button>
+        <button class="btn btn-sm btn-danger" onclick="removeMergeItem(${i})" title="移除">&#10005;</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function moveMergeItem(idx, dir) {
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= mergeFiles.length) return;
+  [mergeFiles[idx], mergeFiles[newIdx]] = [mergeFiles[newIdx], mergeFiles[idx]];
+  renderMergeTable();
+}
+
+function removeMergeItem(idx) {
+  mergeFiles.splice(idx, 1);
+  renderMergeTable();
+}
+
+function clearMergeList() {
+  mergeFiles = [];
+  renderMergeTable();
+}
+
+// ── Start Conversion ────────────────────────────────
+async function startConversion() {
+  const params = collectParams();
+  let items = [];
+
+  if (currentMode === 'single') {
+    const inp = document.getElementById('singleInput').value;
+    const out = document.getElementById('singleOutput').value;
+    if (!inp || !out) { alert('请选择源文件和输出文件'); return; }
+    // singleOutput now contains the full output file path from the save dialog
+    items = [{input: inp, output: out}];
+  } else if (currentMode === 'merge') {
+    if (mergeFiles.length < 2) { alert('合并转换至少需要选择2个文件'); return; }
+    const out = document.getElementById('mergeOutput').value;
+    if (!out) { alert('请选择输出文件'); return; }
+    items = [{inputs: mergeFiles.map(f => f.path), output: out}];
+  } else {
+    if (batchTasks.length === 0) { alert('请先扫描'); return; }
+    // Recompute outputs from each task's own config (await to finalize)
+    await recomputeOutputs();
+    const selected = [];
+    batchTasks.forEach((t, i) => {
+      const cb = document.querySelector(`.batch-check[data-idx="${i}"]`);
+      if (cb && cb.checked) selected.push(t);
+    });
+    if (selected.length === 0) { alert('请至少勾选一个文件'); return; }
+
+    for (const t of selected) {
+      if (t.custom_output) {
+        // Manual / merge tasks: fixed output, still carry their own params
+        if (t.is_merge && t.inputs) {
+          items.push({inputs: t.inputs, output: t.custom_output, params: t.params});
+        } else {
+          items.push({input: t.path, output: t.custom_output, params: t.params});
+        }
+      } else {
+        if (!t.output) {
+          alert(`任务「${t.name}」的输出路径为空，请检查输出设置`);
+          return;
+        }
+        items.push({input: t.path, output: t.output, params: t.params});
+      }
+    }
+  }
+
+  const r = await fetch('/api/convert', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({mode: currentMode, params, items})
+  });
+  const data = await r.json();
+  if (data.error) { alert(data.error); return; }
+
+  jobId = data.job_id;
+  isPaused = false;
+  document.getElementById('startBtn').disabled = true;
+  document.getElementById('cancelBtn').style.display = '';
+  document.getElementById('pauseBtn').style.display = '';
+  updatePauseButtonUI();
+  document.getElementById('progressLabel').textContent = '转换中...';
+  document.getElementById('overallProgress').classList.remove('success');
+  // Reset time info display
+  const encodeTimeInfo = document.getElementById('encodeTimeInfo');
+  if (encodeTimeInfo) { encodeTimeInfo.style.display = 'none'; encodeTimeInfo.classList.remove('success'); }
+  const exportLogBtn = document.getElementById('exportLogBtn');
+  if (exportLogBtn) exportLogBtn.style.display = '';
+  startPolling();
+}
+
+async function cancelConversion() {
+  if (!jobId) return;
+  await fetch(`/api/cancel/${jobId}`, {method: 'POST'});
+}
+
+let isPaused = false;
+async function togglePause() {
+  if (!jobId) return;
+  if (isPaused) {
+    await fetch(`/api/resume/${jobId}`, {method: 'POST'});
+    isPaused = false;
+  } else {
+    await fetch(`/api/pause/${jobId}`, {method: 'POST'});
+    isPaused = true;
+  }
+}
+
+function updatePauseButtonUI() {
+  const pauseBtn = document.getElementById('pauseBtn');
+  const metaPauseBtn = document.getElementById('metaPauseBtn');
+  const label = isPaused ? '&#9654; 恢复' : '&#9208; 暂停';
+  if (pauseBtn) pauseBtn.innerHTML = label;
+  if (metaPauseBtn) metaPauseBtn.innerHTML = label;
+}
+
+async function skipItem(idx) {
+  if (!jobId) return;
+  await fetch(`/api/item/${jobId}/${idx}/skip`, {method: 'POST'});
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(pollStatus, 500);
+}
+
+async function pollStatus() {
+  if (!jobId) return;
+  const r = await fetch(`/api/status/${jobId}`);
+  const data = await r.json();
+  if (data.error) { stopPolling(); return; }
+
+  const nowSec = Date.now() / 1000;
+
+  document.getElementById('overallProgress').style.width = `${data.overall_progress}%`;
+  document.getElementById('progressPercent').textContent = `${Math.round(data.overall_progress)}%`;
+  document.getElementById('fileProgress').style.width = `${data.file_progress}%`;
+  document.getElementById('fileProgressPercent').textContent = `${Math.round(data.file_progress)}%`;
+
+  if (data.current_input) {
+    const fname = data.current_input.split(/[\/\\]/).pop();
+    document.getElementById('currentFileLabel').textContent = `[${data.current_index+1}/${data.total}] ${fname}`;
+  }
+
+  updateTimeInfo('encode', data, nowSec);
+
+  const logBox = document.getElementById('logBox');
+  logBox.innerHTML = data.log.slice(-100).map(l =>
+    `<div class="log-line"><span class="log-ts">${l.ts}</span><span class="log-msg ${l.level}">${esc(l.msg)}</span></div>`
+  ).join('');
+  logBox.scrollTop = logBox.scrollHeight;
+
+  if (currentMode === 'batch') {
+    const tbody = document.getElementById('batchTableBody');
+    data.items.forEach((item, i) => {
+      const row = tbody.rows[i];
+      if (!row) return;
+      renderItemStatus(row.cells[7], row.cells[9], item, i, data, isPaused);
+      updateItemTimeInfo(row, item, i, data, nowSec);
+    });
+  }
+
+  if (data.status === 'completed' || data.status === 'cancelled') {
+    stopPolling();
+    document.getElementById('startBtn').disabled = false;
+    document.getElementById('cancelBtn').style.display = 'none';
+    document.getElementById('progressLabel').innerHTML =
+      data.status === 'completed' ? '&#9989; 全部完成' : '&#9209; 已取消';
+    document.getElementById('overallProgress').classList.add('success');
+    if (data.file_progress >= 100) {
+      document.getElementById('fileProgress').style.width = '100%';
+    }
+    updateTimeInfo('encode', data, nowSec);
+  }
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escapeStr(s) {
+  return String(s || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+// ── Metadata Tool ──────────────────────────────────
+let metaScannedFiles = [];
+let mapPickerTarget = 'encode'; // 'encode' or 'meta'
+
+function toggleMetaFileMode() {
+  const mode = document.querySelector('input[name="metaFileMode"]:checked').value;
+  document.getElementById('metaSingleFile').classList.toggle('hidden', mode !== 'single');
+  document.getElementById('metaBatchFile').classList.toggle('hidden', mode !== 'batch');
+}
+
+function toggleMetaDate() {
+  const enabled = document.getElementById('m_apply_date').checked;
+  document.getElementById('metaDateOptions').classList.toggle('hidden', !enabled);
+  if (enabled) updateMetaDatePreview();
+}
+
+function toggleMetaLocation() {
+  const enabled = document.getElementById('m_apply_location').checked;
+  document.getElementById('metaLocationOptions').classList.toggle('hidden', !enabled);
+}
+
+async function updateMetaDatePreview() {
+  if (!document.getElementById('m_date_from_filename').checked) {
+    document.getElementById('metaDatePreview').innerHTML = '';
+    return;
+  }
+  // For single file mode, extract date from filename
+  const fileMode = document.querySelector('input[name="metaFileMode"]:checked').value;
+  if (fileMode === 'single') {
+    const filename = document.getElementById('metaInput').value;
+    if (!filename) {
+      document.getElementById('metaDatePreview').innerHTML = '';
+      return;
+    }
+    const r = await fetch('/api/extract_date', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({filename: filename.split(/[\/\\]/).pop()})
+    });
+    const data = await r.json();
+    const container = document.getElementById('metaDatePreview');
+    if (data.date_str) {
+      container.innerHTML = `<div class="date-preview">&#128197; 从文件名提取: <strong>${data.date_str}</strong></div>`;
+    } else {
+      container.innerHTML = `<div class="date-preview no-date">&#9888; 文件名中未找到日期</div>`;
+    }
+  }
+}
+
+async function scanMetaDirectory() {
+  const dir = document.getElementById('metaBatchDir').value.trim();
+  if (!dir) { alert('请先选择扫描路径'); return; }
+  try {
+    const r = await fetch('/api/scan', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({directory: dir, recursive: true})
+    });
+    const data = await r.json();
+    if (!data.files || data.files.length === 0) {
+      alert(data.message || '未找到视频文件');
+      metaScannedFiles = [];
+      renderMetaFileList();
+      return;
+    }
+    metaScannedFiles = data.files || [];
+    renderMetaFileList();
+  } catch(e) {
+    alert('扫描失败: ' + e.message);
+  }
+}
+
+function renderMetaFileList() {
+  const listEl = document.getElementById('metaFileList');
+  if (metaScannedFiles.length === 0) {
+    listEl.classList.add('hidden');
+    return;
+  }
+  listEl.classList.remove('hidden');
+  listEl.innerHTML = metaScannedFiles.map(f => {
+    const dateStr = f.date_in_name ? `<span class="fdate">&#128197; ${f.date_in_name.split('T')[0]}</span>` : '';
+    return `<div class="meta-file-item">
+      <span class="fname" title="${f.path}">${f.name}</span>
+      ${dateStr}
+      <span class="fsize">${f.size_mb} MB</span>
+    </div>`;
+  }).join('');
+}
+
+// Metadata in-place toggle
+document.addEventListener('DOMContentLoaded', function() {
+  const inPlace = document.getElementById('metaInPlace');
+  if (inPlace) {
+    inPlace.addEventListener('change', function() {
+      document.getElementById('metaOutputField').classList.toggle('hidden', this.checked);
+    });
+  }
+});
+
+// Override map picker to support both targets
+function openMapPicker(target) {
+  mapPickerTarget = target || 'encode';
+  document.getElementById('mapModal').classList.add('active');
+  const key = getAmapKey();
+  if (!key) {
+    document.getElementById('mapContainer').innerHTML =
+      '<div style="padding:40px;text-align:center;color:var(--text-muted);">' +
+      '请先在右上角"API Key"中设置高德地图 API Key<br>' +
+      '<button class="btn btn-primary" style="margin-top:12px;" onclick="closeMapPicker();openSettings();">前往设置</button></div>';
+    return;
+  }
+  initMap();
+}
+
+function confirmMapSelection() {
+  if (!mapSelectedLocation) {
+    alert('请先在地图上选择一个位置');
+    return;
+  }
+  if (mapPickerTarget === 'meta') {
+    document.getElementById('m_location_name').value = mapSelectedLocation.name;
+    document.getElementById('m_location_lat').value = mapSelectedLocation.lat.toFixed(6);
+    document.getElementById('m_location_lon').value = mapSelectedLocation.lon.toFixed(6);
+    const info = document.getElementById('metaLocationInfo');
+    info.classList.remove('hidden');
+    info.innerHTML = `已选择: <strong>${mapSelectedLocation.name}</strong> &mdash; 纬度 ${mapSelectedLocation.lat.toFixed(4)}, 经度 ${mapSelectedLocation.lon.toFixed(4)}`;
+  } else {
+    document.getElementById('p_location_name').value = mapSelectedLocation.name;
+    document.getElementById('p_location_lat').value = mapSelectedLocation.lat.toFixed(6);
+    document.getElementById('p_location_lon').value = mapSelectedLocation.lon.toFixed(6);
+    const info = document.getElementById('locationInfo');
+    info.classList.remove('hidden');
+    info.innerHTML = `已选择: <strong>${mapSelectedLocation.name}</strong> &mdash; 纬度 ${mapSelectedLocation.lat.toFixed(4)}, 经度 ${mapSelectedLocation.lon.toFixed(4)}`;
+  }
+  closeMapPicker();
+}
+
+async function startMetadataApply() {
+  const params = {
+    apply_date: document.getElementById('m_apply_date').checked,
+    apply_location: document.getElementById('m_apply_location').checked,
+    apply_spherical: document.getElementById('m_apply_spherical').checked,
+    pano_type: (function(){ var el=document.getElementById('m_spherical_mode'); var m=el?el.value:'360-mono'; var i=m.indexOf('-'); return m.substring(0,i); })(),
+    stereo_mode: (function(){ var el=document.getElementById('m_spherical_mode'); var m=el?el.value:'360-mono'; var i=m.indexOf('-'); return m.substring(i+1); })(),
+    // Date params
+    date_from_filename: document.getElementById('m_date_from_filename').checked,
+    set_creation_time: document.getElementById('m_set_creation_time').checked,
+    set_file_created: document.getElementById('m_set_file_created').checked,
+    set_file_modified: document.getElementById('m_set_file_modified').checked,
+    manual_date: document.getElementById('m_manual_date').value,
+    // Location params
+    location_name: document.getElementById('m_location_name').value,
+    location_lat: document.getElementById('m_location_lat').value,
+    location_lon: document.getElementById('m_location_lon').value,
+    // Other
+    faststart: true,
+  };
+
+  if (!params.apply_date && !params.apply_location && !params.apply_spherical) {
+    alert('请至少选择一个元数据功能'); return;
+  }
+
+  let items = [];
+  const fileMode = document.querySelector('input[name="metaFileMode"]:checked').value;
+
+  if (fileMode === 'single') {
+    const inp = document.getElementById('metaInput').value;
+    if (!inp) { alert('请选择视频文件'); return; }
+    const inPlace = document.getElementById('metaInPlace').checked;
+    let out;
+    if (inPlace) {
+      out = inp;
+    } else {
+      out = document.getElementById('metaOutput').value;
+      if (!out) { alert('请选择输出文件或勾选原地修改'); return; }
+    }
+    items = [{input: inp, output: out}];
+  } else {
+    if (metaScannedFiles.length === 0) { alert('请先扫描'); return; }
+    const outDir = document.getElementById('metaBatchOutDir').value.trim();
+    items = metaScannedFiles.map(f => ({
+      input: f.path,
+      output: outDir ? `${outDir}\\${f.name}` : f.path
+    }));
+  }
+
+  const r = await fetch('/api/apply_metadata', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({params, items})
+  });
+  const data = await r.json();
+  if (data.error) { alert(data.error); return; }
+
+  jobId = data.job_id;
+  isPaused = false;
+  document.getElementById('metaApplyBtn').disabled = true;
+  document.getElementById('metaCancelBtn').style.display = '';
+  document.getElementById('metaPauseBtn').style.display = '';
+  updatePauseButtonUI();
+  document.getElementById('metaProgressLabel').textContent = '应用中...';
+  document.getElementById('metaOverallProgress').classList.remove('success');
+  // Reset metadata time info display
+  const metaTimeInfo = document.getElementById('metaTimeInfo');
+  if (metaTimeInfo) { metaTimeInfo.style.display = 'none'; metaTimeInfo.classList.remove('success'); }
+  // Reset metadata file progress
+  const metaFileProg = document.getElementById('metaFileProgress');
+  if (metaFileProg) { metaFileProg.style.width = '0%'; metaFileProg.classList.remove('success'); }
+  // Also reset encoding time info
+  const encodeTimeInfo = document.getElementById('encodeTimeInfo');
+  if (encodeTimeInfo) { encodeTimeInfo.style.display = 'none'; encodeTimeInfo.classList.remove('success'); }
+  const exportLogBtn = document.getElementById('exportLogBtn');
+  if (exportLogBtn) exportLogBtn.style.display = '';
+  startPolling();
+}
+
+// Override pollStatus to update metadata progress too
+const _origPollStatus = pollStatus;
+pollStatus = async function() {
+  if (!jobId) return;
+  const r = await fetch(`/api/status/${jobId}`);
+  const data = await r.json();
+  if (data.error) { stopPolling(); return; }
+
+  const nowSec = Date.now() / 1000;
+
+  // Update progress bars - both encoding and metadata
+  const encodeProg = document.getElementById('overallProgress');
+  const metaProg = document.getElementById('metaOverallProgress');
+  if (encodeProg) encodeProg.style.width = `${data.overall_progress}%`;
+  if (metaProg) metaProg.style.width = `${data.overall_progress}%`;
+
+  const encodePct = document.getElementById('progressPercent');
+  const metaPct = document.getElementById('metaProgressPercent');
+  if (encodePct) encodePct.textContent = `${Math.round(data.overall_progress)}%`;
+  if (metaPct) metaPct.textContent = `${Math.round(data.overall_progress)}%`;
+
+  const fileProg = document.getElementById('fileProgress');
+  if (fileProg) fileProg.style.width = `${data.file_progress}%`;
+  const filePct = document.getElementById('fileProgressPercent');
+  if (filePct) filePct.textContent = `${Math.round(data.file_progress)}%`;
+
+  // Also update metadata file progress bar
+  const metaFileProg = document.getElementById('metaFileProgress');
+  if (metaFileProg) metaFileProg.style.width = `${data.file_progress}%`;
+  const metaFilePct = document.getElementById('metaFileProgressPercent');
+  if (metaFilePct) metaFilePct.textContent = `${Math.round(data.file_progress)}%`;
+
+  if (data.current_input) {
+    const fname = data.current_input.split(/[\/\\]/).pop();
+    const encodeLabel = document.getElementById('currentFileLabel');
+    const metaCurLabel = document.getElementById('metaCurrentFileLabel');
+    if (encodeLabel) encodeLabel.textContent = `[${data.current_index+1}/${data.total}] ${fname}`;
+    if (metaCurLabel) metaCurLabel.textContent = `[${data.current_index+1}/${data.total}] ${fname}`;
+  }
+
+  // Update time tracking for both encoding and metadata
+  updateTimeInfo('encode', data, nowSec);
+  updateTimeInfo('meta', data, nowSec);
+
+  const logBox = document.getElementById('logBox');
+  logBox.innerHTML = data.log.slice(-100).map(l =>
+    `<div class="log-line"><span class="log-ts">${l.ts}</span><span class="log-msg ${l.level}">${esc(l.msg)}</span></div>`
+  ).join('');
+  logBox.scrollTop = logBox.scrollHeight;
+
+  // Handle pause state from server
+  if (data.paused !== undefined) {
+    isPaused = data.paused;
+    updatePauseButtonUI();
+    if (isPaused) {
+      const encodeProgLabel = document.getElementById('progressLabel');
+      const metaProgLabel = document.getElementById('metaProgressLabel');
+      if (encodeProgLabel && data.status === 'running') encodeProgLabel.textContent = '⏸ 已暂停';
+      if (metaProgLabel && data.status === 'running') metaProgLabel.textContent = '⏸ 已暂停';
+    }
+  }
+
+  if (currentMode === 'batch') {
+    const tbody = document.getElementById('batchTableBody');
+    data.items.forEach((item, i) => {
+      const row = tbody.rows[i];
+      if (!row) return;
+      renderItemStatus(row.cells[7], row.cells[9], item, i, data, isPaused);
+      updateItemTimeInfo(row, item, i, data, nowSec);
+    });
+  }
+
+  if (data.status === 'completed' || data.status === 'cancelled' || data.status === 'failed') {
+    stopPolling();
+    document.getElementById('startBtn').disabled = false;
+    document.getElementById('cancelBtn').style.display = 'none';
+    document.getElementById('pauseBtn').style.display = 'none';
+    document.getElementById('metaApplyBtn').disabled = false;
+    document.getElementById('metaCancelBtn').style.display = 'none';
+    document.getElementById('metaPauseBtn').style.display = 'none';
+    isPaused = false;
+    const completedLabel = data.status === 'completed' ? '&#9989; 全部完成' :
+                           data.status === 'failed' ? '&#10060; 有失败项' : '&#9209; 已取消';
+    const encodeProgLabel = document.getElementById('progressLabel');
+    const metaProgLabel = document.getElementById('metaProgressLabel');
+    if (encodeProgLabel) encodeProgLabel.innerHTML = completedLabel;
+    if (metaProgLabel) metaProgLabel.innerHTML = completedLabel;
+    if (encodeProg) encodeProg.classList.add('success');
+    if (metaProg) metaProg.classList.add('success');
+    if (data.file_progress >= 100 && fileProg) {
+      fileProg.style.width = '100%';
+    }
+    if (metaFileProg) metaFileProg.style.width = '100%';
+    // Final time update with actual end_time
+    updateTimeInfo('encode', data, nowSec);
+    updateTimeInfo('meta', data, nowSec);
+  }
+};
+
+// ── Metadata Report ──────────────────────────────────
+let reportData = []; // Array of {filename, path, probeData, error}
+
+function toggleReportMode() {
+  const mode = document.querySelector('input[name="reportMode"]:checked').value;
+  document.getElementById('reportSingleFile').classList.toggle('hidden', mode !== 'single');
+  document.getElementById('reportBatchFile').classList.toggle('hidden', mode !== 'batch');
+}
+
+async function generateReport() {
+  const path = document.getElementById('reportInput').value;
+  if (!path) { alert('请选择视频文件'); return; }
+  document.getElementById('reportResult').innerHTML = '<div style="padding:20px;text-align:center;"><span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:8px;"></span>正在读取元数据...</div>';
+  try {
+    const r = await fetch(`/api/probe?path=${encodeURIComponent(path)}`);
+    const data = await r.json();
+    if (data.error) {
+      reportData = [{filename: path.split(/[\/\\]/).pop(), path: path, error: data.error}];
+    } else {
+      reportData = [{filename: path.split(/[\/\\]/).pop(), path: path, probeData: data}];
+    }
+    renderReport();
+  } catch(e) {
+    reportData = [{filename: path.split(/[\/\\]/).pop(), path: path, error: e.message}];
+    renderReport();
+  }
+}
+
+async function generateBatchReport() {
+  const dir = document.getElementById('reportBatchDir').value.trim();
+  if (!dir) { alert('请选择扫描路径'); return; }
+  document.getElementById('reportResult').innerHTML = '<div style="padding:20px;text-align:center;"><span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:8px;"></span>正在扫描...</div>';
+  // Scan directory
+  let sdata;
+  try {
+    const sr = await fetch('/api/scan', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({directory: dir, recursive: true})
+    });
+    sdata = await sr.json();
+  } catch(e) {
+    document.getElementById('reportResult').innerHTML = `<div style="padding:20px;text-align:center;color:var(--danger);">扫描失败: ${esc(e.message)}</div>`;
+    return;
+  }
+  const files = sdata.files || [];
+  if (files.length === 0) {
+    document.getElementById('reportResult').innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);">${esc(sdata.message || '未找到视频文件')}</div>`;
+    return;
+  }
+  document.getElementById('reportResult').innerHTML = `<div style="padding:20px;text-align:center;"><span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:8px;"></span>正在读取 ${files.length} 个文件的元数据... (0/${files.length})</div>`;
+
+  const reportStartTime = Date.now() / 1000;
+  reportData = [];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    const nowSec = Date.now() / 1000;
+    const elapsed = nowSec - reportStartTime;
+    const progress = i / files.length * 100;
+    const est = calcTimeEstimates(reportStartTime, progress, nowSec);
+    const timeStr = est ?
+      `&nbsp;|&nbsp;&#9201; 已耗时 ${fmtTime(est.elapsed)}&nbsp;|&nbsp;预计剩余 ${fmtTime(est.remaining)}&nbsp;|&nbsp;预计总时间 ${fmtTime(est.total)}` :
+      (elapsed > 0 ? `&nbsp;|&nbsp;&#9201; 已耗时 ${fmtTime(elapsed)}` : '');
+    document.getElementById('reportResult').innerHTML = `<div style="padding:20px;text-align:center;"><span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:8px;"></span>正在读取 ${i+1}/${files.length}: ${f.name}${timeStr}</div>`;
+    try {
+      const r = await fetch(`/api/probe?path=${encodeURIComponent(f.path)}`);
+      const data = await r.json();
+      if (data.error) {
+        reportData.push({filename: f.name, path: f.path, error: data.error, size: f.size_mb});
+      } else {
+        reportData.push({filename: f.name, path: f.path, probeData: data, size: f.size_mb});
+      }
+    } catch(e) {
+      reportData.push({filename: f.name, path: f.path, error: e.message, size: f.size_mb});
+    }
+  }
+  const totalTime = Date.now() / 1000 - reportStartTime;
+  document.getElementById('reportResult').innerHTML = `<div style="padding:20px;text-align:center;"><span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:8px;"></span>正在生成报告... &#9201; 总耗时 ${fmtTime(totalTime)}</div>`;
+  renderReport();
+}
+
+function formatDuration(seconds) {
+  if (!seconds || isNaN(seconds)) return '—';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  return h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`;
+}
+
+// ── Time tracking helpers ───────────────────────────
+function fmtTime(seconds) {
+  if (seconds == null || isNaN(seconds) || seconds < 0) return '--';
+  if (seconds < 1) return '<1秒';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}时${m}分${s}秒`;
+  if (m > 0) return `${m}分${s}秒`;
+  return `${s}秒`;
+}
+
+function calcTimeEstimates(startTime, progress, nowSec) {
+  // Returns {elapsed, remaining, total} or null if not enough data
+  if (!startTime || progress <= 0) return null;
+  const elapsed = nowSec - startTime;
+  if (elapsed < 0) return null;
+  // estimated total = elapsed / (progress / 100)
+  const total = elapsed / (progress / 100);
+  const remaining = total - elapsed;
+  return { elapsed, remaining: Math.max(0, remaining), total };
+}
+
+function updateTimeInfo(prefix, data, nowSec) {
+  // prefix: 'encode' or 'meta'
+  const timeInfo = document.getElementById(prefix + 'TimeInfo');
+  if (!timeInfo) return;
+  const startTime = data.start_time;
+  const endTime = data.end_time;
+  if (!startTime) { timeInfo.style.display = 'none'; return; }
+
+  // If task is completed, show actual total time
+  if (endTime && (data.status === 'completed' || data.status === 'cancelled' || data.status === 'failed')) {
+    const total = endTime - startTime;
+    const elEl = document.getElementById(prefix + 'Elapsed');
+    const remEl = document.getElementById(prefix + 'Remaining');
+    const totEl = document.getElementById(prefix + 'Total');
+    if (elEl) elEl.textContent = fmtTime(total);
+    if (remEl) remEl.textContent = '已完成';
+    if (totEl) totEl.textContent = fmtTime(total);
+    timeInfo.style.display = 'flex';
+    return;
+  }
+
+  // Running: calculate estimates
+  const progress = data.overall_progress || 0;
+  const est = calcTimeEstimates(startTime, progress, nowSec);
+  if (!est) {
+    timeInfo.style.display = 'flex';
+    const elEl = document.getElementById(prefix + 'Elapsed');
+    const remEl = document.getElementById(prefix + 'Remaining');
+    const totEl = document.getElementById(prefix + 'Total');
+    if (elEl) elEl.textContent = fmtTime(nowSec - startTime);
+    if (remEl) remEl.textContent = '计算中...';
+    if (totEl) totEl.textContent = '计算中...';
+    return;
+  }
+
+  const elEl = document.getElementById(prefix + 'Elapsed');
+  const remEl = document.getElementById(prefix + 'Remaining');
+  const totEl = document.getElementById(prefix + 'Total');
+  if (elEl) elEl.textContent = fmtTime(est.elapsed);
+  if (remEl) remEl.textContent = fmtTime(est.remaining);
+  if (totEl) totEl.textContent = fmtTime(est.total);
+  timeInfo.style.display = 'flex';
+}
+
+function updateItemTimeInfo(row, item, itemIndex, data, nowSec) {
+  // Update the time cell for a batch item (index 8 after the 参数 column was added)
+  const timeCell = row.cells[8];
+  if (!timeCell) return;
+
+  if (item.skipped) {
+    timeCell.innerHTML = '<span style="color:var(--text-muted);">跳过</span>';
+    return;
+  }
+
+  // Completed item: show actual elapsed
+  if (item.start_time && item.end_time) {
+    const elapsed = item.end_time - item.start_time;
+    const color = item.ok === false ? 'var(--danger)' : 'var(--success)';
+    timeCell.innerHTML = `<span style="color:${color};">${fmtTime(elapsed)}</span>`;
+    return;
+  }
+
+  // Failed item without end_time: show elapsed until now
+  if (item.start_time && item.ok === false) {
+    const elapsed = (item.end_time || nowSec) - item.start_time;
+    timeCell.innerHTML = `<span style="color:var(--danger);">${fmtTime(elapsed)}</span>`;
+    return;
+  }
+
+  // Currently running item
+  if (item.start_time && !item.end_time) {
+    const elapsed = nowSec - item.start_time;
+    const isCurrent = (itemIndex === data.current_index);
+    const fileProg = isCurrent ? data.file_progress : 0;
+    const est = calcTimeEstimates(item.start_time, fileProg, nowSec);
+    if (est && fileProg > 0) {
+      timeCell.innerHTML = `<span style="color:var(--accent);">${fmtTime(elapsed)}</span><br><small style="color:var(--text-muted);">余 ${fmtTime(est.remaining)}</small>`;
+    } else {
+      timeCell.innerHTML = `<span style="color:var(--accent);">${fmtTime(elapsed)}</span>`;
+    }
+    return;
+  }
+
+  // Pending item
+  timeCell.innerHTML = '<span style="color:var(--text-muted);">&mdash;</span>';
+}
+
+// Shared: render a single batch item's status cell + (optionally) the skip button.
+// FIX (last-item bug): when the job is in a terminal state (completed/failed/cancelled),
+// every item must show its final state — including the LAST item, which previously
+// fell through to the "pending" branch because its index equals current_index while
+// the job is no longer 'running'.
+function renderItemStatus(cell, actionCell, item, i, data, isPaused) {
+  if (!cell) return;
+  const terminal = (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled');
+  let html, showSkip = false;
+  if (item.skipped) {
+    html = '<span class="status-dot" style="background:var(--text-muted);"></span> 跳过';
+  } else if (terminal) {
+    html = item.ok === false
+      ? '<span class="status-dot status-fail"></span> 失败'
+      : '<span class="status-dot status-done"></span> &#10003;';
+  } else if (i < data.current_index) {
+    html = item.ok === false
+      ? '<span class="status-dot status-fail"></span> 失败'
+      : '<span class="status-dot status-done"></span> &#10003;';
+  } else if (i === data.current_index && data.status === 'running') {
+    html = `<span class="status-dot status-running"></span> ${Math.round(data.file_progress)}%`;
+    showSkip = !isPaused;
+  } else {
+    html = '<span class="status-dot status-pending"></span>';
+    showSkip = (data.status === 'running');
+  }
+  cell.innerHTML = html;
+  if (actionCell) {
+    actionCell.innerHTML = showSkip
+      ? `<button class="btn btn-sm btn-warning" onclick="skipItem(${i})">跳过</button>`
+      : '';
+  }
+}
+
+function formatFrameRate(rateStr) {
+  if (!rateStr) return '—';
+  const parts = rateStr.split('/');
+  if (parts.length === 2) {
+    const num = parseFloat(parts[0]);
+    const den = parseFloat(parts[1]);
+    if (den > 0) return (num / den).toFixed(2) + ' fps';
+  }
+  const val = parseFloat(rateStr);
+  return isNaN(val) ? '—' : val.toFixed(2) + ' fps';
+}
+
+function formatBitrate(bps) {
+  if (!bps || isNaN(bps)) return '—';
+  const mbps = bps / 1000000;
+  if (mbps >= 1) return `${mbps.toFixed(2)} Mbps`;
+  return `${Math.round(bps / 1000)} kbps`;
+}
+
+function renderReport() {
+  if (reportData.length === 0) {
+    document.getElementById('reportResult').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">无报告数据</div>';
+    return;
+  }
+  const html = reportData.map(item => {
+    if (item.error) {
+      return `<div class="report-item">
+        <div class="report-item-header">
+          <span class="fname">${esc(item.filename)}</span>
+          <span style="color:var(--error);">&#9888; 读取失败</span>
+        </div>
+        <div class="report-row"><span class="label">路径</span><span class="value">${esc(item.path)}</span></div>
+        <div class="report-row"><span class="label">错误</span><span class="value" style="color:var(--error);">${esc(item.error)}</span></div>
+      </div>`;
+    }
+    const d = item.probeData;
+    const fmt = d.format || {};
+    const streams = d.streams || [];
+    const vStream = streams.find(s => s.codec_type === 'video') || {};
+    const aStream = streams.find(s => s.codec_type === 'audio') || {};
+
+    // Check for spherical metadata
+    const tags = fmt.tags || {};
+    const vTags = vStream.tags || {};
+    const hasSpherical = tags['spherical'] || vTags['spherical'] || 
+      JSON.stringify(d).includes('GSpherical') || JSON.stringify(d).includes('stitchingSoftware');
+
+    // Check for location
+    const location = tags['location'] || vTags['location'] || '';
+
+    // Check for creation_time
+    const creationTime = tags['creation_time'] || vTags['creation_time'] || '';
+
+    return `<div class="report-item">
+      <div class="report-item-header">
+        <span class="fname">${esc(item.filename)}</span>
+        ${item.size ? `<span class="badge">${item.size} MB</span>` : ''}
+      </div>
+      <div class="report-item-header" style="border-bottom:none;padding-bottom:0;margin-bottom:6px;">
+        <span class="fpath">${esc(item.path)}</span>
+      </div>
+      <div class="report-grid">
+        <div class="report-section">
+          <div class="report-section-title">容器信息</div>
+          <div class="report-row"><span class="label">格式</span><span class="value">${esc(fmt.format_long_name || fmt.format_name || '—')}</span></div>
+          <div class="report-row"><span class="label">时长</span><span class="value">${formatDuration(parseFloat(fmt.duration))}</span></div>
+          <div class="report-row"><span class="label">总码率</span><span class="value">${formatBitrate(parseInt(fmt.bit_rate))}</span></div>
+          <div class="report-row"><span class="label">文件大小</span><span class="value">${item.size ? item.size + ' MB' : '—'}</span></div>
+        </div>
+        <div class="report-section">
+          <div class="report-section-title">视频流</div>
+          <div class="report-row"><span class="label">编码器</span><span class="value">${esc(vStream.codec_name || '—')} (${esc(vStream.codec_long_name || '')})</span></div>
+          <div class="report-row"><span class="label">分辨率</span><span class="value">${vStream.width || '?'} × ${vStream.height || '?'}</span></div>
+          <div class="report-row"><span class="label">帧率</span><span class="value">${formatFrameRate(vStream.r_frame_rate)}</span></div>
+          <div class="report-row"><span class="label">像素格式</span><span class="value">${esc(vStream.pix_fmt || '—')}</span></div>
+          <div class="report-row"><span class="label">Profile/Level</span><span class="value">${esc(vStream.profile || '—')} / ${esc(vStream.level || '—')}</span></div>
+          <div class="report-row"><span class="label">色彩空间</span><span class="value">${esc(vStream.color_space || '—')} / ${esc(vStream.color_range || '—')}</span></div>
+          <div class="report-row"><span class="label">视频码率</span><span class="value">${formatBitrate(parseInt(vStream.bit_rate))}</span></div>
+        </div>
+        <div class="report-section">
+          <div class="report-section-title">音频流</div>
+          <div class="report-row"><span class="label">编码器</span><span class="value">${esc(aStream.codec_name || '—')} (${esc(aStream.codec_long_name || '')})</span></div>
+          <div class="report-row"><span class="label">采样率</span><span class="value">${aStream.sample_rate ? aStream.sample_rate + ' Hz' : '—'}</span></div>
+          <div class="report-row"><span class="label">声道</span><span class="value">${aStream.channels || '—'} ch (${esc(aStream.channel_layout || '')})</span></div>
+          <div class="report-row"><span class="label">音频码率</span><span class="value">${formatBitrate(parseInt(aStream.bit_rate))}</span></div>
+        </div>
+        <div class="report-section">
+          <div class="report-section-title">元数据标签</div>
+          <div class="report-row"><span class="label">拍摄日期</span><span class="value ${creationTime ? 'ok' : 'warn'}">${creationTime ? esc(creationTime) : '未设置'}</span></div>
+          <div class="report-row"><span class="label">拍摄位置</span><span class="value ${location ? 'ok' : 'warn'}">${location ? esc(location) : '未设置'}</span></div>
+          <div class="report-row"><span class="label">全景元数据</span><span class="value ${hasSpherical ? 'ok' : 'warn'}">${hasSpherical ? '已注入 (GSpherical)' : '未注入'}</span></div>
+          ${Object.entries(tags).filter(([k]) => !['creation_time','location','spherical'].includes(k)).slice(0, 5).map(([k,v]) =>
+            `<div class="report-row"><span class="label">${esc(k)}</span><span class="value">${esc(String(v).substring(0, 80))}</span></div>`
+          ).join('')}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('reportResult').innerHTML = html;
+}
+
+function saveReport() {
+  if (reportData.length === 0) { alert('无报告数据可保存'); return; }
+  let text = `360° Video Converter - 元数据报告\n`;
+  text += `生成时间: ${new Date().toLocaleString()}\n`;
+  text += `文件数量: ${reportData.length}\n`;
+  text += `${'='.repeat(80)}\n\n`;
+
+  reportData.forEach((item, i) => {
+    text += `[${i+1}] ${item.filename}\n`;
+    text += `路径: ${item.path}\n`;
+    if (item.size) text += `大小: ${item.size} MB\n`;
+    if (item.error) {
+      text += `错误: ${item.error}\n`;
+    } else {
+      const d = item.probeData;
+      const fmt = d.format || {};
+      const streams = d.streams || [];
+      const v = streams.find(s => s.codec_type === 'video') || {};
+      const a = streams.find(s => s.codec_type === 'audio') || {};
+      const tags = fmt.tags || {};
+      const vTags = v.tags || {};
+      text += `格式: ${fmt.format_long_name || fmt.format_name || '—'}\n`;
+      text += `时长: ${formatDuration(parseFloat(fmt.duration))}\n`;
+      text += `总码率: ${formatBitrate(parseInt(fmt.bit_rate))}\n`;
+      text += `\n-- 视频 --\n`;
+      text += `编码器: ${v.codec_name || '—'} (${v.codec_long_name || ''})\n`;
+      text += `分辨率: ${v.width || '?'} × ${v.height || '?'}\n`;
+      text += `帧率: ${formatFrameRate(v.r_frame_rate)}\n`;
+      text += `像素格式: ${v.pix_fmt || '—'}\n`;
+      text += `Profile/Level: ${v.profile || '—'} / ${v.level || '—'}\n`;
+      text += `色彩空间: ${v.color_space || '—'} / ${v.color_range || '—'}\n`;
+      text += `视频码率: ${formatBitrate(parseInt(v.bit_rate))}\n`;
+      text += `\n-- 音频 --\n`;
+      text += `编码器: ${a.codec_name || '—'} (${a.codec_long_name || ''})\n`;
+      text += `采样率: ${a.sample_rate ? a.sample_rate + ' Hz' : '—'}\n`;
+      text += `声道: ${a.channels || '—'} ch (${a.channel_layout || ''})\n`;
+      text += `音频码率: ${formatBitrate(parseInt(a.bit_rate))}\n`;
+      text += `\n-- 元数据 --\n`;
+      text += `拍摄日期: ${tags['creation_time'] || vTags['creation_time'] || '未设置'}\n`;
+      text += `拍摄位置: ${tags['location'] || vTags['location'] || '未设置'}\n`;
+      const hasSph = JSON.stringify(d).includes('GSpherical') || tags['spherical'] || vTags['spherical'];
+      text += `全景元数据: ${hasSph ? '已注入 (GSpherical)' : '未注入'}\n`;
+    }
+    text += `\n${'─'.repeat(80)}\n\n`;
+  });
+
+  // Download as file
+  const blob = new Blob([text], {type: 'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `video_metadata_report_${new Date().toISOString().slice(0,10)}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function clearReport() {
+  reportData = [];
+  document.getElementById('reportResult').innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);">选择视频文件后点击"读取元数据"生成报告</div>';
+}
+
+// ── Tooltip System (viewport-aware dynamic positioning) ────────
+let _tooltipEl = null;
+let _tooltipHideTimer = null;
+
+function initTooltips() {
+  if (_tooltipEl) return;
+  _tooltipEl = document.createElement('div');
+  _tooltipEl.className = 'global-tooltip';
+  document.body.appendChild(_tooltipEl);
+
+  document.addEventListener('mouseover', (e) => {
+    const tipIcon = e.target.closest('.tip-icon, .var-chip[data-tip]');
+    if (!tipIcon) return;
+    const tip = tipIcon.getAttribute('data-tip');
+    if (!tip) return;
+    clearTimeout(_tooltipHideTimer);
+    showGlobalTooltip(tipIcon, tip);
+  });
+
+  document.addEventListener('mouseout', (e) => {
+    const tipIcon = e.target.closest('.tip-icon, .var-chip[data-tip]');
+    if (!tipIcon) return;
+    _tooltipHideTimer = setTimeout(() => { _tooltipEl.classList.remove('visible'); _tooltipEl.style.display = 'none'; }, 50);
+  });
+}
+
+function showGlobalTooltip(iconEl, tipText) {
+  _tooltipEl.textContent = tipText;
+  _tooltipEl.style.display = 'block';
+  _tooltipEl.style.visibility = 'hidden';
+  _tooltipEl.classList.remove('visible');
+
+  // Measure after content is set
+  const tipRect = _tooltipEl.getBoundingClientRect();
+  const iconRect = iconEl.getBoundingClientRect();
+  const margin = 10;
+  const arrowH = 6;
+
+  // Default: show above the icon
+  let showAbove = true;
+  let top = iconRect.top - tipRect.height - margin - arrowH;
+
+  // If not enough space above, show below
+  if (top < margin) {
+    showAbove = false;
+    top = iconRect.bottom + margin + arrowH;
+  }
+
+  // If still not enough space (short viewport), clamp to viewport
+  if (top + tipRect.height > window.innerHeight - margin) {
+    top = Math.max(margin, window.innerHeight - tipRect.height - margin);
+  }
+
+  // Horizontal: center on icon, clamp to viewport
+  let left = iconRect.left + iconRect.width / 2 - tipRect.width / 2;
+  if (left < margin) left = margin;
+  if (left + tipRect.width > window.innerWidth - margin) {
+    left = window.innerWidth - tipRect.width - margin;
+  }
+
+  // Arrow position: point toward the icon
+  let arrowX = iconRect.left + iconRect.width / 2 - left;
+  arrowX = Math.max(20, Math.min(tipRect.width - 20, arrowX));
+
+  _tooltipEl.style.left = left + 'px';
+  _tooltipEl.style.top = top + 'px';
+  _tooltipEl.style.setProperty('--arrow-x', arrowX + 'px');
+  _tooltipEl.classList.remove('arrow-top', 'arrow-bottom');
+  _tooltipEl.classList.add(showAbove ? 'arrow-bottom' : 'arrow-top');
+  _tooltipEl.style.visibility = 'visible';
+
+  // Trigger reflow then show
+  requestAnimationFrame(() => { _tooltipEl.classList.add('visible'); });
+}
+
+// ── Init ────────────────────────────────────────────
+async function init() {
+  applyParams(DEFAULT_PARAMS);
+  refreshPresets();
+  initTooltips();
+
+  // Fetch and display app version
+  try {
+    const vr = await fetch('/api/version');
+    const vd = await vr.json();
+    const tag = document.getElementById('appVersionTag');
+    if (tag && vd.version) tag.textContent = 'v' + vd.version;
+  } catch(e) {}
+
+  // Check auto-load setting
+  try {
+    const r = await fetch('/api/settings');
+    const s = await r.json();
+    if (s.auto_load_tasks) {
+      await loadSavedTasks();
+    }
+  } catch(e) {}
+
+  // Load codec info first, then check availability
+  try {
+    const r1 = await fetch('/api/codecs');
+    const d1 = await r1.json();
+    codecInfo = d1.codecs;
+  } catch(e) {
+    document.getElementById('codecStatus').innerHTML = '<span style="color:var(--warning);">编码器信息加载失败: ' + esc(e.message || '') + '</span>';
+  }
+
+  await checkCodecs();
+
+  onCodecChange();
+}
+
+// ── Codec Check & Status Rendering ─────────────────
+async function checkCodecs() {
+  const statusEl = document.getElementById('codecStatus');
+  statusEl.innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span><span style="color:var(--text-muted);font-size:0.82rem;">正在检测编码器（测试编码中，请稍候）...</span>';
+
+  try {
+    const r2 = await fetch('/api/codec_check');
+    const d2 = await r2.json();
+    codecAvailability = d2.available || {};
+    codecErrorDetails = d2.error_details || {};
+    codecFfmpegInfo = d2.ffmpeg_info || {};
+    codecRuntimeDlls = d2.runtime_dlls || {};
+    codecFixHints = d2.fix_hints || {};
+    renderCodecStatus();
+  } catch(e) {
+    statusEl.innerHTML = '<span style="color:var(--warning);">编码器检测失败: ' + esc(e.message || '') + '</span>';
+  }
+}
+
+function renderCodecStatus() {
+  const statusEl = document.getElementById('codecStatus');
+  if (!statusEl) return;
+
+  const selectedCodec = document.getElementById('p_codec')?.value || '';
+  let html = '';
+  for (const [key, avail] of Object.entries(codecAvailability)) {
+    const ci = codecInfo[key];
+    if (!ci) continue;
+    const badge = `<span class="codec-badge ${ci.group}">${ci.group.toUpperCase()}</span>`;
+    const icon = avail ? '&#10003;' : '&#10007;';
+    const color = avail ? 'var(--success)' : 'var(--text-muted)';
+    const label = ci.label.split('(')[0].trim();
+    // Highlight currently selected codec
+    const isSelected = key === selectedCodec;
+    const bg = isSelected ? 'background:var(--bg-secondary);border-radius:4px;padding:1px 4px;' : '';
+    // Add error detail tooltip for unavailable encoders
+    let errInfo = '';
+    if (!avail && codecErrorDetails[key]) {
+      errInfo = ` <span style="color:var(--warning);font-size:0.7rem;cursor:help;" title="${esc(codecErrorDetails[key])}" onclick="showEncoderDetail('${key}')">[详情]</span>`;
+    }
+    html += `<div style="display:inline-flex;align-items:center;gap:4px;margin:2px 6px 2px 0;font-size:0.78rem;color:${color};${bg}">${icon} ${label} ${badge}${errInfo}</div>`;
+  }
+  // Show ffmpeg version info
+  if (codecFfmpegInfo.bundled_version) {
+    html += `<div style="display:block;margin-top:4px;font-size:0.72rem;color:var(--text-muted);">内置: ${esc(codecFfmpegInfo.bundled_version)}</div>`;
+  }
+  if (codecFfmpegInfo.system) {
+    html += `<div style="font-size:0.72rem;color:var(--text-muted);">系统: ${esc(codecFfmpegInfo.system_version || 'unknown')}</div>`;
+  }
+  if (codecFfmpegInfo.custom) {
+    html += `<div style="font-size:0.72rem;color:var(--text-muted);">自定义: ${esc(codecFfmpegInfo.custom_version || 'unknown')}</div>`;
+  }
+  // Show runtime DLL summary for unavailable hardware encoders
+  const dllGroups = {cuda: 'NVIDIA', qsv: 'Intel', amf: 'AMD'};
+  for (const [group, label] of Object.entries(dllGroups)) {
+    const dlls = codecRuntimeDlls[group] || {};
+    const found = Object.values(dlls).filter(p => p);
+    const total = Object.keys(dlls).length;
+    if (found.length === 0 && total > 0) {
+      // No DLLs found for this group
+      const anyUnavailable = Object.entries(codecAvailability).some(([k, v]) => {
+        const ci2 = codecInfo[k];
+        return ci2 && ci2.group === group && v === false;
+      });
+      if (anyUnavailable) {
+        html += `<div style="font-size:0.7rem;color:var(--text-muted);">${label} 运行时 DLL: 未检测到 (需要安装显卡驱动)</div>`;
+      }
+    } else if (found.length > 0 && found.length < total) {
+      html += `<div style="font-size:0.7rem;color:var(--warning);">${label} 运行时 DLL: 部分缺失 (${found.length}/${total})</div>`;
+    }
+  }
+  // Add export button
+  html += `<div style="margin-top:6px;"><button onclick="exportDiagnosticReport()" style="font-size:0.7rem;padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted);">📄 导出诊断报告</button></div>`;
+  statusEl.innerHTML = html;
+}
+
+async function showEncoderDetail(encoder) {
+  const ci = codecInfo[encoder];
+  if (!ci) return;
+
+  // Find the ffmpeg path to test
+  let ffmpegPath = codecFfmpegInfo.bundled || '';
+  // If system ffmpeg was used for this encoder, use that
+  // (but for testing, try bundled first)
+
+  const statusEl = document.getElementById('codecStatus');
+  const oldHtml = statusEl.innerHTML;
+  statusEl.innerHTML = `<span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span><span style="color:var(--text-muted);font-size:0.82rem;">正在详细测试 ${esc(encoder)}...</span>`;
+
+  try {
+    const r = await fetch('/api/test_encoder_detail', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({encoder: encoder, ffmpeg_path: ffmpegPath})
+    });
+    const d = await r.json();
+
+    let html = '<div style="font-size:0.78rem;">';
+    html += `<div style="margin-bottom:4px;"><strong>编码器:</strong> ${esc(encoder)}</div>`;
+    html += `<div style="margin-bottom:4px;"><strong>ffmpeg:</strong> ${esc(ffmpegPath)}</div>`;
+    html += `<div style="margin-bottom:4px;"><strong>结果:</strong> ${d.success ? '<span style="color:var(--success);">✓ 可用</span>' : '<span style="color:var(--warning);">✗ 不可用</span>'}</div>`;
+    if (d.returncode !== undefined) {
+      html += `<div style="margin-bottom:4px;"><strong>退出码:</strong> ${d.returncode}</div>`;
+    }
+    if (d.error) {
+      html += `<div style="margin-bottom:4px;color:var(--warning);"><strong>错误:</strong> ${esc(d.error)}</div>`;
+    }
+    // Show runtime DLL check results
+    const group = ci.group;
+    const dlls = codecRuntimeDlls[group] || {};
+    const dllEntries = Object.entries(dlls);
+    if (dllEntries.length > 0) {
+      html += `<div style="margin-top:6px;"><strong>运行时 DLL 检测:</strong></div>`;
+      for (const [dllName, dllPath] of dllEntries) {
+        const found = !!dllPath;
+        const icon = found ? '&#10003;' : '&#10007;';
+        const color = found ? 'var(--success)' : 'var(--text-muted)';
+        html += `<div style="color:${color};font-size:0.72rem;">${icon} ${esc(dllName)} ${found ? '(' + esc(dllPath) + ')' : '(未找到)'}</div>`;
+      }
+    }
+    // Show fix hint if available
+    const fixHint = codecFixHints[encoder] || '';
+    if (fixHint) {
+      html += `<div style="margin-top:8px;padding:6px 8px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;font-size:0.72rem;white-space:pre-wrap;color:#856404;line-height:1.5;"><strong>修复建议:</strong>\n${esc(fixHint)}</div>`;
+    }
+    if (d.stderr) {
+      // Show last 10 lines of stderr
+      const lines = d.stderr.trim().split('\n').slice(-15);
+      html += `<div style="margin-top:6px;"><strong>ffmpeg 输出 (最后15行):</strong></div>`;
+      html += `<pre style="background:var(--bg-secondary);padding:6px 8px;border-radius:4px;font-size:0.7rem;white-space:pre-wrap;max-height:200px;overflow-y:auto;margin-top:2px;">${esc(lines.join('\n'))}</pre>`;
+    }
+    html += '</div>';
+    // Action buttons row
+    html += `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">`;
+    html += `<button onclick="exportDiagnosticReport()" style="font-size:0.72rem;padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);cursor:pointer;color:var(--text);">📄 导出报告</button>`;
+    html += `<button onclick="copyErrorInfo('${esc(encoder)}')" style="font-size:0.72rem;padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);cursor:pointer;color:var(--text);">📋 保存错误信息</button>`;
+    html += `<button onclick="onCodecChange()" style="font-size:0.72rem;padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted);">返回</button>`;
+    html += `</div>`;
+    statusEl.innerHTML = html;
+  } catch(e) {
+    statusEl.innerHTML = '<span style="color:var(--warning);">详细测试失败: ' + esc(e.message) + '</span>';
+  }
+}
+
+// ── Export Diagnostic Report ─────────────────────
+async function exportDiagnosticReport() {
+  const statusEl = document.getElementById('codecStatus');
+  const oldHtml = statusEl.innerHTML;
+  statusEl.innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:6px;"></span><span style="color:var(--text-muted);font-size:0.82rem;">正在生成诊断报告（测试所有编码器，请稍候）...</span>';
+
+  try {
+    const r = await fetch('/api/diagnostic_report');
+    const d = await r.json();
+    const reportText = d.report || '报告生成失败';
+
+    // Restore view
+    statusEl.innerHTML = oldHtml;
+
+    if (!d.report) {
+      alert('报告生成失败');
+      return;
+    }
+
+    // Open save dialog
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const defaultName = `360VideoConverter_诊断报告_${ts}`;
+    openSaveDialog(defaultName, async (savePath) => {
+      try {
+        const sr = await fetch('/api/save_report', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({path: savePath, content: reportText})
+        });
+        const sd = await sr.json();
+        if (sd.success) {
+          const note = document.createElement('div');
+          note.style.cssText = 'position:fixed;top:20px;right:20px;background:var(--success);color:#fff;padding:8px 16px;border-radius:6px;font-size:0.82rem;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
+          note.textContent = '诊断报告已保存到: ' + sd.path;
+          document.body.appendChild(note);
+          setTimeout(() => note.remove(), 4000);
+        } else {
+          alert('保存失败: ' + (sd.error || '未知错误'));
+        }
+      } catch(e) {
+        alert('保存失败: ' + e.message);
+      }
+    });
+  } catch(e) {
+    statusEl.innerHTML = oldHtml;
+    alert('导出报告失败: ' + e.message);
+  }
+}
+
+// ── Export Encoding Log ─────────────────────────
+async function exportEncodeLog() {
+  if (!jobId) { alert('当前没有可导出的日志'); return; }
+  const btn = document.getElementById('exportLogBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '正在导出...'; }
+  try {
+    const r = await fetch(`/api/encode_log/${jobId}`);
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+    const logText = d.log || '日志为空';
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const defaultName = `360VideoConverter_编码日志_${ts}`;
+    openSaveDialog(defaultName, async (savePath) => {
+      try {
+        const sr = await fetch('/api/save_report', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({path: savePath, content: logText})
+        });
+        const sd = await sr.json();
+        if (sd.success) {
+          const note = document.createElement('div');
+          note.style.cssText = 'position:fixed;top:20px;right:20px;background:var(--success);color:#fff;padding:8px 16px;border-radius:6px;font-size:0.82rem;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
+          note.textContent = '编码日志已保存到: ' + sd.path;
+          document.body.appendChild(note);
+          setTimeout(() => note.remove(), 4000);
+        } else {
+          alert('保存失败: ' + (sd.error || '未知错误'));
+        }
+      } catch(e) {
+        alert('保存失败: ' + e.message);
+      }
+    });
+  } catch(e) {
+    alert('导出日志失败: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '📄 导出日志'; }
+  }
+}
+
+// ── Save Error Info to File ──────────────────────
+function copyErrorInfo(encoder) {
+  const ci = codecInfo[encoder];
+  const errDetail = codecErrorDetails[encoder] || '';
+  const ffmpegPath = codecFfmpegInfo.bundled || '';
+  const group = ci ? ci.group : '';
+
+  // Gather DLL info for this group
+  let dllInfo = '';
+  if (group && codecRuntimeDlls[group]) {
+    const dlls = codecRuntimeDlls[group];
+    dllInfo = Object.entries(dlls).map(([name, path]) =>
+      `  ${name}: ${path || '未找到'}`
+    ).join('\n');
+  }
+
+  // Build comprehensive error info text
+  const lines = [
+    '=== 360 Video Converter - 错误信息 ===',
+    `编码器: ${encoder}`,
+    `分组: ${group}`,
+    `状态: 不可用`,
+    `错误详情: ${errDetail}`,
+    `ffmpeg路径: ${ffmpegPath}`,
+    '',
+    '--- 运行时 DLL 检测 ---',
+    dllInfo || '(无信息)',
+    '',
+    '--- 所有编码器状态 ---',
+  ];
+
+  for (const [key, avail] of Object.entries(codecAvailability)) {
+    const info = codecInfo[key];
+    if (!info) continue;
+    lines.push(`  ${key}: ${avail ? '可用' : '不可用'} ${avail ? '' : '- ' + (codecErrorDetails[key] || '')}`);
+  }
+
+  lines.push('');
+  lines.push(`生成时间: ${new Date().toLocaleString()}`);
+
+  const text = lines.join('\n');
+
+  // Open save dialog
+  const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const defaultName = `错误信息_${encoder}_${ts}`;
+  openSaveDialog(defaultName, async (savePath) => {
+    try {
+      const sr = await fetch('/api/save_report', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({path: savePath, content: text})
+      });
+      const sd = await sr.json();
+      if (sd.success) {
+        const note = document.createElement('div');
+        note.style.cssText = 'position:fixed;top:20px;right:20px;background:var(--success);color:#fff;padding:8px 16px;border-radius:6px;font-size:0.82rem;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
+        note.textContent = '错误信息已保存到: ' + sd.path;
+        document.body.appendChild(note);
+        setTimeout(() => note.remove(), 4000);
+      } else {
+        alert('保存失败: ' + (sd.error || '未知错误'));
+      }
+    } catch(e) {
+      alert('保存失败: ' + e.message);
+    }
+  });
+}
+
+init();
+</script>
+
+</body>
+</html>

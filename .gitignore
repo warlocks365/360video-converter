@@ -1,0 +1,33 @@
+# ── Build artifacts ──
+dist/
+build/
+__pycache__/
+*.pyc
+*.pyo
+*.spec
+
+# ── Test / scratch ──
+_tmpchk/
+tmp/
+
+# ── Binaries & large downloads (fetched at build time, GitHub has 100MB file limit) ──
+ffmpeg-static/
+ffmpeg-btbn.zip
+ffmpeg-essentials.7z
+ffmpeg-full.7z
+installer_output/
+*.exe
+*.dll
+*.7z
+*.zip
+nul
+
+# ── Runtime user data (presets / tasks / settings live in %APPDATA%) ──
+presets/
+
+# ── OS / editor ──
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
