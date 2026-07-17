@@ -1,5 +1,13 @@
 ; *** Inno Setup version 6.5.0+ Chinese Simplified messages ***
 ;
+; To download user-contributed translations of this file, go to:
+;   https://jrsoftware.org/files/istrans/
+;
+; Note: When translating this text, do not add periods (.) to the end of
+; messages that didn't have them already, because on those messages Inno
+; Setup adds the periods automatically (appending a period would result in
+; two periods being displayed).
+;
 ; Maintainer: Zhenghan Yang (Kira)
 ; Email: 847320916@QQ.com
 ; Github: https://github.com/kira-96/Inno-Setup-Chinese-Simplified-Translation
@@ -8,9 +16,17 @@
 ;
 
 [LangOptions]
+; The following three entries are very important. Be sure to read and
+; understand the '[LangOptions] section' topic in the help file.
 LanguageName=简体中文
+; About LanguageID, to reference link:
+; https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-lcid/a9eac961-e77d-41a6-90a5-ce1a8b0cdb9c
 LanguageID=$0804
+; LanguageCodePage should always be set if possible, even if this file is Unicode
+; For English it's set to zero anyway because English only uses ASCII characters
 LanguageCodePage=936
+; If the language you are translating to requires special font faces or
+; sizes, uncomment any of the following entries and change them accordingly.
 ;DialogFontName=
 ;DialogFontSize=9
 ;DialogFontBaseScaleWidth=7
@@ -53,8 +69,8 @@ WinVersionTooLowError=此程序需要 %1 版本 %2 或更高。
 WinVersionTooHighError=此程序不能安装于 %1 版本 %2 或更高。
 AdminPrivilegesRequired=在安装此程序时您必须以管理员身份登录。
 PowerUserPrivilegesRequired=在安装此程序时您必须以管理员身份或高级用户组身份登录。
-SetupAppRunningError=安装程序检测到 %1 当前正在运行。%n%n请先关闭正在运行的程序，然后点击"确定"继续，或点击"取消"退出。
-UninstallAppRunningError=卸载程序检测到 %1 当前正在运行。%n%n请先关闭正在运行的程序，然后点击"确定"继续，或点击"取消"退出。
+SetupAppRunningError=安装程序检测到 %1 当前正在运行。%n%n请先关闭正在运行的程序，然后点击“确定”继续，或点击“取消”退出。
+UninstallAppRunningError=卸载程序检测到 %1 当前正在运行。%n%n请先关闭正在运行的程序，然后点击“确定”继续，或点击“取消”退出。
 
 ; *** Startup questions
 PrivilegesRequiredOverrideTitle=选择安装程序安装模式
@@ -67,8 +83,8 @@ PrivilegesRequiredOverrideCurrentUser=仅为我安装(&M)
 PrivilegesRequiredOverrideCurrentUserRecommended=仅为我安装(&M)（推荐）
 
 ; *** Misc. errors
-ErrorCreatingDir=安装程序无法创建目录"%1"
-ErrorTooManyFilesInDir=无法在目录"%1"中创建文件，因为里面包含太多文件
+ErrorCreatingDir=安装程序无法创建目录“%1”
+ErrorTooManyFilesInDir=无法在目录“%1”中创建文件，因为里面包含太多文件
 
 ; *** Setup common messages
 ExitSetupTitle=退出安装程序
@@ -77,7 +93,7 @@ AboutSetupMenuItem=关于安装程序(&A)...
 AboutSetupTitle=关于安装程序
 AboutSetupMessage=%1 版本 %2%n%3%n%n%1 主页：%n%4
 AboutSetupNote=
-TranslatorNote=简体中文翻译由 Kira（847320916@qq.com）维护。
+TranslatorNote=简体中文翻译由 Kira（847320916@qq.com）维护。项目地址：https://github.com/kira-96/Inno-Setup-Chinese-Simplified-Translation
 
 ; *** Buttons
 ButtonBack=< 上一步(&B)
@@ -99,10 +115,10 @@ SelectLanguageTitle=选择安装语言
 SelectLanguageLabel=选择安装时使用的语言。
 
 ; *** Common wizard text
-ClickNext=点击"下一步"继续，或点击"取消"退出安装程序。
+ClickNext=点击“下一步”继续，或点击“取消”退出安装程序。
 BeveledLabel=
 BrowseDialogTitle=浏览文件夹
-BrowseDialogLabel=在下面的列表中选择一个文件夹，然后点击"确定"。
+BrowseDialogLabel=在下面的列表中选择一个文件夹，然后点击“确定”。
 NewFolderName=新建文件夹
 
 ; *** "Welcome" wizard page
@@ -112,7 +128,7 @@ WelcomeLabel2=即将在您的计算机上安装 [name/ver]。%n%n建议您在继
 ; *** "Password" wizard page
 WizardPassword=密码
 PasswordLabel1=此安装程序需要密码验证。
-PasswordLabel3=请输入密码，然后点击"下一步"继续。密码区分大小写。
+PasswordLabel3=请输入密码，然后点击“下一步”继续。密码区分大小写。
 PasswordEditLabel=密码(&P)：
 IncorrectPassword=您输入的密码不正确，请重新输入。
 
@@ -126,10 +142,10 @@ LicenseNotAccepted=我不同意此协议(&D)
 ; *** "Information" wizard pages
 WizardInfoBefore=信息
 InfoBeforeLabel=请在继续安装前阅读以下重要信息。
-InfoBeforeClickLabel=准备好继续安装后，点击"下一步"。
+InfoBeforeClickLabel=准备好继续安装后，点击“下一步”。
 WizardInfoAfter=信息
 InfoAfterLabel=请在继续安装前阅读以下重要信息。
-InfoAfterClickLabel=准备好继续安装后，点击"下一步"。
+InfoAfterClickLabel=准备好继续安装后，点击“下一步”。
 
 ; *** "User Information" wizard page
 WizardUserInfo=用户信息
@@ -143,7 +159,7 @@ UserInfoNameRequired=请输入用户名。
 WizardSelectDir=选择目标位置
 SelectDirDesc=您想将 [name] 安装在哪里？
 SelectDirLabel3=安装程序将安装 [name] 到下面的文件夹中。
-SelectDirBrowseLabel=点击"下一步"继续。如果您想选择其他文件夹，点击"浏览"。
+SelectDirBrowseLabel=点击“下一步”继续。如果您想选择其他文件夹，点击“浏览”。
 DiskSpaceGBLabel=至少需要有 [gb] GB 的可用磁盘空间。
 DiskSpaceMBLabel=至少需要有 [mb] MB 的可用磁盘空间。
 CannotInstallToNetworkDrive=安装程序无法安装到一个网络驱动器。
@@ -163,8 +179,9 @@ DirDoesntExist=文件夹：%n%n%1%n%n不存在。您想要创建此文件夹吗�
 ; *** "Select Components" wizard page
 WizardSelectComponents=选择组件
 SelectComponentsDesc=您想安装哪些程序组件？
-SelectComponentsLabel2=选中您想安装的组件；取消您不想安装的组件。然后点击"下一步"继续。
+SelectComponentsLabel2=选中您想安装的组件；取消您不想安装的组件。然后点击“下一步”继续。
 FullInstallation=完全安装
+; if possible don't translate 'Compact' as 'Minimal' (I mean 'Minimal' in your language)
 CompactInstallation=简洁安装
 CustomInstallation=自定义安装
 NoUninstallWarningTitle=组件已存在
@@ -177,13 +194,13 @@ ComponentsDiskSpaceMBLabel=当前选择的组件需要至少 [mb] MB 的磁盘�
 ; *** "Select Additional Tasks" wizard page
 WizardSelectTasks=选择附加任务
 SelectTasksDesc=您想要安装程序执行哪些附加任务？
-SelectTasksLabel2=选择您想要安装程序在安装 [name] 时执行的附加任务，然后点击"下一步"。
+SelectTasksLabel2=选择您想要安装程序在安装 [name] 时执行的附加任务，然后点击“下一步”。
 
 ; *** "Select Start Menu Folder" wizard page
 WizardSelectProgramGroup=选择开始菜单文件夹
 SelectStartMenuFolderDesc=安装程序应该在哪里放置程序的快捷方式？
-SelectStartMenuFolderLabel3=安装程序将在下列"开始"菜单文件夹中创建程序的快捷方式。
-SelectStartMenuFolderBrowseLabel=点击"下一步"继续。如果您想选择其他文件夹，点击"浏览"。
+SelectStartMenuFolderLabel3=安装程序将在下列“开始”菜单文件夹中创建程序的快捷方式。
+SelectStartMenuFolderBrowseLabel=点击“下一步”继续。如果您想选择其他文件夹，点击“浏览”。
 MustEnterGroupName=您必须输入一个文件夹名称。
 GroupNameTooLong=文件夹名称或路径太长。
 InvalidGroupName=文件夹名称无效。
@@ -193,8 +210,8 @@ NoProgramGroupCheck2=不创建开始菜单文件夹(&D)
 ; *** "Ready to Install" wizard page
 WizardReady=准备安装
 ReadyLabel1=安装程序准备就绪，现在可以开始安装 [name] 到您的计算机。
-ReadyLabel2a=点击"安装"继续此安装程序。如果您想重新查看或修改任何设置，点击"上一步"。
-ReadyLabel2b=点击"安装"继续此安装程序。
+ReadyLabel2a=点击“安装”继续此安装程序。如果您想重新查看或修改任何设置，点击“上一步”。
+ReadyLabel2b=点击“安装”继续此安装程序。
 ReadyMemoUserInfo=用户信息：
 ReadyMemoDir=目标位置：
 ReadyMemoType=安装类型：
@@ -202,11 +219,33 @@ ReadyMemoComponents=已选择组件：
 ReadyMemoGroup=开始菜单文件夹：
 ReadyMemoTasks=附加任务：
 
+; *** TDownloadWizardPage wizard page and DownloadTemporaryFile
+DownloadingLabel2=正在下载文件...
+ButtonStopDownload=停止下载(&S)
+StopDownload=您确定要停止下载吗？
+ErrorDownloadAborted=下载已中止
+ErrorDownloadFailed=下载失败：%1 %2
+ErrorDownloadSizeFailed=获取大小失败：%1 %2
+ErrorProgress=无效的进度：%1 / %2
+ErrorFileSize=文件大小错误：预期 %1，实际 %2
+
+; *** TExtractionWizardPage wizard page and ExtractArchive
+ExtractingLabel=正在提取文件...
+ButtonStopExtraction=停止提取(&S)
+StopExtraction=您确定要停止提取吗？
+ErrorExtractionAborted=提取已中止
+ErrorExtractionFailed=提取失败：%1
+
+; *** Archive extraction failure details
+ArchiveIncorrectPassword=密码不正确
+ArchiveIsCorrupted=压缩包已损坏
+ArchiveUnsupportedFormat=不支持的压缩包格式
+
 ; *** "Preparing to Install" wizard page
 WizardPreparing=正在准备安装
 PreparingDesc=安装程序正在准备安装 [name] 到您的计算机。
 PreviousInstallNotCompleted=先前的程序安装或卸载未完成，需要您重启计算机以完成该安装。%n%n在重启计算机后，再次运行安装程序以完成 [name] 的安装。
-CannotContinue=安装程序不能继续。请点击"取消"退出。
+CannotContinue=安装程序不能继续。请点击“取消”退出。
 ApplicationsFound=以下应用程序正在使用将由安装程序更新的文件。建议您允许安装程序自动关闭这些应用程序。
 ApplicationsFound2=以下应用程序正在使用将由安装程序更新的文件。建议您允许安装程序自动关闭这些应用程序。安装完成后，安装程序将尝试重新启动这些应用程序。
 CloseApplications=自动关闭应用程序(&A)
@@ -222,20 +261,22 @@ InstallingLabel=安装程序正在安装 [name] 到您的计算机，请稍候�
 FinishedHeadingLabel=完成 [name] 安装向导
 FinishedLabelNoIcons=安装程序已在您的计算机中安装了 [name]。
 FinishedLabel=安装程序已在您的计算机中安装了 [name]。您可以通过已安装的快捷方式运行此应用程序。
-ClickFinish=点击"完成"退出安装程序。
+ClickFinish=点击“完成”退出安装程序。
 FinishedRestartLabel=为完成 [name] 的安装，安装程序必须重新启动您的计算机。要立即重启吗？
 FinishedRestartMessage=为完成 [name] 的安装，安装程序必须重新启动您的计算机。%n%n要立即重启吗？
 ShowReadmeCheck=是，我想查阅自述文件
 YesRadio=是，立即重启计算机(&Y)
 NoRadio=否，稍后重启计算机(&N)
+; used for example as 'Run MyProg.exe'
 RunEntryExec=运行 %1
+; used for example as 'View Readme.txt'
 RunEntryShellExec=查阅 %1
 
 ; *** "Setup Needs the Next Disk" stuff
 ChangeDiskTitle=安装程序需要下一张磁盘
-SelectDiskLabel2=请插入磁盘 %1 并点击"确定"。%n%n如果这个磁盘中的文件可以在下列文件夹之外的文件夹中找到，请输入正确的路径或点击"浏览"。
+SelectDiskLabel2=请插入磁盘 %1 并点击“确定”。%n%n如果这个磁盘中的文件可以在下列文件夹之外的文件夹中找到，请输入正确的路径或点击“浏览”。
 PathLabel=路径(&P)：
-FileNotInDir2="%2"中找不到文件"%1"。请插入正确的磁盘或选择其他文件夹。
+FileNotInDir2=“%2”中找不到文件“%1”。请插入正确的磁盘或选择其他文件夹。
 SelectDirectoryLabel=请指定下一张磁盘的位置。
 
 ; *** Installation phase messages
@@ -275,17 +316,17 @@ ErrorRegCreateKey=创建注册表项时出错：%n%1\%2
 ErrorRegWriteKey=写入注册表项时出错：%n%1\%2
 
 ; *** INI errors
-ErrorIniEntry=在文件"%1"中创建 INI 条目时出错。
+ErrorIniEntry=在文件“%1”中创建 INI 条目时出错。
 
 ; *** File copying errors
 FileAbortRetryIgnoreSkipNotRecommended=跳过此文件(&S)（不推荐）
 FileAbortRetryIgnoreIgnoreNotRecommended=忽略错误并继续(&I)（不推荐）
 SourceIsCorrupted=源文件已损坏
-SourceDoesntExist=源文件"%1"不存在
+SourceDoesntExist=源文件“%1”不存在
 SourceVerificationFailed=源文件验证失败：%1
-VerificationSignatureDoesntExist=签名文件"%1"不存在
-VerificationSignatureInvalid=签名文件"%1"无效
-VerificationKeyNotFound=签名文件"%1"使用了未知的密钥
+VerificationSignatureDoesntExist=签名文件“%1”不存在
+VerificationSignatureInvalid=签名文件“%1”无效
+VerificationKeyNotFound=签名文件“%1”使用了未知的密钥
 VerificationFileNameIncorrect=文件名不正确
 VerificationFileTagIncorrect=文件标签不正确
 VerificationFileSizeIncorrect=文件大小不正确
@@ -318,7 +359,9 @@ ErrorRegSvr32Failed=RegSvr32 失败；退出代码 %1
 ErrorRegisterTypeLib=无法注册类型库：%1
 
 ; *** Uninstall display name markings
+; used for example as 'My Program (32-bit)'
 UninstallDisplayNameMark=%1 (%2)
+; used for example as 'My Program (32-bit, All users)'
 UninstallDisplayNameMarks=%1 (%2, %3)
 UninstallDisplayNameMark32Bit=32 位
 UninstallDisplayNameMark64Bit=64 位
@@ -330,9 +373,9 @@ ErrorOpeningReadme=尝试打开自述文件时出错。
 ErrorRestartingComputer=安装程序无法重启计算机，请手动重启。
 
 ; *** Uninstaller messages
-UninstallNotFound=文件"%1"不存在。无法卸载。
-UninstallOpenError=文件"%1"不能被打开。无法卸载
-UninstallUnsupportedVer=此版本的卸载程序无法识别卸载日志文件"%1"的格式。无法卸载
+UninstallNotFound=文件“%1”不存在。无法卸载。
+UninstallOpenError=文件“%1”不能被打开。无法卸载
+UninstallUnsupportedVer=此版本的卸载程序无法识别卸载日志文件“%1”的格式。无法卸载
 UninstallUnknownEntry=卸载日志中遇到一个未知条目（%1）
 ConfirmUninstall=您确认要完全移除 %1 及其所有组件吗？
 UninstallOnlyOnWin64=仅允许在 64 位 Windows 中卸载此程序。
@@ -341,11 +384,11 @@ UninstallStatusLabel=正在从您的计算机中移除 %1，请稍候。
 UninstalledAll=已顺利从您的计算机中移除 %1。
 UninstalledMost=%1 卸载完成。%n%n有部分内容未能被删除，但您可以手动删除它们。
 UninstalledAndNeedsRestart=为完成 %1 的卸载，需要重启您的计算机。%n%n要立即重启吗？
-UninstallDataCorrupted=文件"%1"已损坏。无法卸载
+UninstallDataCorrupted=文件“%1”已损坏。无法卸载
 
 ; *** Uninstallation phase messages
 ConfirmDeleteSharedFileTitle=删除共享文件？
-ConfirmDeleteSharedFile2=系统表示下列共享文件已不再有任何程序使用。您希望卸载程序删除此共享文件吗？%n%n如果仍有程序正在使用此文件，删除后这些程序可能无法正常运行。如果您不能确定，请选择"否"，保留此文件在系统中不会造成任何损害。
+ConfirmDeleteSharedFile2=系统表示下列共享文件已不再有任何程序使用。您希望卸载程序删除此共享文件吗？%n%n如果仍有程序正在使用此文件，删除后这些程序可能无法正常运行。如果您不能确定，请选择“否”，保留此文件在系统中不会造成任何损害。
 SharedFileNameLabel=文件名：
 SharedFileLocationLabel=位置：
 WizardUninstalling=卸载状态
@@ -354,6 +397,9 @@ StatusUninstalling=正在卸载 %1...
 ; *** Shutdown block reasons
 ShutdownBlockReasonInstallingApp=正在安装 %1。
 ShutdownBlockReasonUninstallingApp=正在卸载 %1。
+
+; The custom messages below aren't used by Setup itself, but if you make
+; use of them in your scripts, you'll want to translate them.
 
 [CustomMessages]
 
