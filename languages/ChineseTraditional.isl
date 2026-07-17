@@ -6,11 +6,25 @@
 ; Based on 5.5.3+ translations by Samuel Lee, Email: 751555749@qq.com
 ; Translation based on network resource
 ;
+; Note: When translating this text, do not add periods (.) to the end of
+; messages that didn't have them already, because on those messages Inno
+; Setup adds the periods automatically (appending a period would result in
+; two periods being displayed).
+;
+; Submit webpage: https://jrsoftware.org/files/istrans/
 
 [LangOptions]
+; The following three entries are very important. Be sure to read and
+; understand the '[LangOptions] section' topic in the help file.
 LanguageName=繁體中文
+; About LanguageID, to reference link:
+; https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-lcid/a9eac961-e77d-41a6-90a5-ce1a8b0cdb9c
 LanguageID=$0404
+; About CodePage, to reference link:
+; https://docs.microsoft.com/en-us/windows/win32/intl/code-page-identifiers
 LanguageCodePage=950
+; If the language you are translating to requires special font faces or
+; sizes, uncomment any of the following entries and change them accordingly.
 DialogFontName=Microsoft JhengHei UI
 ;DialogFontSize=9
 ;DialogFontBaseScaleWidth=7
@@ -165,6 +179,7 @@ WizardSelectComponents=選擇元件
 SelectComponentsDesc=選擇將會被安裝的元件。
 SelectComponentsLabel2=選擇您想要安裝的元件；清除您不想安裝的元件。當您準備好繼續安裝，請按 「下一步」。
 FullInstallation=完整安裝
+; if possible don't translate 'Compact' as 'Minimal' (I mean 'Minimal' in your language)
 CompactInstallation=精簡安裝
 CustomInstallation=自訂安裝
 NoUninstallWarningTitle=元件已存在
@@ -202,6 +217,28 @@ ReadyMemoComponents=選擇的元件：
 ReadyMemoGroup=「開始」功能表資料夾：
 ReadyMemoTasks=附加工作：
 
+; *** TDownloadWizardPage wizard page and DownloadTemporaryFile
+DownloadingLabel2=正在下載檔案...
+ButtonStopDownload=停止下載 (&S)
+StopDownload=您確定要停止下載嗎？
+ErrorDownloadAborted=已停止下載
+ErrorDownloadFailed=下載失敗：%1 %2
+ErrorDownloadSizeFailed=取得檔案大小失敗：%1 %2
+ErrorProgress=進度無效：%1 / %2
+ErrorFileSize=檔案大小無效：必須為 %1，收到 %2
+
+; *** TExtractionWizardPage wizard page and ExtractArchive
+ExtractingLabel=正在解壓縮檔案...
+ButtonStopExtraction=停止解壓縮 (&S)
+StopExtraction=您確定要停止解壓縮嗎？
+ErrorExtractionAborted=解壓縮已中止
+ErrorExtractionFailed=解壓縮失敗：%1
+
+; *** Archive extraction failure details
+ArchiveIncorrectPassword=壓縮檔密碼不正確
+ArchiveIsCorrupted=壓縮檔已損毀
+ArchiveUnsupportedFormat=不支援的壓縮檔格式
+
 ; *** "Preparing to Install" wizard page
 WizardPreparing=準備安裝程式
 PreparingDesc=安裝程式準備將 [name] 安裝到您的電腦上。
@@ -228,7 +265,9 @@ FinishedRestartMessage=要完成 [name] 的安裝，安裝程式必須重新啟�
 ShowReadmeCheck=是，我要閱讀讀我檔案
 YesRadio=是，立即重新啟動電腦 (&Y)
 NoRadio=否，我稍後重新啟動電腦 (&N)
+; used for example as 'Run MyProg.exe'
 RunEntryExec=執行 %1
+; used for example as 'View Readme.txt'
 RunEntryShellExec=檢視 %1
 
 ; *** "Setup Needs the Next Disk" stuff
@@ -318,7 +357,9 @@ ErrorRegSvr32Failed=RegSvr32 失敗；結束代碼 %1
 ErrorRegisterTypeLib=無法註冊類型庫：%1
 
 ; *** Uninstall display name markings
+; used for example as 'My Program (32-bit)'
 UninstallDisplayNameMark=%1 (%2)
+; used for example as 'My Program (32-bit, All users)'
 UninstallDisplayNameMarks=%1 (%2, %3)
 UninstallDisplayNameMark32Bit=32 位元
 UninstallDisplayNameMark64Bit=64 位元
@@ -336,7 +377,7 @@ UninstallUnsupportedVer=這個版本的解除安裝程式無法辨識解除安�
 UninstallUnknownEntry=解除安裝記錄檔中發現未知的記錄 (%1)
 ConfirmUninstall=您確定要完全移除 %1 及其所有元件嗎？
 UninstallOnlyOnWin64=這個程式只能在 64 位元的 Windows 上解除安裝。
-OnlyAdminCanUninstall=這個程式要具備系統管理員權限的使用者方能解除安裝。
+OnlyAdminCanUninstall=這個程式要具備系統管理員權限的使用者方可解除安裝。
 UninstallStatusLabel=正在從您的電腦移除 %1 中，請稍候。
 UninstalledAll=%1 已經成功從您的電腦中移除。
 UninstalledMost=%1 解除安裝完成。%n%n某些項目無法移除，您可以自行移除這些項目。
@@ -354,6 +395,9 @@ StatusUninstalling=正在解除安裝 %1...
 ; *** Shutdown block reasons
 ShutdownBlockReasonInstallingApp=正在安裝 %1。
 ShutdownBlockReasonUninstallingApp=正在解除安裝 %1。
+
+; The custom messages below aren't used by Setup itself, but if you make
+; use of them in your scripts, you'll want to translate them.
 
 [CustomMessages]
 
