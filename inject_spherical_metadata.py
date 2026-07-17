@@ -279,6 +279,99 @@ def inject_uuid(input_path, output_path, pano_type='360', stereo_mode='mono'):
     return True
 
 
+def _parse_gsph_xml(xml_bytes):
+    """Parse GSpherical XML bytes into a metadata dict."""
+    import re
+    try:
+        xml = xml_bytes.decode('utf-8', errors='replace')
+        end = xml.find('</rdf:SphericalVideo>')
+        if end >= 0:
+            xml = xml[:end + len('</rdf:SphericalVideo>')]
+
+        def field(name):
+            m = re.search(r'<GSpherical:' + name + r'>([^<]*)</GSpherical:' + name + r'>', xml)
+            return m.group(1).strip() if m else None
+
+        proj = field('ProjectionType')          # equirectangular / cubemap / mesh
+        stereo = field('StereoMode')            # mono / left-right / top-bottom
+        sc = field('SourceCount')
+        fpw = field('FullPanoWidthPixels')
+        fph = field('FullPanoHeightPixels')
+        caw = field('CroppedAreaImageWidthPixels')
+        cah = field('CroppedAreaImageHeightPixels')
+        cal = field('CroppedAreaLeftPixels')
+        cat = field('CroppedAreaTopPixels')
+
+        # Determine pano_type: VR180 = the image is a cropped sub-region of a
+        # larger full panorama (FullPanoWidth > CroppedImageWidth, or non-zero
+        # crop offset).  Full 360° = image IS the full panorama (no cropping).
+        pano_type = None
+        try:
+            full_w = int(fpw) if fpw else 0
+            full_h = int(fph) if fph else 0
+            crop_w = int(caw) if caw else 0
+            crop_h = int(cah) if cah else 0
+            crop_l = int(cal) if cal else 0
+            crop_t = int(cat) if cat else 0
+            if full_w > crop_w or full_h > crop_h or crop_l > 0 or crop_t > 0:
+                pano_type = '180'
+            else:
+                pano_type = '360'
+        except (ValueError, TypeError):
+            pass
+
+        return {
+            'spherical': True,
+            'projection': proj,
+            'pano_type': pano_type,
+            'stereo_mode': stereo,
+            'source_count': int(sc) if sc and sc.isdigit() else None,
+        }
+    except Exception:
+        return {'spherical': True, 'projection': None, 'pano_type': None,
+                'stereo_mode': None, 'source_count': None}
+
+
+def read_gspherical(path, head_mb=4, tail_mb=4):
+    """Read GSpherical metadata from an MP4 without loading the whole file.
+
+    Scans only the file head and tail (where the moov box lives — faststart
+    puts moov near the front, non-faststart near the end), finds the GSpherical
+    UUID box, parses the XML, and returns::
+
+        { spherical, projection, pano_type, stereo_mode, source_count }
+
+    ``pano_type`` is '360' (full equirectangular panorama) or '180' (VR180
+    cropped front-hemisphere), derived from the crop-offset fields.
+    Returns ``{spherical: False, ...}`` when no GSpherical UUID is present.
+    """
+    HEAD = head_mb * 1024 * 1024
+    TAIL = tail_mb * 1024 * 1024
+    try:
+        fsize = os.path.getsize(path)
+        with open(path, 'rb') as f:
+            # --- search head ---
+            head = f.read(min(HEAD, fsize))
+            idx = head.find(SPHERICAL_UUID)
+            if idx >= 0:
+                xs = idx + len(SPHERICAL_UUID)
+                return _parse_gsph_xml(head[xs:xs + 4096])
+            # --- search tail (non-faststart: moov after mdat) ---
+            if fsize > HEAD:
+                tail_start = max(HEAD, fsize - TAIL)
+                f.seek(tail_start)
+                tail = f.read(fsize - tail_start)
+                idx = tail.find(SPHERICAL_UUID)
+                if idx >= 0:
+                    xs = idx + len(SPHERICAL_UUID)
+                    return _parse_gsph_xml(tail[xs:xs + 4096])
+        return {'spherical': False, 'projection': None, 'pano_type': None,
+                'stereo_mode': None, 'source_count': None}
+    except Exception:
+        return {'spherical': False, 'projection': None, 'pano_type': None,
+                'stereo_mode': None, 'source_count': None}
+
+
 if __name__ == '__main__':
     if len(sys.argv) < 3:
         print(f'Usage: python {sys.argv[0]} <input.mp4> <output.mp4>')

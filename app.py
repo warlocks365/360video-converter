@@ -83,9 +83,10 @@ if not os.path.isfile(FFPROBE_PATH):
 
 # Import the metadata injection module
 try:
-    from inject_spherical_metadata import inject_uuid
+    from inject_spherical_metadata import inject_uuid, read_gspherical
 except ImportError:
     inject_uuid = None
+    read_gspherical = None
     print('[WARN] inject_spherical_metadata not found -- injection disabled')
 
 app = Flask(__name__, static_folder='static', static_url_path='')
@@ -3218,7 +3219,17 @@ def report_worker(jid):
                     item['ok'] = False
                     log_line(jid, f'  ffprobe 失败: {err_txt}', 'error')
                 else:
-                    item['probe'] = json.loads(out)
+                    probe_data = json.loads(out)
+                    # Enrich: parse the raw GSpherical XML UUID box so the
+                    # report can show the real projection type (360°/180° +
+                    # stereo mode).  ffprobe's side_data cannot distinguish
+                    # 360 vs 180 (no bound/crop fields exposed).
+                    if read_gspherical:
+                        try:
+                            probe_data['gspherical'] = read_gspherical(path)
+                        except Exception:
+                            pass
+                    item['probe'] = probe_data
                     item['ok'] = True
                     ok_count += 1
                     log_line(jid, '  读取成功', 'success')

@@ -3502,29 +3502,86 @@ function formatBitrate(bps) {
 }
 
 function detectSpherical(probe) {
-  // Detect whether a video carries 360° panoramic (spherical) metadata.
-  // ffmpeg/ffprobe expose this canonically as a video-stream side_data of
-  // type "Spherical Mapping" (projection: equirectangular etc.). Some tools
-  // also write a `spherical` tag or a GSpherical/stitchingSoftware XML box,
-  // so we accept those as fallbacks too.
+  // Detect whether a video carries 360° panoramic (spherical) metadata and
+  // determine its real projection type (pano_type 360°/180° + stereo mode).
+  //
+  // Priority 1 — backend-parsed GSpherical XML (d['gspherical']):
+  //   The report worker calls read_gspherical() which scans the MP4 for the
+  //   GSpherical UUID box and parses the XML. This is the ONLY source that can
+  //   distinguish 360° vs 180° (via crop-offset fields) and the authoritative
+  //   stereo mode, matching the selectable types in the encoding UI.
+  //
+  // Priority 2 — ffprobe side_data_list fallback (no backend enrichment):
+  //   Spherical Mapping side_data confirms spherical=true but CANNOT tell 360
+  //   from 180 (no bound/crop fields).  Stereo 3D side_data gives stereo mode.
+  //
+  // Priority 3 — tag/string fallback for legacy formats.
   const d = probe || {};
+  if (d.gspherical && d.gspherical.spherical) {
+    return {
+      spherical: true,
+      projection: d.gspherical.projection || null,
+      panoType: d.gspherical.pano_type || null,
+      stereo: d.gspherical.stereo_mode || null,
+    };
+  }
   const streams = d.streams || [];
   const vStream = streams.find(s => s.codec_type === 'video') || {};
   const tags = (d.format && d.format.tags) || {};
   const vTags = vStream.tags || {};
-
   const sd = vStream.side_data_list || [];
   const sph = sd.find(x => (x.side_data_type || '') === 'Spherical Mapping');
   if (sph) {
-    return { spherical: true, projection: sph.projection || null, stereo: sph.stereo_mode || null };
+    let stereo = null;
+    const s3d = sd.find(x => (x.side_data_type || '') === 'Stereo 3D');
+    if (s3d) {
+      const t = s3d.type || '';
+      stereo = t === '2D' ? 'mono'
+        : t === 'side by side' ? 'left-right'
+        : t === 'top and bottom' ? 'top-bottom' : null;
+    }
+    return { spherical: true, projection: sph.projection || null, panoType: null, stereo };
   }
   const raw = JSON.stringify(d);
   if (tags['spherical'] || vTags['spherical'] ||
       raw.includes('GSpherical') || raw.includes('stitchingSoftware') ||
       raw.includes('Spherical Mapping') || raw.includes('equirectangular')) {
-    return { spherical: true, projection: null, stereo: null };
+    return { spherical: true, projection: null, panoType: null, stereo: null };
   }
-  return { spherical: false, projection: null, stereo: null };
+  return { spherical: false, projection: null, panoType: null, stereo: null };
+}
+
+// Build the "全景元数据" label, mapping to the same type names used in the
+// single-file / metadata-tool injection dropdown so the report matches the UI.
+//   360-mono  -> 360° 单目全景
+//   180-mono  -> 180° 单目全景
+//   360-left-right -> 360° 双目VR左右
+//   180-left-right -> 180° 双目VR左右
+//   360-top-bottom -> 360° 双目VR上下
+//   180-top-bottom -> 180° 双目VR上下
+function sphericalLabel(sphInfo) {
+  if (!sphInfo.spherical) return '未注入';
+  const pt = sphInfo.panoType;
+  const sm = sphInfo.stereo;
+  if (pt && sm) {
+    const pano = pt === '180' ? '180' : '360';
+    const desc = sm === 'mono' ? '单目全景'
+      : sm === 'left-right' ? '双目VR左右'
+      : sm === 'top-bottom' ? '双目VR上下' : sm;
+    return `已注入 (${pano}° ${desc})`;
+  }
+  // Partial info — show what we have
+  if (sphInfo.projection && sphInfo.projection !== 'equirectangular') {
+    return `已注入 (${sphInfo.projection})`;
+  }
+  if (sm) {
+    const desc = sm === 'mono' ? '单目'
+      : sm === 'left-right' ? '双目VR左右'
+      : sm === 'top-bottom' ? '双目VR上下' : sm;
+    return `已注入 (equirectangular ${desc})`;
+  }
+  if (sphInfo.projection) return `已注入 (${sphInfo.projection})`;
+  return '已注入 (GSpherical)';
 }
 
 function renderReport() {
@@ -3598,7 +3655,7 @@ function renderReport() {
           <div class="report-section-title">元数据标签</div>
           <div class="report-row"><span class="label">拍摄日期</span><span class="value ${creationTime ? 'ok' : 'warn'}">${creationTime ? esc(creationTime) : '未设置'}</span></div>
           <div class="report-row"><span class="label">拍摄位置</span><span class="value ${location ? 'ok' : 'warn'}">${location ? esc(location) : '未设置'}</span></div>
-          <div class="report-row"><span class="label">全景元数据</span><span class="value ${hasSpherical ? 'ok' : 'warn'}">${hasSpherical ? '已注入 (' + (sphInfo.projection ? sphInfo.projection : 'GSpherical') + ')' : '未注入'}</span></div>
+          <div class="report-row"><span class="label">全景元数据</span><span class="value ${hasSpherical ? 'ok' : 'warn'}">${hasSpherical ? sphericalLabel(sphInfo) : '未注入'}</span></div>
           ${Object.entries(tags).filter(([k]) => !['creation_time','location','spherical'].includes(k)).slice(0, 5).map(([k,v]) =>
             `<div class="report-row"><span class="label">${esc(k)}</span><span class="value">${esc(String(v).substring(0, 80))}</span></div>`
           ).join('')}
@@ -3649,8 +3706,8 @@ function saveReport() {
       text += `\n-- 元数据 --\n`;
       text += `拍摄日期: ${tags['creation_time'] || vTags['creation_time'] || '未设置'}\n`;
       text += `拍摄位置: ${tags['location'] || vTags['location'] || '未设置'}\n`;
-      const hasSph = detectSpherical(d).spherical;
-      text += `全景元数据: ${hasSph ? '已注入 (GSpherical)' : '未注入'}\n`;
+      const sphInfo2 = detectSpherical(d);
+      text += `全景元数据: ${sphericalLabel(sphInfo2)}\n`;
     }
     text += `\n${'─'.repeat(80)}\n\n`;
   });
