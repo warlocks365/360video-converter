@@ -1369,20 +1369,46 @@ def apply_metadata_one(jid, inp, out, params):
                 return False, str(e), out
 
     elif need_spherical:
-        # Only spherical metadata, no ffmpeg needed
+        # Only spherical metadata requested: mirror the single-file conversion
+        # container by (re)muxing with ffmpeg stream copy + faststart, then
+        # injecting GSpherical — so the output container structure matches exactly.
         pano_type = params.get('pano_type', '360')
         stereo_mode = params.get('stereo_mode', 'mono')
-        log_line(jid, f'  Injecting GSpherical metadata (direct, pano={pano_type}, stereo={stereo_mode})...')
+        log_line(jid, f'  Injecting GSpherical metadata (pano={pano_type}, stereo={stereo_mode})...')
+        cmd = [FFMPEG_PATH, '-y', '-i', inp, '-c', 'copy']
+        if params.get('faststart', True):
+            cmd += ['-movflags', '+faststart']
+        cmd.append(temp_out)
+        log_line(jid, '  Running ffmpeg (stream copy, no re-encode)...')
+        rc = run_ffmpeg(cmd, jid, 0)
+        if rc != 0:
+            try: os.remove(temp_out)
+            except Exception: pass
+            return False, f'ffmpeg stream copy failed (rc={rc})', out
+        final_out = temp_out if not replace_original else out + '.spherical_tmp.mp4'
         try:
-            ok = inject_uuid(inp, out, pano_type, stereo_mode)
+            ok = inject_uuid(temp_out, final_out, pano_type, stereo_mode)
             if ok:
                 log_line(jid, '  Spherical injection: OK')
             else:
-                log_line(jid, '  Spherical injection: FAILED', 'error')
-                return False, 'Spherical injection failed', out
+                log_line(jid, '  Spherical injection: FAILED (non-fatal)', 'warn')
+                import shutil
+                shutil.copy2(temp_out, final_out)
         except Exception as e:
             log_line(jid, f'  Injection error: {e}', 'error')
-            return False, str(e)
+            import shutil
+            shutil.copy2(temp_out, final_out)
+        finally:
+            if temp_out != final_out:
+                try: os.remove(temp_out)
+                except Exception: pass
+        # Replace original if needed
+        if replace_original:
+            try:
+                os.replace(final_out, out)
+            except Exception as e:
+                log_line(jid, f'  Failed to replace original: {e}', 'error')
+                return False, str(e), out
     else:
         log_line(jid, '  No metadata features enabled', 'warn')
         return False, 'No metadata features enabled', out
@@ -1800,6 +1826,124 @@ def _ensure_folder_picker_cs():
             continue
     return os.path.join(BASE_DIR, 'folder_picker.cs')
 
+
+# ── Known-folder / shell-path resolution ──────────────────────
+# Folder pickers (especially the FolderBrowserDialog fallback) may return shell
+# namespace paths such as "::{GUID}" for Windows known folders (Desktop, Downloads,
+# Documents, Pictures, Videos). ffmpeg / os.path cannot use these, so we resolve
+# them to real filesystem paths via SHGetKnownFolderPath.
+
+_SHELL_NAME_TO_GUID = {
+    'desktop':   '{B4BFCC3A-DB2C-424C-B029-7FE99A87C641}',
+    'downloads': '{374DE290-123F-4565-9164-39C4925E467B}',
+    'documents': '{FDD39AD0-238F-46AF-ADB4-6C85480369C7}',
+    'pictures':  '{33E28130-4E1E-4676-835A-98395C3BC3BB}',
+    'videos':    '{18989B1D-99B5-455B-841C-AB7C74E4DDFC}',
+    'music':     '{4BD8D571-6D19-48D3-BE97-422220080E43}',
+}
+
+
+class _KnownFolderGUID(ctypes.Structure):
+    _fields_ = [
+        ("Data1", ctypes.c_ulong),
+        ("Data2", ctypes.c_ushort),
+        ("Data3", ctypes.c_ushort),
+        ("Data4", ctypes.c_ubyte * 8),
+    ]
+
+
+def _parse_guid(guid_str):
+    """Parse '{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}' into a _KnownFolderGUID."""
+    try:
+        g = guid_str.strip().strip('{}')
+        parts = g.split('-')
+        if len(parts) != 5:
+            return None
+        d4 = parts[3] + parts[4]
+        if len(d4) != 16:
+            return None
+        data4 = (ctypes.c_ubyte * 8)(*[int(d4[i:i+2], 16) for i in range(0, 16, 2)])
+        return _KnownFolderGUID(int(parts[0], 16), int(parts[1], 16),
+                                int(parts[2], 16), data4)
+    except (ValueError, IndexError):
+        return None
+
+
+def _resolve_known_folder_guid(guid_str):
+    """Resolve a known-folder GUID to its real filesystem path via SHGetKnownFolderPath."""
+    guid = _parse_guid(guid_str)
+    if guid is None:
+        return None
+    try:
+        shell32 = ctypes.windll.shell32
+        ole32 = ctypes.windll.ole32
+        # COINIT_APARTMENTTHREADED = 0x2
+        ole32.CoInitializeEx(None, 0x2)
+        pp = ctypes.c_wchar_p()
+        SHGetKnownFolderPath = shell32.SHGetKnownFolderPath
+        SHGetKnownFolderPath.argtypes = [
+            ctypes.POINTER(_KnownFolderGUID), ctypes.c_uint32, ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_wchar_p),
+        ]
+        SHGetKnownFolderPath.restype = ctypes.c_int32
+        rc = SHGetKnownFolderPath(ctypes.byref(guid), 0, None, ctypes.byref(pp))
+        if rc == 0 and pp:
+            return pp.value
+    except Exception:
+        return None
+    finally:
+        try:
+            ctypes.windll.ole32.CoUninitialize()
+        except Exception:
+            pass
+    return None
+
+
+def resolve_real_path(path):
+    """Resolve a folder/file path from a native dialog to a real filesystem path.
+
+    Handles shell-namespace paths ("::{GUID}", possibly with a trailing sub-path)
+    and "shell:Name" shortcuts returned for known folders. If the path is already a
+    valid filesystem path or cannot be resolved, it is returned unchanged (safe).
+    """
+    if not path or not isinstance(path, str):
+        return path
+    p = path.strip()
+    if not p:
+        return p
+    # Already a normal absolute filesystem path -> verify it resolves
+    try:
+        if os.path.isabs(p) and not p.startswith('::') and not p.lower().startswith('shell:'):
+            if os.path.isdir(p) or os.path.isfile(p) or os.path.exists(p):
+                return p
+    except Exception:
+        pass
+    # shell:Downloads etc.
+    if p.lower().startswith('shell:'):
+        name = re.split(r'[/\\]', p[6:])[0].lower()
+        guid = _SHELL_NAME_TO_GUID.get(name)
+        if guid:
+            resolved = _resolve_known_folder_guid(guid)
+            if resolved:
+                return resolved
+        return p
+    # ::{GUID} (possibly with extra sub-path after the shell item)
+    if '::' in p:
+        m = re.search(
+            r'\{([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})\}',
+            p,
+        )
+        if m:
+            resolved = _resolve_known_folder_guid(m.group(1))
+            if resolved:
+                suffix = p[m.end():]
+                if suffix:
+                    resolved = os.path.join(resolved, suffix.lstrip('/\\'))
+                return resolved
+        return p
+    return p
+
+
 def _native_open_dir(title, initial_dir):
     """Show native Windows folder browser dialog.
 
@@ -1926,7 +2070,7 @@ def native_dialog_api():
     elif dialog_type == 'open_files':
         # Multi-select file dialog — returns list of paths
         result_str = _native_open_files_multi(title, initial_dir, file_filter)
-        paths = [p.strip() for p in result_str.split('\n') if p.strip()] if result_str else []
+        paths = [resolve_real_path(p.strip()) for p in result_str.split('\n') if p.strip()] if result_str else []
         if paths:
             dir_path = os.path.dirname(paths[0])
             if dir_path:
@@ -1947,7 +2091,7 @@ def native_dialog_api():
             last_paths[path_type] = dir_path
             _save_last_paths(last_paths)
 
-    return jsonify({'path': result})
+    return jsonify({'path': resolve_real_path(result)})
 
 
 @app.route('/api/scan', methods=['POST'])
@@ -1955,6 +2099,7 @@ def scan():
     """Recursively scan a directory for video files."""
     data = request.json or {}
     directory = (data.get('directory') or '').strip()
+    directory = resolve_real_path(directory)
     recursive = data.get('recursive', True)
 
     if not directory:
@@ -2872,7 +3017,7 @@ def add_items(jid):
 @app.route('/api/probe')
 def probe():
     """Get video info via ffprobe."""
-    path = request.args.get('path', '')
+    path = resolve_real_path(request.args.get('path', ''))
     if not path or not os.path.isfile(path):
         return jsonify({'error': 'File not found'}), 404
     try:
@@ -2887,6 +3032,113 @@ def probe():
         return jsonify(json.loads(r.stdout))
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/report', methods=['POST'])
+def start_report():
+    """Generate a metadata report for one or more video files using a job-based
+    pipeline (consistent with conversion: live log + exportable log)."""
+    data = request.json or {}
+    paths = data.get('paths') or []
+    if not paths:
+        # Allow passing a directory + recursive flag (backend scans)
+        directory = resolve_real_path((data.get('directory') or '').strip())
+        recursive = data.get('recursive', True)
+        if directory and os.path.isdir(directory):
+            try:
+                if recursive:
+                    walker = os.walk(directory)
+                else:
+                    walker = [(directory, [], [f for f in os.listdir(directory)
+                                               if os.path.isfile(os.path.join(directory, f))])]
+                scanned = []
+                for root, _dirs, files in walker:
+                    for f in files:
+                        if Path(f).suffix.lower() in VIDEO_EXTS:
+                            scanned.append(os.path.join(root, f))
+                paths = scanned
+            except Exception:
+                pass
+    if not paths:
+        return jsonify({'error': 'No files specified'}), 400
+
+    items = []
+    for p in paths:
+        rp = resolve_real_path(p)
+        try:
+            size = os.path.getsize(rp) if os.path.isfile(rp) else 0
+        except Exception:
+            size = 0
+        items.append({'input': rp, 'name': os.path.basename(rp),
+                      'size': round(size / 1024 / 1024, 1)})
+
+    jid = new_job('report', items, data.get('params', {}))
+    log_line(jid, f'元数据报告任务启动: 文件数={len(items)}')
+    t = threading.Thread(target=report_worker, args=(jid,), daemon=True)
+    t.start()
+    return jsonify({'job_id': jid})
+
+
+def report_worker(jid):
+    """Worker: probe each file with ffprobe, log progress, store results."""
+    with job_lock:
+        j = jobs.get(jid)
+        if not j:
+            return
+        j['status'] = 'running'
+        j['start_time'] = time.time()
+        items = j['items']
+    total = len(items)
+    ok_count = 0
+    for idx, item in enumerate(items):
+        with job_lock:
+            j = jobs.get(jid)
+            if not j or j['status'] == 'cancelled':
+                return
+            j['current_index'] = idx
+            j['current_input'] = item['input']
+            j['file_progress'] = 0.0
+        path = item['input']
+        log_line(jid, f'[{idx+1}/{total}] 正在读取: {path}')
+        try:
+            if not os.path.isfile(path):
+                item['error'] = '文件不存在 (File not found)'
+                item['ok'] = False
+                log_line(jid, '  错误: 文件不存在', 'error')
+            else:
+                r = subprocess.run(
+                    [FFPROBE_PATH, '-v', 'quiet', '-print_format', 'json',
+                     '-show_format', '-show_streams', path],
+                    capture_output=True, text=True, timeout=30,
+                    env=_ffmpeg_env(), creationflags=NO_WINDOW,
+                )
+                if r.returncode != 0 or not r.stdout.strip():
+                    err_txt = (r.stderr or '').strip()[:400] or 'ffprobe 无输出'
+                    item['error'] = f'ffprobe 失败: {err_txt}'
+                    item['ok'] = False
+                    log_line(jid, f'  ffprobe 失败: {err_txt}', 'error')
+                else:
+                    item['probe'] = json.loads(r.stdout)
+                    item['ok'] = True
+                    ok_count += 1
+                    log_line(jid, '  读取成功', 'success')
+        except Exception as e:
+            item['error'] = f'异常: {e}'
+            item['ok'] = False
+            log_line(jid, f'  异常: {e}', 'error')
+        item['done'] = True
+        with job_lock:
+            j = jobs.get(jid)
+            if j:
+                j['overall_progress'] = (idx + 1) / total * 100
+    # NOTE: log_line() re-acquires job_lock, so it MUST run OUTSIDE the lock block
+    # to avoid a re-entrant deadlock (job_lock is a non-reentrant threading.Lock).
+    with job_lock:
+        j = jobs.get(jid)
+        if j:
+            j['status'] = 'completed'
+            j['end_time'] = time.time()
+    log_line(jid, f'报告读取完成: 成功 {ok_count}/{total}', 'success')
 
 
 @app.route('/api/config')

@@ -1179,6 +1179,7 @@ tr:hover td { background: var(--surface-hover); }
       <div class="card-title">
         &#128203; 报告结果
         <div style="margin-left:auto;display:flex;gap:6px;">
+          <button class="btn btn-sm" id="exportReportLogBtn" onclick="exportReportLog()" style="display:none;">&#128196; 导出日志</button>
           <button class="btn btn-sm" onclick="saveReport()">&#128190; 保存报告</button>
           <button class="btn btn-sm" onclick="clearReport()">&#10005; 清除</button>
         </div>
@@ -1187,6 +1188,9 @@ tr:hover td { background: var(--surface-hover); }
         <div style="padding:40px;text-align:center;color:var(--text-muted);">
           选择视频文件后点击"读取元数据"生成报告
         </div>
+      </div>
+      <div class="log-box" id="reportLogBox" style="display:none;max-height:260px;margin-top:12px;">
+        <div class="log-line"><span class="log-ts">--:--:--</span><span class="log-msg info">等待读取元数据...</span></div>
       </div>
     </div>
   </div>
@@ -3200,30 +3204,19 @@ function toggleReportMode() {
   document.getElementById('reportBatchFile').classList.toggle('hidden', mode !== 'batch');
 }
 
+let reportJobId = null;
+let lastReportJobId = null;
+
 async function generateReport() {
-  const path = document.getElementById('reportInput').value;
+  const path = (document.getElementById('reportInput').value || '').trim();
   if (!path) { alert('请选择视频文件'); return; }
-  document.getElementById('reportResult').innerHTML = '<div style="padding:20px;text-align:center;"><span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:8px;"></span>正在读取元数据...</div>';
-  try {
-    const r = await fetch(`/api/probe?path=${encodeURIComponent(path)}`);
-    const data = await r.json();
-    if (data.error) {
-      reportData = [{filename: path.split(/[\/\\]/).pop(), path: path, error: data.error}];
-    } else {
-      reportData = [{filename: path.split(/[\/\\]/).pop(), path: path, probeData: data}];
-    }
-    renderReport();
-  } catch(e) {
-    reportData = [{filename: path.split(/[\/\\]/).pop(), path: path, error: e.message}];
-    renderReport();
-  }
+  await startReportJob({ paths: [path] });
 }
 
 async function generateBatchReport() {
-  const dir = document.getElementById('reportBatchDir').value.trim();
+  const dir = (document.getElementById('reportBatchDir').value || '').trim();
   if (!dir) { alert('请选择扫描路径'); return; }
-  document.getElementById('reportResult').innerHTML = '<div style="padding:20px;text-align:center;"><span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:8px;"></span>正在扫描...</div>';
-  // Scan directory
+  // Scan first (immediate feedback / file count), then probe via a job for a live log.
   let sdata;
   try {
     const sr = await fetch('/api/scan', {
@@ -3232,43 +3225,106 @@ async function generateBatchReport() {
     });
     sdata = await sr.json();
   } catch(e) {
-    document.getElementById('reportResult').innerHTML = `<div style="padding:20px;text-align:center;color:var(--danger);">扫描失败: ${esc(e.message)}</div>`;
+    alert('扫描失败: ' + e.message);
     return;
   }
   const files = sdata.files || [];
   if (files.length === 0) {
-    document.getElementById('reportResult').innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);">${esc(sdata.message || '未找到视频文件')}</div>`;
+    alert(sdata.message || '未找到视频文件');
     return;
   }
-  document.getElementById('reportResult').innerHTML = `<div style="padding:20px;text-align:center;"><span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:8px;"></span>正在读取 ${files.length} 个文件的元数据... (0/${files.length})</div>`;
+  await startReportJob({ paths: files.map(f => f.path) });
+}
 
-  const reportStartTime = Date.now() / 1000;
-  reportData = [];
-  for (let i = 0; i < files.length; i++) {
-    const f = files[i];
-    const nowSec = Date.now() / 1000;
-    const elapsed = nowSec - reportStartTime;
-    const progress = i / files.length * 100;
-    const est = calcTimeEstimates(reportStartTime, progress, nowSec);
-    const timeStr = est ?
-      `&nbsp;|&nbsp;&#9201; 已耗时 ${fmtTime(est.elapsed)}&nbsp;|&nbsp;预计剩余 ${fmtTime(est.remaining)}&nbsp;|&nbsp;预计总时间 ${fmtTime(est.total)}` :
-      (elapsed > 0 ? `&nbsp;|&nbsp;&#9201; 已耗时 ${fmtTime(elapsed)}` : '');
-    document.getElementById('reportResult').innerHTML = `<div style="padding:20px;text-align:center;"><span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:8px;"></span>正在读取 ${i+1}/${files.length}: ${f.name}${timeStr}</div>`;
-    try {
-      const r = await fetch(`/api/probe?path=${encodeURIComponent(f.path)}`);
-      const data = await r.json();
-      if (data.error) {
-        reportData.push({filename: f.name, path: f.path, error: data.error, size: f.size_mb});
+async function startReportJob(payload) {
+  if (reportJobId) return; // a report job is already running
+  const r = await fetch('/api/report', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const d = await r.json();
+  if (d.error) { alert(d.error); return; }
+  reportJobId = d.job_id;
+  lastReportJobId = d.job_id;
+  // show live log box + export button
+  const box = document.getElementById('reportLogBox');
+  box.style.display = '';
+  box.innerHTML = '<div class="log-line"><span class="log-ts">--:--:--</span><span class="log-msg info">报告任务已启动...</span></div>';
+  document.getElementById('exportReportLogBtn').style.display = '';
+  document.getElementById('reportResult').innerHTML = '<div style="padding:20px;text-align:center;"><span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:8px;"></span>正在读取视频元数据... 0%</div>';
+  pollReportJob();
+}
+
+function pollReportJob() {
+  if (!reportJobId) return;
+  fetch(`/api/status/${reportJobId}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { reportJobId = null; return; }
+      // live log
+      const box = document.getElementById('reportLogBox');
+      box.innerHTML = (data.log || []).slice(-100).map(l =>
+        `<div class="log-line"><span class="log-ts">${l.ts}</span><span class="log-msg ${l.level}">${esc(l.msg)}</span></div>`
+      ).join('');
+      box.scrollTop = box.scrollHeight;
+      const pct = Math.round(data.overall_progress || 0);
+      if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
+        reportData = (data.items || []).map(it => {
+          const fn = it.name || (it.input || '').split(/[\/\\]/).pop();
+          if (it.error) return { filename: fn, path: it.input, error: it.error };
+          return { filename: fn, path: it.input, probeData: it.probe, size: it.size };
+        });
+        renderReport();
+        const total = (data.items || []).length;
+        const okc = (data.items || []).filter(it => it.ok).length;
+        const box2 = document.getElementById('reportLogBox');
+        box2.innerHTML += `<div class="log-line"><span class="log-ts">--:--:--</span><span class="log-msg success">完成: 成功 ${okc}/${total}</span></div>`;
+        reportJobId = null;
       } else {
-        reportData.push({filename: f.name, path: f.path, probeData: data, size: f.size_mb});
+        document.getElementById('reportResult').innerHTML = `<div style="padding:20px;text-align:center;"><span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:8px;"></span>正在读取视频元数据... ${pct}%</div>`;
+        setTimeout(pollReportJob, 400);
       }
-    } catch(e) {
-      reportData.push({filename: f.name, path: f.path, error: e.message, size: f.size_mb});
-    }
+    })
+    .catch(e => {
+      setTimeout(pollReportJob, 1000);
+    });
+}
+
+async function exportReportLog() {
+  if (!lastReportJobId) { alert('当前没有可导出的日志'); return; }
+  const btn = document.getElementById('exportReportLogBtn');
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = '正在导出...';
+  try {
+    const r = await fetch(`/api/encode_log/${lastReportJobId}`);
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+    const logText = d.log || '日志为空';
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const defaultName = `360VideoConverter_报告日志_${ts}`;
+    openSaveDialog(defaultName, async (savePath) => {
+      try {
+        const sr = await fetch('/api/save_report', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({path: savePath, content: logText})
+        });
+        const sd = await sr.json();
+        if (sd.success) {
+          const note = document.createElement('div');
+          note.style.cssText = 'position:fixed;top:20px;right:20px;background:var(--success);color:#fff;padding:8px 16px;border-radius:6px;font-size:0.82rem;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);';
+          note.textContent = '报告日志已保存到: ' + sd.path;
+          document.body.appendChild(note);
+          setTimeout(() => note.remove(), 4000);
+        } else {
+          alert('保存失败: ' + (sd.error || '未知错误'));
+        }
+      } catch(e) { alert('保存失败: ' + e.message); }
+    });
+  } catch(e) {
+    alert('导出日志失败: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = old;
   }
-  const totalTime = Date.now() / 1000 - reportStartTime;
-  document.getElementById('reportResult').innerHTML = `<div style="padding:20px;text-align:center;"><span class="spinner" style="display:inline-block;vertical-align:middle;margin-right:8px;"></span>正在生成报告... &#9201; 总耗时 ${fmtTime(totalTime)}</div>`;
-  renderReport();
 }
 
 function formatDuration(seconds) {
@@ -3584,7 +3640,16 @@ function saveReport() {
 
 function clearReport() {
   reportData = [];
+  reportJobId = null;
+  lastReportJobId = null;
   document.getElementById('reportResult').innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-muted);">选择视频文件后点击"读取元数据"生成报告</div>';
+  const box = document.getElementById('reportLogBox');
+  if (box) {
+    box.style.display = 'none';
+    box.innerHTML = '<div class="log-line"><span class="log-ts">--:--:--</span><span class="log-msg info">等待读取元数据...</span></div>';
+  }
+  const eb = document.getElementById('exportReportLogBtn');
+  if (eb) eb.style.display = 'none';
 }
 
 // ── Tooltip System (viewport-aware dynamic positioning) ────────
