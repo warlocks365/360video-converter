@@ -31,3 +31,8 @@ Thumbs.db
 desktop.ini
 .idea/
 .vscode/
+
+# ── Local scratch / debug (this workspace) ──
+_installer_build.log
+_extract.py
+_test_*.py

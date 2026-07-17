@@ -476,13 +476,16 @@ def expand_formula(formula, source_path, params, project_dir=''):
 def get_duration(path):
     """Get video duration in seconds via ffprobe."""
     try:
+        # Explicit PIPE + utf-8 decode (capture_output=True misbehaves in frozen build)
         r = subprocess.run(
             [FFPROBE_PATH, '-v', 'quiet', '-show_entries', 'format=duration',
              '-of', 'csv=p=0', path],
-            capture_output=True, text=True, timeout=30,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding='utf-8', errors='replace', timeout=30,
             env=_ffmpeg_env(), creationflags=NO_WINDOW
         )
-        return float(r.stdout.strip()) if r.stdout.strip() else 0
+        out = (r.stdout or '').strip()
+        return float(out) if out else 0
     except Exception:
         return 0
 
@@ -3107,15 +3110,18 @@ def probe():
     if not path or not os.path.isfile(path):
         return jsonify({'error': 'File not found'}), 404
     try:
+        # Explicit PIPE + utf-8 decode (capture_output=True misbehaves in frozen build)
         r = subprocess.run(
             [FFPROBE_PATH, '-v', 'quiet', '-print_format', 'json',
              '-show_format', '-show_streams', path],
-            capture_output=True, text=True, timeout=30, env=_ffmpeg_env(),
-            creationflags=NO_WINDOW
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding='utf-8', errors='replace', timeout=30,
+            env=_ffmpeg_env(), creationflags=NO_WINDOW
         )
-        if r.returncode != 0 or not r.stdout.strip():
-            return jsonify({'error': f'ffprobe failed: {r.stderr[:500]}'}), 500
-        return jsonify(json.loads(r.stdout))
+        out = r.stdout or ''
+        if r.returncode != 0 or not out.strip():
+            return jsonify({'error': f'ffprobe failed: {r.stderr or ""}'}), 500
+        return jsonify(json.loads(out))
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -3192,24 +3198,31 @@ def report_worker(jid):
                 item['ok'] = False
                 log_line(jid, '  错误: 文件不存在', 'error')
             else:
+                # Explicit PIPE + utf-8 decode. NOTE: in the PyInstaller frozen
+                # build, capture_output=True fails to wire stdout (r.stdout ends
+                # up None while stderr is captured fine), so we request PIPE
+                # explicitly and decode with errors='replace' to guarantee a str.
                 r = subprocess.run(
                     [FFPROBE_PATH, '-v', 'quiet', '-print_format', 'json',
                      '-show_format', '-show_streams', path],
-                    capture_output=True, text=True, timeout=30,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    text=True, encoding='utf-8', errors='replace', timeout=30,
                     env=_ffmpeg_env(), creationflags=NO_WINDOW,
                 )
-                if r.returncode != 0 or not r.stdout.strip():
-                    err_txt = (r.stderr or '').strip()[:400] or 'ffprobe 无输出'
+                out = r.stdout or ''
+                err = r.stderr or ''
+                if r.returncode != 0 or not out.strip():
+                    err_txt = err.strip()[:400] or 'ffprobe 无输出'
                     item['error'] = f'ffprobe 失败: {err_txt}'
                     item['ok'] = False
                     log_line(jid, f'  ffprobe 失败: {err_txt}', 'error')
                 else:
-                    item['probe'] = json.loads(r.stdout)
+                    item['probe'] = json.loads(out)
                     item['ok'] = True
                     ok_count += 1
                     log_line(jid, '  读取成功', 'success')
         except Exception as e:
-            item['error'] = f'异常: {e}'
+            item['error'] = f'读取异常: {e}'
             item['ok'] = False
             log_line(jid, f'  异常: {e}', 'error')
         item['done'] = True

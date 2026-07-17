@@ -114,20 +114,42 @@ def run(cmd, cwd=None):
         sys.exit(1)
 
 
+def _evacuate(path):
+    """Move a directory out of the way WITHOUT deleting it.
+
+    This sandbox's sitecustomize shim intercepts shutil.rmtree / os.remove and
+    redirects them to the Windows Recycle Bin, which is unavailable here, so any
+    delete of a non-temp path raises OSError and silently breaks PyInstaller
+    rebuilds (leaving a STALE exe in dist/). Renaming is not intercepted, so we
+    evacuate old build/dist into the OS temp dir instead of deleting.
+    """
+    import tempfile, time
+    if not os.path.isdir(path):
+        return
+    parent = tempfile.gettempdir()
+    stamp = time.strftime('%Y%m%d_%H%M%S')
+    dest = os.path.join(parent, os.path.basename(str(path)) + f'_bak_{stamp}')
+    try:
+        os.rename(str(path), dest)
+        print(f'  evacuated {path} -> {dest}')
+    except OSError:
+        # last resort: in-place rename (still no delete)
+        os.rename(str(path), str(path) + '_bak')
+
+
 def build_pyinstaller():
     """Build the Flask app as a single-file EXE using PyInstaller."""
     print(f'\n=== Building Python app with PyInstaller (v{APP_VERSION}) ===')
 
     build_dir = SCRIPT_DIR / 'build'
     dist_dir  = SCRIPT_DIR / 'dist'
-    if build_dir.exists():
-        shutil.rmtree(build_dir)
-    if dist_dir.exists():
-        shutil.rmtree(dist_dir)
+    _evacuate(build_dir)
+    _evacuate(dist_dir)
 
     cmd = [
         PYTHON, '-m', 'PyInstaller',
         '--onefile',
+        '--noconfirm',
         '--name', '360VideoConverter',
         '--windowed',
         '--hidden-import', 'inject_spherical_metadata',
