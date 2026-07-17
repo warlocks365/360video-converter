@@ -1095,13 +1095,13 @@ tr:hover td { background: var(--surface-hover); }
       <!-- Spherical Toggle -->
       <div class="toggle-row">
         <label class="toggle-switch">
-          <input type="checkbox" id="m_apply_spherical" onchange="toggleSphericalOptions(this, 'm')">
+          <input type="checkbox" id="m_apply_spherical" checked onchange="toggleSphericalOptions(this, 'm')">
           <span class="toggle-slider"></span>
         </label>
         <div class="toggle-label">
           <strong>&#127760; GSpherical 全景元数据 <span class="tip-icon" data-tip="注入 Spherical / Equirectangular 等 GSpherical 标签到 MP4 容器，使群晖 Photos、YouTube 等平台识别为 360° 全景视频。这是全景视频播放的关键标记。">?</span></strong>
           <small>注入全景映射元数据（群晖 Photos 识别必需）</small>
-          <div id="m_spherical_options" class="hidden" style="margin-top:8px;">
+          <div id="m_spherical_options" style="margin-top:8px;">
             <label class="field-label" style="font-size:0.75rem;">全景模式<span class="tip-icon" data-tip="选择视频的投影类型和立体模式组合：&#10;&#10;180°（单目全景）：VR180格式，2D画面&#10;360°（单目全景）：完整360°全景，2D画面&#10;180°（双目VR左右）：VR180格式，左右眼画面左右并排&#10;180°（双目VR上下）：VR180格式，左右眼画面上下排列&#10;360°（双目VR左右）：完整360°全景，左右眼画面左右并排&#10;360°（双目VR上下）：完整360°全景，左右眼画面上下排列">?</span></label>
             <select class="input" id="m_spherical_mode" style="width:auto;padding:4px 8px;font-size:0.8rem;">
               <option value="180-mono">180°（单目全景）</option>
@@ -1555,7 +1555,7 @@ function toggleLocation() {
 
 function toggleSphericalOptions(cb, prefix) {
   const opts = document.getElementById(prefix + '_spherical_options');
-  if (opts) opts.style.display = cb.checked ? 'block' : 'none';
+  if (opts) opts.style.setProperty('display', cb.checked ? 'block' : 'none', 'important');
 }
 
 // ── Map Picker ──────────────────────────────────────
