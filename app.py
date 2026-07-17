@@ -1725,11 +1725,18 @@ def _native_open_files_multi(title, initial_dir, file_filter):
 #   • Search box and modern folder tree
 FOLDER_PICKER_CS = r'''using System;
 using System.Runtime.InteropServices;
+using System.Text.RegularExpressions;
 
 public class ModernFolderPicker
 {
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     private static extern int SHCreateItemFromParsingName(string pszPath, IntPtr pbc, ref Guid riid, out IntPtr ppv);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHGetKnownFolderPath([MarshalAs(UnmanagedType.LPStruct)] Guid rfid, uint dwFlags, IntPtr hToken, out IntPtr ppszPath);
+
+    [DllImport("kernel32.dll")]
+    private static extern void CoTaskMemFree(IntPtr pv);
 
     [ComImport, Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     public interface IShellItem
@@ -1773,6 +1780,31 @@ public class ModernFolderPicker
     [ComImport, Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7")]
     public class FileOpenDialog {}
 
+    // SIGDN values used below
+    private const uint SIGDN_FILESYSPATH = 0x80058000;
+    private const uint SIGDN_DESKTOPABSOLUTEPARSING = 0x80028000;
+
+    private static string ResolveKnownFolderFromParsing(string parsing)
+    {
+        if (string.IsNullOrEmpty(parsing)) return null;
+        Match m = Regex.Match(parsing,
+            @"\{([0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12})\}");
+        if (!m.Success) return null;
+        try
+        {
+            Guid kf = new Guid(m.Groups[1].Value);
+            IntPtr pPath;
+            if (SHGetKnownFolderPath(kf, 0, IntPtr.Zero, out pPath) == 0 && pPath != IntPtr.Zero)
+            {
+                string real = Marshal.PtrToStringUni(pPath);
+                CoTaskMemFree(pPath);
+                return real;
+            }
+        }
+        catch { }
+        return null;
+    }
+
     public static string Show(string title, string initialDir)
     {
         try
@@ -1796,10 +1828,36 @@ public class ModernFolderPicker
             {
                 IShellItem result;
                 fd.GetResult(out result);
-                string path;
-                // SIGDN_DESKTOPABSOLUTEEDITING = 0x8004C000
-                result.GetDisplayName(0x8004C000, out path);
-                return path;
+                // 1) Real filesystem path. Covers normal folders AND the six user
+                //    known folders (Desktop/Downloads/Documents/Pictures/Videos/Music).
+                //    Using SIGDN_FILESYSPATH avoids the bug where
+                //    SIGDN_DESKTOPABSOLUTEEDITING returns the *localized display name*
+                //    (e.g. "视频") instead of the real path for known folders.
+                try
+                {
+                    string fsPath;
+                    result.GetDisplayName(SIGDN_FILESYSPATH, out fsPath);
+                    if (!string.IsNullOrEmpty(fsPath) &&
+                        (System.IO.Directory.Exists(fsPath) || System.IO.File.Exists(fsPath)))
+                        return fsPath;
+                }
+                catch { }
+                // 2) Parsing name (e.g. "::{GUID}") -> resolve known folder to its real
+                //    path. Fallback for virtual shell items that have no filesystem path.
+                try
+                {
+                    string parsing;
+                    result.GetDisplayName(SIGDN_DESKTOPABSOLUTEPARSING, out parsing);
+                    if (!string.IsNullOrEmpty(parsing))
+                    {
+                        string known = ResolveKnownFolderFromParsing(parsing);
+                        if (!string.IsNullOrEmpty(known)) return known;
+                        // Return the parsing name (::GUID / shell:...) so the Python
+                        // layer's resolve_real_path can resolve it as a last resort.
+                        return parsing;
+                    }
+                }
+                catch { }
             }
             return "";
         }
@@ -1840,6 +1898,25 @@ _SHELL_NAME_TO_GUID = {
     'pictures':  '{33E28130-4E1E-4676-835A-98395C3BC3BB}',
     'videos':    '{18989B1D-99B5-455B-841C-AB7C74E4DDFC}',
     'music':     '{4BD8D571-6D19-48D3-BE97-422220080E43}',
+}
+
+# Some shell pickers return the *localized display name* of a known folder
+# (e.g. "视频" on zh-CN, "Videos" on en-US) instead of a path or a GUID.
+# Map the common names so resolve_real_path can still recover the real path.
+_DISPLAY_NAME_TO_GUID = {
+    'desktop':   '{B4BFCC3A-DB2C-424C-B029-7FE99A87C641}',
+    'downloads': '{374DE290-123F-4565-9164-39C4925E467B}',
+    'documents': '{FDD39AD0-238F-46AF-ADB4-6C85480369C7}',
+    'pictures':  '{33E28130-4E1E-4676-835A-98395C3BC3BB}',
+    'videos':    '{18989B1D-99B5-455B-841C-AB7C74E4DDFC}',
+    'music':     '{4BD8D571-6D19-48D3-BE97-422220080E43}',
+    # Chinese (zh-CN) localized names
+    '桌面': '{B4BFCC3A-DB2C-424C-B029-7FE99A87C641}',
+    '下载': '{374DE290-123F-4565-9164-39C4925E467B}',
+    '文档': '{FDD39AD0-238F-46AF-ADB4-6C85480369C7}',
+    '图片': '{33E28130-4E1E-4676-835A-98395C3BC3BB}',
+    '视频': '{18989B1D-99B5-455B-841C-AB7C74E4DDFC}',
+    '音乐': '{4BD8D571-6D19-48D3-BE97-422220080E43}',
 }
 
 
@@ -1941,6 +2018,15 @@ def resolve_real_path(path):
                     resolved = os.path.join(resolved, suffix.lstrip('/\\'))
                 return resolved
         return p
+    # Bare display name of a known folder (e.g. "视频", "Videos") returned by some
+    # shell pickers. Map common localized/English names to known-folder GUIDs.
+    if (not os.path.isabs(p) and '\\' not in p and '/' not in p
+            and not p.startswith('::') and not p.lower().startswith('shell:')):
+        guid = _DISPLAY_NAME_TO_GUID.get(p.lower())
+        if guid:
+            resolved = _resolve_known_folder_guid(guid)
+            if resolved:
+                return resolved
     return p
 
 
