@@ -1762,15 +1762,18 @@ async function openAbout(section) {
   if (section === 'version') {
     titleEl.textContent = '版本信息';
     let ver = 'unknown';
+    let author = '霜夜瞳';
     try {
       const r = await fetch('/api/version');
       const d = await r.json();
       ver = d.version || 'unknown';
+      if (d.author) author = d.author;
     } catch (e) {}
     bodyEl.innerHTML =
       '<div style="padding:4px 2px;">' +
         '<div style="font-size:1.8rem;font-weight:700;letter-spacing:0.5px;">360° Video Converter</div>' +
         '<div style="margin-top:10px;color:var(--text-muted);">当前版本：<b style="color:var(--text);font-size:1.05rem;">v' + esc(ver) + '</b></div>' +
+        '<div style="margin-top:6px;color:var(--text-muted);font-size:0.9rem;">软件作者：<b style="color:var(--text);">' + esc(author) + '</b></div>' +
         '<div style="margin-top:8px;color:var(--text-muted);font-size:0.82rem;line-height:1.6;">' +
         '360° 全景视频转换工具 · 支持 H.264 / H.265 软件与 NVENC / QSV / AMF 硬件编码<br>' +
         '可将单文件、合并片段或整目录批量转换为带球面元数据（Google Spherical）的全景视频。' +
@@ -3498,6 +3501,32 @@ function formatBitrate(bps) {
   return `${Math.round(bps / 1000)} kbps`;
 }
 
+function detectSpherical(probe) {
+  // Detect whether a video carries 360° panoramic (spherical) metadata.
+  // ffmpeg/ffprobe expose this canonically as a video-stream side_data of
+  // type "Spherical Mapping" (projection: equirectangular etc.). Some tools
+  // also write a `spherical` tag or a GSpherical/stitchingSoftware XML box,
+  // so we accept those as fallbacks too.
+  const d = probe || {};
+  const streams = d.streams || [];
+  const vStream = streams.find(s => s.codec_type === 'video') || {};
+  const tags = (d.format && d.format.tags) || {};
+  const vTags = vStream.tags || {};
+
+  const sd = vStream.side_data_list || [];
+  const sph = sd.find(x => (x.side_data_type || '') === 'Spherical Mapping');
+  if (sph) {
+    return { spherical: true, projection: sph.projection || null, stereo: sph.stereo_mode || null };
+  }
+  const raw = JSON.stringify(d);
+  if (tags['spherical'] || vTags['spherical'] ||
+      raw.includes('GSpherical') || raw.includes('stitchingSoftware') ||
+      raw.includes('Spherical Mapping') || raw.includes('equirectangular')) {
+    return { spherical: true, projection: null, stereo: null };
+  }
+  return { spherical: false, projection: null, stereo: null };
+}
+
 function renderReport() {
   if (reportData.length === 0) {
     document.getElementById('reportResult').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-muted);">无报告数据</div>';
@@ -3523,8 +3552,8 @@ function renderReport() {
     // Check for spherical metadata
     const tags = fmt.tags || {};
     const vTags = vStream.tags || {};
-    const hasSpherical = tags['spherical'] || vTags['spherical'] || 
-      JSON.stringify(d).includes('GSpherical') || JSON.stringify(d).includes('stitchingSoftware');
+    const sphInfo = detectSpherical(d);
+    const hasSpherical = sphInfo.spherical;
 
     // Check for location
     const location = tags['location'] || vTags['location'] || '';
@@ -3569,7 +3598,7 @@ function renderReport() {
           <div class="report-section-title">元数据标签</div>
           <div class="report-row"><span class="label">拍摄日期</span><span class="value ${creationTime ? 'ok' : 'warn'}">${creationTime ? esc(creationTime) : '未设置'}</span></div>
           <div class="report-row"><span class="label">拍摄位置</span><span class="value ${location ? 'ok' : 'warn'}">${location ? esc(location) : '未设置'}</span></div>
-          <div class="report-row"><span class="label">全景元数据</span><span class="value ${hasSpherical ? 'ok' : 'warn'}">${hasSpherical ? '已注入 (GSpherical)' : '未注入'}</span></div>
+          <div class="report-row"><span class="label">全景元数据</span><span class="value ${hasSpherical ? 'ok' : 'warn'}">${hasSpherical ? '已注入 (' + (sphInfo.projection ? sphInfo.projection : 'GSpherical') + ')' : '未注入'}</span></div>
           ${Object.entries(tags).filter(([k]) => !['creation_time','location','spherical'].includes(k)).slice(0, 5).map(([k,v]) =>
             `<div class="report-row"><span class="label">${esc(k)}</span><span class="value">${esc(String(v).substring(0, 80))}</span></div>`
           ).join('')}
@@ -3620,7 +3649,7 @@ function saveReport() {
       text += `\n-- 元数据 --\n`;
       text += `拍摄日期: ${tags['creation_time'] || vTags['creation_time'] || '未设置'}\n`;
       text += `拍摄位置: ${tags['location'] || vTags['location'] || '未设置'}\n`;
-      const hasSph = JSON.stringify(d).includes('GSpherical') || tags['spherical'] || vTags['spherical'];
+      const hasSph = detectSpherical(d).spherical;
       text += `全景元数据: ${hasSph ? '已注入 (GSpherical)' : '未注入'}\n`;
     }
     text += `\n${'─'.repeat(80)}\n\n`;

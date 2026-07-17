@@ -2307,6 +2307,7 @@ def version_info():
     """Return app version information."""
     return jsonify({
         'version': APP_VERSION,
+        'author': '霜夜瞳',
         'python': sys.version.split()[0],
         'platform': platform_module.platform(),
     })
@@ -3371,8 +3372,63 @@ def ensure_default_preset():
         save_preset('NVENC H.265', nvenc_params, DEFAULT_BATCH_FORMULA)
 
 
+# ── Single-instance guard ──────────────────────────────────────
+# Only one instance may run at a time. Implemented with a named
+# Windows mutex (system-wide). If another instance already holds it,
+# we show a native message box and exit. The mutex is released
+# automatically when this process terminates.
+_INSTANCE_MUTEX_NAME = "Global\\360VideoConverter_InstanceMutex_V1"
+
+
+def _is_single_instance():
+    """Return True if this is the only running instance.
+
+    Uses a named kernel mutex. Non-Windows platforms always return
+    True (no guard). If the mutex cannot be created for any reason we
+    also return True to avoid blocking legitimate launches.
+    """
+    if sys.platform != 'win32':
+        return True
+    try:
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.CreateMutexW(ctypes.c_void_p(0), 0, _INSTANCE_MUTEX_NAME)
+        if not handle:
+            return True
+        # ERROR_ALREADY_EXISTS = 183
+        if kernel32.GetLastError() == 183:
+            kernel32.CloseHandle(handle)
+            return False
+        # Keep the handle alive for the whole process lifetime so the
+        # mutex is not released until we exit.
+        _is_single_instance._handle = handle
+        return True
+    except Exception:
+        return True
+
+
+def _show_already_running_dialog():
+    """Show a native 'instance already running' dialog and block."""
+    try:
+        user32 = ctypes.windll.user32
+        MB_OK = 0x00000000
+        MB_ICONINFORMATION = 0x00000040
+        user32.MessageBoxW(
+            0,
+            "已有实例正在运行，请勿重复启动。",
+            "360° Video Converter",
+            MB_OK | MB_ICONINFORMATION,
+        )
+    except Exception:
+        pass
+
+
 # ── Main ────────────────────────────────────────────────────────
 if __name__ == '__main__':
+    # Single-instance check BEFORE doing any heavy startup work.
+    if not _is_single_instance():
+        _show_already_running_dialog()
+        os._exit(0)
+
     ensure_default_preset()
     print(f'[360 Video Converter]')
     print(f'  ffmpeg:  {FFMPEG_PATH}')
