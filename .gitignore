@@ -1,6 +1,7 @@
 # ── Build artifacts ──
 dist/
 build/
+build_tools/
 __pycache__/
 *.pyc
 *.pyo

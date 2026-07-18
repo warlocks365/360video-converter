@@ -864,6 +864,31 @@ tr:hover td { background: var(--surface-hover); }
         </div>
       </div>
 
+      <!-- Stabilization (Advanced) -->
+      <div class="section-divider">画面防抖（高级选项）<span class="tip-icon" data-tip="编码前对视频画面进行软件防抖处理。系统根据视频类型自动选择算法：标准视频（16:9等）使用 FFmpeg libvidstab 滤镜（两阶段：运动检测生成变换文件 + 变换补偿内嵌到编码滤镜链）；全景视频（360°/180°）使用 OpenCV 球面防抖（SO(3) 旋转群运动估计 + 轨迹平滑 + 逆旋转补偿，无裁剪）。启用后编码时间约增加 1.5-2 倍。">?</span></div>
+      <div class="check-group">
+        <label class="check">
+          <input type="checkbox" id="p_stabilize" onchange="toggleStabilize()">
+          启用画面防抖<span class="tip-icon" data-tip="勾选后在编码前执行防抖预处理。标准视频走 vidstab 路径，全景视频走 OpenCV 球面防抖路径，由视频元数据（GSpherical 标签）或全景注入开关自动判断。">?</span>（根据视频类型自动选择算法）
+        </label>
+        <div id="stabilizeOptions" class="hidden" style="margin-left:26px;margin-top:8px;">
+          <div class="grid-4">
+            <div class="field">
+              <label class="field-label">平滑强度<span class="tip-icon" data-tip="轨迹平滑窗口（帧数）。值越大画面越稳定但跟随延迟越大。推荐范围 20-40；快速运动场景用 15-25，缓慢运镜用 40-60。标准与全景路径共用此参数。">?</span></label>
+              <input class="input" id="p_stabilize_smoothing" type="number" value="30" min="1" max="100" style="width:80px;">
+            </div>
+            <div class="field">
+              <label class="field-label">抖动灵敏度<span class="tip-icon" data-tip="vidstab 运动检测灵敏度（1-10）。值越高检测到的运动越多，防抖更激进但可能引入画面伪影。推荐 4-6；轻微抖动用 3-4，剧烈抖动用 7-8。仅标准视频路径使用。">?</span> <span style="font-size:0.7rem;color:var(--text-muted);">（仅标准视频）</span></label>
+              <input class="input" id="p_stabilize_shakiness" type="number" value="5" min="1" max="10" style="width:80px;">
+            </div>
+            <div class="field">
+              <label class="field-label">缩放补偿<span class="tip-icon" data-tip="防抖变换后画面缩放比例（0-0.5）。正值放大画面以填充裁剪边缘，值越大越能隐藏边缘抖动但画面放大越多。推荐 0.03-0.08。仅标准视频路径使用，全景路径用边缘拉伸替代裁剪。">?</span> <span style="font-size:0.7rem;color:var(--text-muted);">（仅标准视频）</span></label>
+              <input class="input" id="p_stabilize_zoom" type="number" value="0.05" min="0" max="0.5" step="0.01" style="width:80px;">
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Date Metadata -->
       <div class="section-divider">日期元数据 (从文件名提取)<span class="tip-icon" data-tip="从视频文件名中自动提取拍摄日期（支持 YYYYMMDD、YYYY-MM-DD 等格式），并将该日期写入视频元数据和文件系统属性。适用于修复拍摄设备未正确记录日期的视频。">?</span></div>
       <div class="check-group">
@@ -1458,6 +1483,7 @@ const DEFAULT_PARAMS = {
   audio_bitrate:'96k', audio_sample_rate:'48000', audio_channels:2,
   brand:'mp42', faststart:true, inject_spherical:true,
   pano_type:'360', stereo_mode:'mono',
+  stabilize:false, stabilize_smoothing:30, stabilize_shakiness:5, stabilize_zoom:0.05,
   date_from_filename:false, set_creation_time:true, set_file_created:true,
   set_file_modified:true, manual_date:'',
   set_location:false, location_name:'', location_lat:'', location_lon:'',
@@ -2116,6 +2142,11 @@ function collectParams() {
     inject_spherical: document.getElementById('p_inject_spherical').checked,
     pano_type: (function(){ var m=val('p_spherical_mode')||'360-mono'; var i=m.indexOf('-'); return m.substring(0,i); })(),
     stereo_mode: (function(){ var m=val('p_spherical_mode')||'360-mono'; var i=m.indexOf('-'); return m.substring(i+1); })(),
+    // Stabilization
+    stabilize: document.getElementById('p_stabilize').checked,
+    stabilize_smoothing: num('p_stabilize_smoothing') || 30,
+    stabilize_shakiness: num('p_stabilize_shakiness') || 5,
+    stabilize_zoom: parseFloat(val('p_stabilize_zoom')) || 0.05,
     // Date metadata
     date_from_filename: document.getElementById('p_date_from_filename').checked,
     set_creation_time: document.getElementById('p_set_creation_time').checked,
@@ -2151,6 +2182,19 @@ function toggleTestEncode() {
   }
 }
 
+function toggleStabilize() {
+  const cb = document.getElementById('p_stabilize');
+  const opts = document.getElementById('stabilizeOptions');
+  if (!cb || !opts) return;
+  if (cb.checked) {
+    opts.classList.remove('hidden');
+    opts.style.display = '';
+  } else {
+    opts.classList.add('hidden');
+    opts.style.display = 'none';
+  }
+}
+
 // ── Apply Params to UI ─────────────────────────────
 function applyParams(p) {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
@@ -2172,6 +2216,12 @@ function applyParams(p) {
   document.getElementById('p_faststart').checked = p.faststart;
   document.getElementById('p_inject_spherical').checked = p.inject_spherical;
   set('p_spherical_mode', (p.pano_type || '360') + '-' + (p.stereo_mode || 'mono'));
+  // Stabilization
+  document.getElementById('p_stabilize').checked = p.stabilize || false;
+  set('p_stabilize_smoothing', p.stabilize_smoothing !== undefined ? p.stabilize_smoothing : 30);
+  set('p_stabilize_shakiness', p.stabilize_shakiness !== undefined ? p.stabilize_shakiness : 5);
+  set('p_stabilize_zoom', p.stabilize_zoom !== undefined ? p.stabilize_zoom : 0.05);
+  toggleStabilize();
   // Date
   document.getElementById('p_date_from_filename').checked = p.date_from_filename || false;
   document.getElementById('p_set_creation_time').checked = p.set_creation_time !== false;
@@ -2535,8 +2585,9 @@ function summarizeParams(t) {
     pano = ' · ' + ptLabel + smLabel;
   }
   const test = p.test_duration ? ' · 测试' : '';
+  const stab = p.stabilize ? ' · 防抖' : '';
   const outMode = t.custom_output ? '固定' : (t.out_mode === 'formula' ? '公式' : '统一');
-  return `${codec} · ${res} · ${outMode}${pano}${test}`;
+  return `${codec} · ${res} · ${outMode}${pano}${stab}${test}`;
 }
 
 function updateQueueCount() {
