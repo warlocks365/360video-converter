@@ -316,6 +316,9 @@ def create_launcher():
 ## 预设
 预设保存在 %APPDATA%/360VideoConverter/presets/ 目录中
 
+## 项目主页
+https://github.com/warlocks365/360video-converter
+
 ## 依赖文件
 - `360VideoConverter.exe` - 主程序 (PyInstaller 打包, 含 pywebview 内置容器)
 - `ffmpeg.exe` / `ffprobe.exe` - 视频编码器/探测器 (含硬件编码支持)

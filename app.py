@@ -2440,9 +2440,22 @@ def version_info():
     return jsonify({
         'version': APP_VERSION,
         'author': '霜夜瞳',
+        'github_url': 'https://github.com/warlocks365/360video-converter',
         'python': sys.version.split()[0],
         'platform': platform_module.platform(),
     })
+
+
+@app.route('/api/open_external')
+def open_external():
+    """Open a URL in the system default browser (for pywebview embedded mode)."""
+    import webbrowser
+    url = request.args.get('url', '')
+    # Only allow http/https URLs for safety
+    if url and url.startswith(('http://', 'https://')):
+        webbrowser.open(url)
+        return jsonify({'ok': True})
+    return jsonify({'ok': False, 'error': 'Invalid URL'}), 400
 
 
 @app.route('/api/codec_check')

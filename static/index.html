@@ -1877,6 +1877,14 @@ function closeAbout() {
   const m = document.getElementById('aboutModal');
   if (m) m.classList.remove('active');
 }
+function openExternalUrl(url) {
+  // Open URL in system default browser via API (pywebview can't open links directly)
+  fetch('/api/open_external?url=' + encodeURIComponent(url))
+    .catch(function() {
+      // Fallback: try window.open (works in browser mode)
+      window.open(url, '_blank');
+    });
+}
 async function openAbout(section) {
   closeAboutMenu();
   const modal = document.getElementById('aboutModal');
@@ -1886,20 +1894,24 @@ async function openAbout(section) {
     titleEl.textContent = '版本信息';
     let ver = 'unknown';
     let author = '霜夜瞳';
+    let githubUrl = 'https://github.com/warlocks365/360video-converter';
     try {
       const r = await fetch('/api/version');
       const d = await r.json();
       ver = d.version || 'unknown';
       if (d.author) author = d.author;
+      if (d.github_url) githubUrl = d.github_url;
     } catch (e) {}
     bodyEl.innerHTML =
       '<div style="padding:4px 2px;">' +
         '<div style="font-size:1.8rem;font-weight:700;letter-spacing:0.5px;">360° Video Converter</div>' +
         '<div style="margin-top:10px;color:var(--text-muted);">当前版本：<b style="color:var(--text);font-size:1.05rem;">v' + esc(ver) + '</b></div>' +
         '<div style="margin-top:6px;color:var(--text-muted);font-size:0.9rem;">软件作者：<b style="color:var(--text);">' + esc(author) + '</b></div>' +
+        '<div style="margin-top:8px;color:var(--text-muted);font-size:0.9rem;">项目主页：<a href="javascript:void(0)" onclick="openExternalUrl(\'' + esc(githubUrl) + '\')" style="color:var(--accent,#4a9eff);text-decoration:underline;cursor:pointer;">' + esc(githubUrl) + '</a></div>' +
         '<div style="margin-top:8px;color:var(--text-muted);font-size:0.82rem;line-height:1.6;">' +
         '360° 全景视频转换工具 · 支持 H.264 / H.265 软件与 NVENC / QSV / AMF 硬件编码<br>' +
-        '可将单文件、合并片段或整目录批量转换为带球面元数据（Google Spherical）的全景视频。' +
+        '可将单文件、合并片段或整目录批量转换为带球面元数据（Google Spherical）的全景视频。<br>' +
+        'v3.0+ 新增画面防抖：标准视频使用 FFmpeg libvidstab，全景视频使用 OpenCV 球面防抖算法。' +
         '</div>' +
       '</div>';
   } else {
