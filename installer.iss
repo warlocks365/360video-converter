@@ -26,9 +26,9 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-AppPublisherURL=https://github.com/360video-converter
-AppSupportURL=https://github.com/360video-converter
-AppUpdatesURL=https://github.com/360video-converter
+AppPublisherURL=https://github.com/warlocks365/360video-converter
+AppSupportURL=https://github.com/warlocks365/360video-converter
+AppUpdatesURL=https://github.com/warlocks365/360video-converter
 AppContact=360 Video Converter
 AppComments={#MyAppDescription}
 
