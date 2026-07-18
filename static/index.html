@@ -1308,9 +1308,9 @@ tr:hover td { background: var(--surface-hover); }
     </div>
   </div>
 
-  <!-- System Resource Monitor -->
-  <div class="card" id="sysmonCard" style="display:none;">
-    <div class="card-title">系统资源监控</div>
+  <!-- System Resource Monitor (always visible) -->
+  <div class="card" id="sysmonCard">
+    <div class="card-title">系统资源</div>
     <div class="sysmon-grid">
       <div class="sysmon-cell sm-cpu">
         <div class="sm-label">CPU</div>
@@ -1323,7 +1323,7 @@ tr:hover td { background: var(--surface-hover); }
         <div class="sm-label">GPU</div>
         <div class="sm-value" id="smGpuVal">--</div>
         <div class="sm-unit">%</div>
-        <div class="sm-sub" id="smGpuSub"></div>
+        <div class="sm-sub" id="smGpuSub">检测中...</div>
         <div class="sm-bar"><div class="sm-bar-fill" id="smGpuBar" style="width:0%"></div></div>
       </div>
       <div class="sysmon-cell sm-mem">
@@ -3058,8 +3058,7 @@ async function pollStatus() {
 
   updateTimeInfo('encode', data, nowSec);
 
-  // Update system resource monitor
-  updateSysMon(data.sysmon);
+  // sysmon is now handled by independent poller (pollSysMon)
 
   const logBox = document.getElementById('logBox');
   logBox.innerHTML = data.log.slice(-100).map(l =>
@@ -3095,7 +3094,26 @@ function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 
-// ── System Resource Monitor ─────────────────────────────────
+// ── System Resource Monitor (always-on independent poller) ──
+let sysmonTimer = null;
+
+function startSysMonPolling() {
+  if (sysmonTimer) clearInterval(sysmonTimer);
+  // Poll immediately, then every 2 seconds
+  pollSysMon();
+  sysmonTimer = setInterval(pollSysMon, 2000);
+}
+
+async function pollSysMon() {
+  try {
+    const r = await fetch('/api/sysmon');
+    const sm = await r.json();
+    updateSysMon(sm);
+  } catch (e) {
+    // Silently ignore — will retry next interval
+  }
+}
+
 function updateSysMon(sm) {
   const card = document.getElementById('sysmonCard');
   if (!sm || Object.keys(sm).length === 0) {
@@ -3109,8 +3127,8 @@ function updateSysMon(sm) {
   if (cpuVal != null) {
     document.getElementById('smCpuVal').textContent = Math.round(cpuVal);
     document.getElementById('smCpuBar').style.width = `${Math.min(100, cpuVal)}%`;
-    const sub = sm.proc_cpu_percent != null ? `ffmpeg: ${Math.round(sm.proc_cpu_percent)}%` : '';
-    document.getElementById('smCpuSub').textContent = sub;
+    const coreCount = sm.cpu_count || 0;
+    document.getElementById('smCpuSub').textContent = coreCount > 0 ? `${coreCount} 核心` : '';
   }
 
   // GPU
@@ -3121,10 +3139,22 @@ function updateSysMon(sm) {
     let parts = [];
     if (sm.gpu_enc_percent != null) parts.push(`ENC ${sm.gpu_enc_percent}%`);
     if (sm.gpu_temp != null) parts.push(`${sm.gpu_temp}°C`);
-    document.getElementById('smGpuSub').textContent = parts.join(' ');
+    if (sm.gpu_mem_used_mb != null && sm.gpu_mem_total_mb != null) {
+      parts.push(`${Math.round(sm.gpu_mem_used_mb)}/${Math.round(sm.gpu_mem_total_mb)}MB`);
+    }
+    document.getElementById('smGpuSub').textContent = parts.join(' ') || (sm.gpu_name || '');
   } else {
+    // No GPU utilization data (no NVIDIA GPU or pynvml unavailable)
     document.getElementById('smGpuVal').textContent = 'N/A';
-    document.getElementById('smGpuSub').textContent = '无 NVIDIA GPU';
+    document.getElementById('smGpuBar').style.width = '0%';
+    const gpuName = sm.gpu_name;
+    if (gpuName) {
+      // Show detected GPU name (truncated if too long)
+      const displayName = gpuName.length > 25 ? gpuName.substring(0, 23) + '...' : gpuName;
+      document.getElementById('smGpuSub').textContent = displayName;
+    } else {
+      document.getElementById('smGpuSub').textContent = '无独立显卡';
+    }
   }
 
   // Memory
@@ -3480,8 +3510,7 @@ pollStatus = async function() {
   updateTimeInfo('encode', data, nowSec);
   updateTimeInfo('meta', data, nowSec);
 
-  // Update system resource monitor
-  updateSysMon(data.sysmon);
+  // sysmon is now handled by independent poller (pollSysMon)
 
   const logBox = document.getElementById('logBox');
   logBox.innerHTML = data.log.slice(-100).map(l =>
@@ -4169,6 +4198,9 @@ async function init() {
   applyParams(DEFAULT_PARAMS);
   refreshPresets();
   initTooltips();
+
+  // Start system resource monitor polling (always-on)
+  startSysMonPolling();
 
   // Fetch and display app version
   try {

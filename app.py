@@ -89,11 +89,12 @@ except ImportError:
     read_gspherical = None
     print('[WARN] inject_spherical_metadata not found -- injection disabled')
 
-# Import the system resource monitor
+# Import the system resource monitor (global singleton)
 try:
-    from sysmon import SysMon
+    from sysmon import get_global_sysmon, shutdown_global_sysmon
+    _sysmon_available = True
 except ImportError:
-    SysMon = None
+    _sysmon_available = False
     print('[WARN] sysmon not found -- resource monitoring disabled')
 
 # Import the video stabilization module
@@ -452,8 +453,6 @@ def new_job(mode, items, params):
         'end_time': None,
         'proc': None,
         'paused': False,
-        'sysmon': {},
-        '_sysmon': None,
         'merge_status': None,
     }
     return jid
@@ -952,19 +951,6 @@ def run_ffmpeg(cmd, jid, duration, pass_label=''):
     with job_lock:
         jobs[jid]['proc'] = proc
 
-    # Start system resource monitor for this ffmpeg run
-    sm = None
-    if SysMon is not None:
-        try:
-            sm = SysMon(pid=proc.pid, interval=1.0)
-            sm.start()
-            with job_lock:
-                j = jobs.get(jid)
-                if j:
-                    j['_sysmon'] = sm
-        except Exception:
-            sm = None
-
     try:
         for line in _read_ffmpeg_lines(proc.stderr):
             line = line.rstrip()
@@ -1010,16 +996,6 @@ def run_ffmpeg(cmd, jid, duration, pass_label=''):
             pass
 
     proc.wait()
-
-    # Stop resource monitor and keep final snapshot
-    if sm is not None:
-        sm.stop()
-        final_snap = sm.snapshot()
-        with job_lock:
-            j = jobs.get(jid)
-            if j:
-                j['sysmon'] = final_snap
-                j['_sysmon'] = None
 
     return proc.returncode
 
@@ -3180,12 +3156,13 @@ def status(jid):
         j = jobs.get(jid)
         if not j:
             return jsonify({'error': 'Job not found'}), 404
-        # Get live sysmon snapshot (from running SysMon object) or final snapshot
-        sm_obj = j.get('_sysmon')
-        if sm_obj:
-            sysmon_data = sm_obj.snapshot()
-        else:
-            sysmon_data = j.get('sysmon', {})
+        # Get sysmon from global instance
+        sysmon_data = {}
+        if _sysmon_available:
+            try:
+                sysmon_data = get_global_sysmon().snapshot()
+            except Exception:
+                pass
         return jsonify({
             'id': j['id'],
             'status': j['status'],
@@ -3205,6 +3182,18 @@ def status(jid):
             'sysmon': sysmon_data,
             'merge_status': j.get('merge_status'),
         })
+
+
+@app.route('/api/sysmon')
+def sysmon_endpoint():
+    """Standalone endpoint for system resource data (always available)."""
+    data = {}
+    if _sysmon_available:
+        try:
+            data = get_global_sysmon().snapshot()
+        except Exception:
+            pass
+    return jsonify(data)
 
 
 @app.route('/api/encode_log/<jid>')
@@ -3704,6 +3693,15 @@ if __name__ == '__main__':
         os._exit(0)
 
     ensure_default_preset()
+
+    # Start global system resource monitor
+    if _sysmon_available:
+        try:
+            get_global_sysmon(interval=2.0)
+            print('  sysmon:  active (system-wide)')
+        except Exception as e:
+            print(f'  sysmon:  failed ({e})')
+
     print(f'[360 Video Converter]')
     print(f'  ffmpeg:  {FFMPEG_PATH}')
     print(f'  ffprobe: {FFPROBE_PATH}')
