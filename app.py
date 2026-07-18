@@ -96,6 +96,19 @@ except ImportError:
     SysMon = None
     print('[WARN] sysmon not found -- resource monitoring disabled')
 
+# Import the video stabilization module
+try:
+    from stabilize import (detect_video_type, vidstab_detect,
+                           vidstab_transform_filter, stabilize_panoramic)
+    STAB_AVAILABLE = True
+except ImportError:
+    detect_video_type = None
+    vidstab_detect = None
+    vidstab_transform_filter = None
+    stabilize_panoramic = None
+    STAB_AVAILABLE = False
+    print('[WARN] stabilize not found -- video stabilization disabled')
+
 app = Flask(__name__, static_folder='static', static_url_path='')
 
 # Read app version from VERSION file
@@ -306,6 +319,11 @@ DEFAULT_PARAMS = {
     'location_lat':     '',
     'location_lon':     '',
     'amap_api_key':     '',
+    # Video stabilization (v3.0)
+    'stabilize':            False,   # master switch
+    'stabilize_smoothing':  30,      # smoothing window (frames)
+    'stabilize_shakiness':  5,       # vidstab shakiness estimate (1-10)
+    'stabilize_zoom':       0.05,    # zoom/border fill ratio (0-0.2)
 }
 
 DEFAULT_BATCH_FORMULA = '{project_dir}/{name}_360.mp4'
@@ -651,11 +669,19 @@ def build_cmd(inp, out, params, pass_num=0, passlogfile=None):
     codec = params.get('codec', 'libx264')
     cp = CODEC_PROFILES.get(codec, CODEC_PROFILES['libx264'])
 
-    # Video filter: scale
+    # Video filter chain: vidstab transform (if enabled) + scale
+    filters = []
+    if params.get('_stab_trf') and vidstab_transform_filter is not None:
+        trf = params['_stab_trf']
+        sm = params.get('stabilize_smoothing', 30)
+        zoom = params.get('stabilize_zoom', 0.05)
+        filters.append(vidstab_transform_filter(trf, smoothing=sm, zoom=zoom, crop=True))
     res = params.get('resolution', '')
     if res and res != 'original':
         w, h = res.split('x')
-        cmd += ['-vf', f'scale={w}:{h}:flags=lanczos']
+        filters.append(f'scale={w}:{h}:flags=lanczos')
+    if filters:
+        cmd += ['-vf', ','.join(filters)]
 
     # Set encoder
     cmd += ['-c:v', cp['encoder']]
@@ -1054,6 +1080,55 @@ def convert_one(jid, inp, out, params):
     # For progress calculation: use test_duration if in test mode
     progress_duration = min(duration, test_dur) if test_dur and test_dur > 0 else duration
 
+    # ── Stabilization preprocessing (v3.0) ──
+    stab_tmp = None
+    if params.get('stabilize') and STAB_AVAILABLE:
+        vtype = detect_video_type(inp, params)
+        if vtype == 'panoramic' and stabilize_panoramic is not None:
+            # Strategy B: OpenCV spherical stabilization -> intermediate file
+            stab_tmp = out + '.stab_tmp.mp4'
+            log_line(jid, '--- 球面防抖 (全景视频) ---')
+            _last_pct = [0]
+            def _stab_progress(pct):
+                p = int(pct)
+                if p >= _last_pct[0] + 25 or p >= 100:
+                    _last_pct[0] = p
+                    log_line(jid, f'  防抖进度: {p}%')
+            ok, serr = stabilize_panoramic(
+                inp, stab_tmp, params,
+                ffmpeg_path=FFMPEG_PATH, env=_ffmpeg_env(),
+                log_fn=lambda m, lv='info': log_line(jid, m, lv),
+                progress_fn=_stab_progress,
+                creationflags=NO_WINDOW,
+            )
+            if ok:
+                log_line(jid, '球面防抖完成', 'success')
+                inp = stab_tmp
+            else:
+                log_line(jid, f'球面防抖失败: {serr}, 使用原始文件', 'warn')
+                try: os.remove(stab_tmp)
+                except: pass
+                stab_tmp = None
+        else:
+            # Strategy A: vidstab detect pass -> .trf file (transform inlined in -vf)
+            trf_fd, trf_path = tempfile.mkstemp(suffix='.trf', prefix='vidstab_')
+            os.close(trf_fd)
+            log_line(jid, '--- 防抖分析 (标准视频 vidstab) ---')
+            ok = vidstab_detect(
+                FFMPEG_PATH, inp, trf_path,
+                shakiness=params.get('stabilize_shakiness', 5),
+                env=_ffmpeg_env(),
+                log_fn=lambda m, lv='info': log_line(jid, m, lv),
+                creationflags=NO_WINDOW,
+            )
+            if ok:
+                params['_stab_trf'] = trf_path
+                log_line(jid, 'vidstab 分析完成', 'success')
+            else:
+                log_line(jid, 'vidstab 分析失败, 跳过防抖', 'warn')
+                try: os.remove(trf_path)
+                except: pass
+
     # Determine effective creation_time from filename or manual override
     effective_ct = None
     effective_dt = None
@@ -1161,6 +1236,15 @@ def convert_one(jid, inp, out, params):
     if params.get('set_location') and params.get('location_lat') and params.get('location_lon'):
         iso = format_location_iso6709(params['location_lat'], params['location_lon'])
         log_line(jid, f'  Location metadata: {params.get("location_name", "")} ({iso})')
+
+    # Cleanup stabilization temp files (v3.0)
+    if stab_tmp:
+        try: os.remove(stab_tmp)
+        except: pass
+    trf = params.pop('_stab_trf', None)
+    if trf:
+        try: os.remove(trf)
+        except: pass
 
     return True, None, out
 

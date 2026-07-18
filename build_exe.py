@@ -154,6 +154,9 @@ def build_pyinstaller():
         '--windowed',
         '--hidden-import', 'inject_spherical_metadata',
         '--hidden-import', 'sysmon',
+        '--hidden-import', 'stabilize',
+        '--hidden-import', 'cv2',
+        '--hidden-import', 'numpy',
         '--hidden-import', 'webview',
         '--hidden-import', 'webview.platforms.edgechromium',
         '--hidden-import', 'webview.platforms.winforms',
@@ -162,12 +165,15 @@ def build_pyinstaller():
         '--hidden-import', 'pynvml',
         '--add-data', f'{SCRIPT_DIR / "inject_spherical_metadata.py"};.',
         '--add-data', f'{SCRIPT_DIR / "sysmon.py"};.',
+        '--add-data', f'{SCRIPT_DIR / "stabilize.py"};.',
         '--add-data', f'{SCRIPT_DIR / "static"};static',
         '--add-data', f'{SCRIPT_DIR / "VERSION"};.',
         '--collect-all', 'flask',
         '--collect-all', 'jinja2',
         '--collect-all', 'webview',
         '--collect-all', 'psutil',
+        '--collect-all', 'cv2',
+        '--collect-all', 'numpy',
         str(SCRIPT_DIR / 'app.py'),
     ]
 
@@ -280,6 +286,7 @@ def create_launcher():
 - 批量任务队列管理：多选加入队列、单独跳过/移除、追加扫描
 - 编码测试输出：仅编码指定秒数片段用于测试参数效果
 - 参数悬浮提示：每个参数旁的 ? 图标悬停查看详细解释
+- 画面防抖（v3.0+）：标准视频使用 FFmpeg libvidstab 滤镜，全景视频使用 OpenCV 球面防抖算法，根据视频类型自动选择
 
 ### 元数据工具（无需重编码）
 - 独立使用日期写入、GPS 位置写入、GSpherical 注入三大功能
