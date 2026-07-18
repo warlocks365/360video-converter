@@ -3422,12 +3422,58 @@ pollStatus = async function() {
   const metaFilePct = document.getElementById('metaFileProgressPercent');
   if (metaFilePct) metaFilePct.textContent = `${Math.round(data.file_progress)}%`;
 
-  if (data.current_input) {
+  // ── Merge status display ──
+  // When merging files, show "🔗 合并中: 第2/5个文件, 已用42s/120s" instead of normal encoding label
+  const ms = data.merge_status;
+  if (ms && ms.phase === 'merging' && data.status === 'running' && !isPaused) {
+    const fi = ms.current_file_index || 0;
+    const fn = ms.current_file_name || '';
+    const total_files = ms.total_files || 0;
+    const elapsed = ms.elapsed_time || 0;
+    const total_dur = ms.total_duration || 0;
+    const total_gb = ms.total_gb || 0;
+
+    // Build merge label
+    let mergeText = `🔗 合并预处理中`;
+    if (total_files > 0) mergeText += ` (${fi + 1}/${total_files})`;
+    if (fn) mergeText += `：${fn}`;
+    if (total_dur > 0) {
+      mergeText += `，已用 ${fmtTime(elapsed)}/${fmtTime(total_dur)}`;
+      const remaining = Math.max(0, total_dur - elapsed);
+      if (remaining > 0 && elapsed > 1) {
+        mergeText += `，预计还需 ${fmtTime(remaining)}`;
+      }
+    } else if (total_gb > 0) {
+      mergeText += `，数据量 ${total_gb} GB`;
+    }
+    mergeText += `，完成后开始编码`;
+
+    const encodeProgLabel = document.getElementById('progressLabel');
+    const metaProgLabel = document.getElementById('metaProgressLabel');
+    if (encodeProgLabel) encodeProgLabel.textContent = mergeText;
+    if (metaProgLabel) metaProgLabel.textContent = mergeText;
+
+    // Update current file label to show merge info
+    const encodeCurLabel = document.getElementById('currentFileLabel');
+    const metaCurLabel = document.getElementById('metaCurrentFileLabel');
+    const curLabel = total_files > 0
+      ? `🔗 合并 ${fi + 1}/${total_files}: ${fn}`
+      : '🔗 合并中...';
+    if (encodeCurLabel) encodeCurLabel.textContent = curLabel;
+    if (metaCurLabel) metaCurLabel.textContent = curLabel;
+  } else if (data.current_input) {
     const fname = data.current_input.split(/[\/\\]/).pop();
     const encodeLabel = document.getElementById('currentFileLabel');
     const metaCurLabel = document.getElementById('metaCurrentFileLabel');
     if (encodeLabel) encodeLabel.textContent = `[${data.current_index+1}/${data.total}] ${fname}`;
     if (metaCurLabel) metaCurLabel.textContent = `[${data.current_index+1}/${data.total}] ${fname}`;
+    // Reset progress label from merge phase to encoding phase
+    if (data.status === 'running' && !isPaused) {
+      const encodeProgLabel = document.getElementById('progressLabel');
+      const metaProgLabel = document.getElementById('metaProgressLabel');
+      if (encodeProgLabel && encodeProgLabel.textContent.startsWith('🔗')) encodeProgLabel.textContent = '转换中...';
+      if (metaProgLabel && metaProgLabel.textContent.startsWith('🔗')) metaProgLabel.textContent = '应用中...';
+    }
   }
 
   // Update time tracking for both encoding and metadata

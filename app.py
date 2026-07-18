@@ -454,6 +454,7 @@ def new_job(mode, items, params):
         'paused': False,
         'sysmon': {},
         '_sysmon': None,
+        'merge_status': None,
     }
     return jid
 
@@ -984,6 +985,21 @@ def run_ffmpeg(cmd, jid, duration, pass_label=''):
                             if j['total'] > 0:
                                 base = (j['current_index'] / j['total']) * 100
                                 j['overall_progress'] = base + (prog / j['total'])
+                            # Update merge progress tracking
+                            ms = j.get('merge_status')
+                            if ms and ms.get('phase') == 'merging':
+                                m = PROGRESS_RE.search(line)
+                                if m:
+                                    h, mi, s = m.groups()
+                                    cur_sec = int(h) * 3600 + int(mi) * 60 + float(s)
+                                    ms['elapsed_time'] = round(cur_sec, 1)
+                                    # Find which file we're currently in
+                                    cum = ms.get('cumulative', [])
+                                    for fi, (end_t, fname) in enumerate(cum):
+                                        if cur_sec <= end_t + 0.5:
+                                            ms['current_file_index'] = fi
+                                            ms['current_file_name'] = fname
+                                            break
             else:
                 log_line(jid, f'{pass_label}{line}')
     except Exception as e:
@@ -1037,7 +1053,44 @@ def merge_files(jid, input_files, output_path):
                 pass
         total_gb = total_bytes / (1024**3)
         log_line(jid, f'  合并数据量约 {total_gb:.1f} GB, stream copy 模式 (无重编码)')
-        log_line(jid, f'  此阶段不显示进度条, 请耐心等待...')
+
+        # Get duration of each file to track merge progress
+        file_durations = []
+        cumulative = 0.0
+        cumulative_list = []  # [(end_time, filename), ...]
+        for fp in input_files:
+            d = get_duration(fp)
+            file_durations.append(d)
+            cumulative += d
+            cumulative_list.append((cumulative, os.path.basename(fp)))
+        total_duration = cumulative
+
+        if total_duration > 0:
+            log_line(jid, f'  总时长 {total_duration:.1f}s, 将实时显示合并进度')
+        else:
+            log_line(jid, f'  无法获取时长信息, 此阶段不显示进度条, 请耐心等待...')
+
+        # Set merge_status so frontend can show merge-specific progress
+        with job_lock:
+            j = jobs.get(jid)
+            if j:
+                j['merge_status'] = {
+                    'phase': 'merging',
+                    'total_files': len(input_files),
+                    'total_duration': round(total_duration, 1),
+                    'total_bytes': total_bytes,
+                    'total_gb': round(total_gb, 2),
+                    'file_names': [os.path.basename(fp) for fp in input_files],
+                    'file_durations': [round(d, 1) for d in file_durations],
+                    'cumulative': [(round(c, 1), os.path.basename(fp)) for c, fp in zip(
+                        [sum(file_durations[:i+1]) for i in range(len(file_durations))],
+                        input_files
+                    )],
+                    'current_file_index': 0,
+                    'current_file_name': os.path.basename(input_files[0]) if input_files else '',
+                    'elapsed_time': 0.0,
+                    'start_time': time.time(),
+                }
 
         cmd = [
             FFMPEG_PATH, '-y',
@@ -1051,12 +1104,23 @@ def merge_files(jid, input_files, output_path):
             output_path
         ]
         log_line(jid, '  Running ffmpeg concat (stream copy, no re-encode)...')
-        rc = run_ffmpeg(cmd, jid, 0)  # No progress tracking for merge
+        # Pass total_duration so parse_progress() can track merge progress
+        rc = run_ffmpeg(cmd, jid, total_duration)
         if rc != 0:
             try: os.remove(output_path)
             except: pass
+            # Clear merge_status on failure
+            with job_lock:
+                j = jobs.get(jid)
+                if j:
+                    j['merge_status'] = None
             return False, f'Merge failed (rc={rc})'
         log_line(jid, '  Merge: OK', 'success')
+        # Clear merge_status — encoding phase will begin next
+        with job_lock:
+            j = jobs.get(jid)
+            if j:
+                j['merge_status'] = None
         return True, None
     finally:
         try: os.remove(list_path)
@@ -1329,6 +1393,11 @@ def conversion_worker(jid):
         merge_inputs = item.get('inputs')
         merged_tmp = None
         if merge_inputs and len(merge_inputs) > 1:
+            # Check cancel before starting merge
+            with job_lock:
+                j = jobs.get(jid)
+                if not j or j['status'] == 'cancelled':
+                    return
             merged_tmp = out + '.merged_tmp' + os.path.splitext(merge_inputs[0])[1]
             mok, merr = merge_files(jid, merge_inputs, merged_tmp)
             if not mok:
@@ -1340,6 +1409,13 @@ def conversion_worker(jid):
                 continue
             inp = merged_tmp
             log_line(jid, f'  merged input: {merged_tmp}')
+            # Reset file_progress for encoding phase
+            with job_lock:
+                j = jobs.get(jid)
+                if j:
+                    j['file_progress'] = 0.0
+                    if j['total'] > 0:
+                        j['overall_progress'] = (j['current_index'] / j['total']) * 100
 
         # Each task may carry its own export parameters; fall back to job-level defaults
         item_params = dict(item.get('params') or job_params)
@@ -3127,6 +3203,7 @@ def status(jid):
             'end_time': j['end_time'],
             'items': [{k: v for k, v in item.items() if k != 'done'} for item in j['items']],
             'sysmon': sysmon_data,
+            'merge_status': j.get('merge_status'),
         })
 
 
