@@ -209,6 +209,61 @@ body {
 }
 .time-info strong { color: var(--text-secondary); font-weight: 600; }
 
+/* ── System Resource Monitor Panel ─────────────────────────── */
+.sysmon-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-top: 8px;
+}
+.sysmon-cell {
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  text-align: center;
+}
+.sysmon-cell .sm-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+.sysmon-cell .sm-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+.sysmon-cell .sm-unit {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.sysmon-cell .sm-sub {
+  font-size: 0.6rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.sysmon-cell .sm-bar {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.sysmon-cell .sm-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+.sm-cpu  .sm-bar-fill { background: #3b82f6; }
+.sm-gpu  .sm-bar-fill { background: #22c55e; }
+.sm-mem  .sm-bar-fill { background: var(--accent); }
+.sm-disk .sm-bar-fill { background: #f59e0b; }
+.sm-net  .sm-bar-fill { background: #06b6d4; }
+
 /* ── Table ─────────────────────────────────────── */
 .table-wrap { overflow-x: auto; max-height: 360px; overflow-y: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
@@ -1224,6 +1279,48 @@ tr:hover td { background: var(--surface-hover); }
         <span>&#9201; 已耗时: <strong id="encodeElapsed">--</strong></span>
         <span>预计剩余: <strong id="encodeRemaining">--</strong></span>
         <span>预计总时间: <strong id="encodeTotal">--</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- System Resource Monitor -->
+  <div class="card" id="sysmonCard" style="display:none;">
+    <div class="card-title">系统资源监控</div>
+    <div class="sysmon-grid">
+      <div class="sysmon-cell sm-cpu">
+        <div class="sm-label">CPU</div>
+        <div class="sm-value" id="smCpuVal">--</div>
+        <div class="sm-unit">%</div>
+        <div class="sm-sub" id="smCpuSub"></div>
+        <div class="sm-bar"><div class="sm-bar-fill" id="smCpuBar" style="width:0%"></div></div>
+      </div>
+      <div class="sysmon-cell sm-gpu">
+        <div class="sm-label">GPU</div>
+        <div class="sm-value" id="smGpuVal">--</div>
+        <div class="sm-unit">%</div>
+        <div class="sm-sub" id="smGpuSub"></div>
+        <div class="sm-bar"><div class="sm-bar-fill" id="smGpuBar" style="width:0%"></div></div>
+      </div>
+      <div class="sysmon-cell sm-mem">
+        <div class="sm-label">内存</div>
+        <div class="sm-value" id="smMemVal">--</div>
+        <div class="sm-unit">%</div>
+        <div class="sm-sub" id="smMemSub"></div>
+        <div class="sm-bar"><div class="sm-bar-fill" id="smMemBar" style="width:0%"></div></div>
+      </div>
+      <div class="sysmon-cell sm-disk">
+        <div class="sm-label">磁盘 IO</div>
+        <div class="sm-value" id="smDiskVal">--</div>
+        <div class="sm-unit">MB/s</div>
+        <div class="sm-sub" id="smDiskSub"></div>
+        <div class="sm-bar"><div class="sm-bar-fill" id="smDiskBar" style="width:0%"></div></div>
+      </div>
+      <div class="sysmon-cell sm-net">
+        <div class="sm-label">网络</div>
+        <div class="sm-value" id="smNetVal">--</div>
+        <div class="sm-unit">MB/s</div>
+        <div class="sm-sub" id="smNetSub"></div>
+        <div class="sm-bar"><div class="sm-bar-fill" id="smNetBar" style="width:0%"></div></div>
       </div>
     </div>
   </div>
@@ -2845,6 +2942,9 @@ async function pollStatus() {
 
   updateTimeInfo('encode', data, nowSec);
 
+  // Update system resource monitor
+  updateSysMon(data.sysmon);
+
   const logBox = document.getElementById('logBox');
   logBox.innerHTML = data.log.slice(-100).map(l =>
     `<div class="log-line"><span class="log-ts">${l.ts}</span><span class="log-msg ${l.level}">${esc(l.msg)}</span></div>`
@@ -2877,6 +2977,70 @@ async function pollStatus() {
 
 function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+// ── System Resource Monitor ─────────────────────────────────
+function updateSysMon(sm) {
+  const card = document.getElementById('sysmonCard');
+  if (!sm || Object.keys(sm).length === 0) {
+    if (card) card.style.display = 'none';
+    return;
+  }
+  if (card) card.style.display = '';
+
+  // CPU
+  const cpuVal = sm.cpu_percent;
+  if (cpuVal != null) {
+    document.getElementById('smCpuVal').textContent = Math.round(cpuVal);
+    document.getElementById('smCpuBar').style.width = `${Math.min(100, cpuVal)}%`;
+    const sub = sm.proc_cpu_percent != null ? `ffmpeg: ${Math.round(sm.proc_cpu_percent)}%` : '';
+    document.getElementById('smCpuSub').textContent = sub;
+  }
+
+  // GPU
+  const gpuVal = sm.gpu_percent;
+  if (gpuVal != null) {
+    document.getElementById('smGpuVal').textContent = Math.round(gpuVal);
+    document.getElementById('smGpuBar').style.width = `${Math.min(100, gpuVal)}%`;
+    let parts = [];
+    if (sm.gpu_enc_percent != null) parts.push(`ENC ${sm.gpu_enc_percent}%`);
+    if (sm.gpu_temp != null) parts.push(`${sm.gpu_temp}°C`);
+    document.getElementById('smGpuSub').textContent = parts.join(' ');
+  } else {
+    document.getElementById('smGpuVal').textContent = 'N/A';
+    document.getElementById('smGpuSub').textContent = '无 NVIDIA GPU';
+  }
+
+  // Memory
+  const memVal = sm.mem_percent;
+  if (memVal != null) {
+    document.getElementById('smMemVal').textContent = Math.round(memVal);
+    document.getElementById('smMemBar').style.width = `${memVal}%`;
+    document.getElementById('smMemSub').textContent =
+      `${sm.mem_used_gb || '--'} / ${sm.mem_total_gb || '--'} GB`;
+  }
+
+  // Disk
+  const rd = sm.disk_read_mbs;
+  const wr = sm.disk_write_mbs;
+  if (rd != null || wr != null) {
+    const total = (rd || 0) + (wr || 0);
+    document.getElementById('smDiskVal').textContent = total.toFixed(1);
+    document.getElementById('smDiskBar').style.width = `${Math.min(100, total / 5)}%`;
+    document.getElementById('smDiskSub').textContent =
+      `R ${rd != null ? rd.toFixed(1) : '--'}  W ${wr != null ? wr.toFixed(1) : '--'}`;
+  }
+
+  // Network
+  const up = sm.net_up_mbs;
+  const dn = sm.net_down_mbs;
+  if (up != null || dn != null) {
+    const total = (up || 0) + (dn || 0);
+    document.getElementById('smNetVal').textContent = total.toFixed(2);
+    document.getElementById('smNetBar').style.width = `${Math.min(100, total * 20)}%`;
+    document.getElementById('smNetSub').textContent =
+      `↓ ${dn != null ? dn.toFixed(2) : '--'}  ↑ ${up != null ? up.toFixed(2) : '--'}`;
+  }
 }
 
 function esc(s) {
@@ -3142,6 +3306,9 @@ pollStatus = async function() {
   // Update time tracking for both encoding and metadata
   updateTimeInfo('encode', data, nowSec);
   updateTimeInfo('meta', data, nowSec);
+
+  // Update system resource monitor
+  updateSysMon(data.sysmon);
 
   const logBox = document.getElementById('logBox');
   logBox.innerHTML = data.log.slice(-100).map(l =>

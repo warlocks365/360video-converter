@@ -89,6 +89,13 @@ except ImportError:
     read_gspherical = None
     print('[WARN] inject_spherical_metadata not found -- injection disabled')
 
+# Import the system resource monitor
+try:
+    from sysmon import SysMon
+except ImportError:
+    SysMon = None
+    print('[WARN] sysmon not found -- resource monitoring disabled')
+
 app = Flask(__name__, static_folder='static', static_url_path='')
 
 # Read app version from VERSION file
@@ -427,6 +434,8 @@ def new_job(mode, items, params):
         'end_time': None,
         'proc': None,
         'paused': False,
+        'sysmon': {},
+        '_sysmon': None,
     }
     return jid
 
@@ -916,6 +925,19 @@ def run_ffmpeg(cmd, jid, duration, pass_label=''):
     with job_lock:
         jobs[jid]['proc'] = proc
 
+    # Start system resource monitor for this ffmpeg run
+    sm = None
+    if SysMon is not None:
+        try:
+            sm = SysMon(pid=proc.pid, interval=1.0)
+            sm.start()
+            with job_lock:
+                j = jobs.get(jid)
+                if j:
+                    j['_sysmon'] = sm
+        except Exception:
+            sm = None
+
     try:
         for line in _read_ffmpeg_lines(proc.stderr):
             line = line.rstrip()
@@ -946,6 +968,17 @@ def run_ffmpeg(cmd, jid, duration, pass_label=''):
             pass
 
     proc.wait()
+
+    # Stop resource monitor and keep final snapshot
+    if sm is not None:
+        sm.stop()
+        final_snap = sm.snapshot()
+        with job_lock:
+            j = jobs.get(jid)
+            if j:
+                j['sysmon'] = final_snap
+                j['_sysmon'] = None
+
     return proc.returncode
 
 
@@ -969,11 +1002,25 @@ def merge_files(jid, input_files, output_path):
         for i, fp in enumerate(input_files):
             log_line(jid, f'  [{i+1}] {os.path.basename(fp)}')
 
+        # Estimate total data size for user feedback
+        total_bytes = 0
+        for fp in input_files:
+            try:
+                total_bytes += os.path.getsize(fp)
+            except OSError:
+                pass
+        total_gb = total_bytes / (1024**3)
+        log_line(jid, f'  合并数据量约 {total_gb:.1f} GB, stream copy 模式 (无重编码)')
+        log_line(jid, f'  此阶段不显示进度条, 请耐心等待...')
+
         cmd = [
             FFMPEG_PATH, '-y',
             '-f', 'concat',
             '-safe', '0',
             '-i', list_path,
+            '-map', '0:v:0',        # Only copy first video stream
+            '-map', '0:a:0',        # Only copy first audio stream
+            '-ignore_unknown',       # Skip unknown streams (GoPro tmcd etc.)
             '-c', 'copy',
             output_path
         ]
@@ -2934,6 +2981,12 @@ def status(jid):
         j = jobs.get(jid)
         if not j:
             return jsonify({'error': 'Job not found'}), 404
+        # Get live sysmon snapshot (from running SysMon object) or final snapshot
+        sm_obj = j.get('_sysmon')
+        if sm_obj:
+            sysmon_data = sm_obj.snapshot()
+        else:
+            sysmon_data = j.get('sysmon', {})
         return jsonify({
             'id': j['id'],
             'status': j['status'],
@@ -2950,6 +3003,7 @@ def status(jid):
             'start_time': j['start_time'],
             'end_time': j['end_time'],
             'items': [{k: v for k, v in item.items() if k != 'done'} for item in j['items']],
+            'sysmon': sysmon_data,
         })
 
 
