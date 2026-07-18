@@ -2937,8 +2937,19 @@ async function startConversion() {
   jobId = data.job_id;
   isPaused = false;
   document.getElementById('startBtn').disabled = true;
-  document.getElementById('cancelBtn').style.display = '';
-  document.getElementById('pauseBtn').style.display = '';
+  // Reset cancel button state (in case it was disabled by a previous cancel)
+  const cancelBtn = document.getElementById('cancelBtn');
+  cancelBtn.disabled = false;
+  cancelBtn.innerHTML = '&#9209; 取消';
+  cancelBtn.style.display = '';
+  const pauseBtn = document.getElementById('pauseBtn');
+  pauseBtn.disabled = false;
+  pauseBtn.style.display = '';
+  // Also reset metadata buttons
+  const metaCancelBtn = document.getElementById('metaCancelBtn');
+  if (metaCancelBtn) { metaCancelBtn.disabled = false; metaCancelBtn.innerHTML = '&#9209; 取消'; metaCancelBtn.style.display = ''; }
+  const metaPauseBtn = document.getElementById('metaPauseBtn');
+  if (metaPauseBtn) { metaPauseBtn.disabled = false; metaPauseBtn.style.display = ''; }
   updatePauseButtonUI();
   document.getElementById('progressLabel').textContent = '转换中...';
   document.getElementById('overallProgress').classList.remove('success');
@@ -2952,19 +2963,61 @@ async function startConversion() {
 
 async function cancelConversion() {
   if (!jobId) return;
-  await fetch(`/api/cancel/${jobId}`, {method: 'POST'});
+  // Disable all cancel buttons immediately to prevent double-clicks
+  const cancelBtn = document.getElementById('cancelBtn');
+  const metaCancelBtn = document.getElementById('metaCancelBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const metaPauseBtn = document.getElementById('metaPauseBtn');
+  if (cancelBtn) { cancelBtn.disabled = true; cancelBtn.innerHTML = '&#8987; 停止中...'; }
+  if (metaCancelBtn) { metaCancelBtn.disabled = true; metaCancelBtn.innerHTML = '&#8987; 停止中...'; }
+  if (pauseBtn) pauseBtn.style.display = 'none';
+  if (metaPauseBtn) metaPauseBtn.style.display = 'none';
+  // Update progress labels to show stopping state
+  const encodeProgLabel = document.getElementById('progressLabel');
+  const metaProgLabel = document.getElementById('metaProgressLabel');
+  if (encodeProgLabel) encodeProgLabel.textContent = '⏳ 正在停止任务...';
+  if (metaProgLabel) metaProgLabel.textContent = '⏳ 正在停止任务...';
+  try {
+    await fetch(`/api/cancel/${jobId}`, {method: 'POST'});
+  } catch (e) {
+    // Even if the request fails, the polling will detect the final state
+    console.error('Cancel request failed:', e);
+  }
+  // Buttons will be fully hidden when polling detects 'cancelled' status
 }
 
 let isPaused = false;
+let _pauseToggleLock = false;
 async function togglePause() {
-  if (!jobId) return;
-  if (isPaused) {
-    await fetch(`/api/resume/${jobId}`, {method: 'POST'});
-    isPaused = false;
+  if (!jobId || _pauseToggleLock) return;
+  _pauseToggleLock = true;
+  // Optimistic UI update for instant feedback
+  const newPaused = !isPaused;
+  isPaused = newPaused;
+  updatePauseButtonUI();
+  // Update progress labels immediately
+  const encodeProgLabel = document.getElementById('progressLabel');
+  const metaProgLabel = document.getElementById('metaProgressLabel');
+  if (newPaused) {
+    if (encodeProgLabel) encodeProgLabel.textContent = '⏸ 已暂停';
+    if (metaProgLabel) metaProgLabel.textContent = '⏸ 已暂停';
   } else {
-    await fetch(`/api/pause/${jobId}`, {method: 'POST'});
-    isPaused = true;
+    if (encodeProgLabel) encodeProgLabel.textContent = '转换中...';
+    if (metaProgLabel) metaProgLabel.textContent = '应用中...';
   }
+  try {
+    if (newPaused) {
+      await fetch(`/api/pause/${jobId}`, {method: 'POST'});
+    } else {
+      await fetch(`/api/resume/${jobId}`, {method: 'POST'});
+    }
+  } catch (e) {
+    // Revert on error
+    isPaused = !newPaused;
+    updatePauseButtonUI();
+    console.error('Pause/resume request failed:', e);
+  }
+  _pauseToggleLock = false;
 }
 
 function updatePauseButtonUI() {
@@ -3307,8 +3360,19 @@ async function startMetadataApply() {
   jobId = data.job_id;
   isPaused = false;
   document.getElementById('metaApplyBtn').disabled = true;
-  document.getElementById('metaCancelBtn').style.display = '';
-  document.getElementById('metaPauseBtn').style.display = '';
+  // Reset metadata cancel/pause button state
+  const metaCancelBtn = document.getElementById('metaCancelBtn');
+  metaCancelBtn.disabled = false;
+  metaCancelBtn.innerHTML = '&#9209; 取消';
+  metaCancelBtn.style.display = '';
+  const metaPauseBtn = document.getElementById('metaPauseBtn');
+  metaPauseBtn.disabled = false;
+  metaPauseBtn.style.display = '';
+  // Also reset encoding buttons
+  const cancelBtn = document.getElementById('cancelBtn');
+  if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.innerHTML = '&#9209; 取消'; }
+  const pauseBtn = document.getElementById('pauseBtn');
+  if (pauseBtn) { pauseBtn.disabled = false; }
   updatePauseButtonUI();
   document.getElementById('metaProgressLabel').textContent = '应用中...';
   document.getElementById('metaOverallProgress').classList.remove('success');
@@ -3404,11 +3468,22 @@ pollStatus = async function() {
   if (data.status === 'completed' || data.status === 'cancelled' || data.status === 'failed') {
     stopPolling();
     document.getElementById('startBtn').disabled = false;
-    document.getElementById('cancelBtn').style.display = 'none';
-    document.getElementById('pauseBtn').style.display = 'none';
+    // Reset button states for next task
+    const cancelBtn = document.getElementById('cancelBtn');
+    cancelBtn.disabled = false;
+    cancelBtn.innerHTML = '&#9209; 取消';
+    cancelBtn.style.display = 'none';
+    const pauseBtn = document.getElementById('pauseBtn');
+    pauseBtn.disabled = false;
+    pauseBtn.style.display = 'none';
     document.getElementById('metaApplyBtn').disabled = false;
-    document.getElementById('metaCancelBtn').style.display = 'none';
-    document.getElementById('metaPauseBtn').style.display = 'none';
+    const metaCancelBtn = document.getElementById('metaCancelBtn');
+    metaCancelBtn.disabled = false;
+    metaCancelBtn.innerHTML = '&#9209; 取消';
+    metaCancelBtn.style.display = 'none';
+    const metaPauseBtn = document.getElementById('metaPauseBtn');
+    metaPauseBtn.disabled = false;
+    metaPauseBtn.style.display = 'none';
     isPaused = false;
     const completedLabel = data.status === 'completed' ? '&#9989; 全部完成' :
                            data.status === 'failed' ? '&#10060; 有失败项' : '&#9209; 已取消';

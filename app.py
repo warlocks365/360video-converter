@@ -1083,6 +1083,11 @@ def convert_one(jid, inp, out, params):
     # ── Stabilization preprocessing (v3.0) ──
     stab_tmp = None
     if params.get('stabilize') and STAB_AVAILABLE:
+        # Check if job was cancelled before starting stabilization
+        with job_lock:
+            j = jobs.get(jid)
+            if not j or j['status'] == 'cancelled':
+                return False, 'Cancelled by user', out
         vtype = detect_video_type(inp, params)
         if vtype == 'panoramic' and stabilize_panoramic is not None:
             # Strategy B: OpenCV spherical stabilization -> intermediate file
@@ -1128,6 +1133,19 @@ def convert_one(jid, inp, out, params):
                 log_line(jid, 'vidstab 分析失败, 跳过防抖', 'warn')
                 try: os.remove(trf_path)
                 except: pass
+
+    # Check if job was cancelled during stabilization preprocessing
+    with job_lock:
+        j = jobs.get(jid)
+        if not j or j['status'] == 'cancelled':
+            if stab_tmp:
+                try: os.remove(stab_tmp)
+                except: pass
+            trf = params.pop('_stab_trf', None)
+            if trf:
+                try: os.remove(trf)
+                except: pass
+            return False, 'Cancelled by user', out
 
     # Determine effective creation_time from filename or manual override
     effective_ct = None
@@ -1366,16 +1384,20 @@ def conversion_worker(jid):
         j = jobs.get(jid)
         if j:
             j['overall_progress'] = 100.0
-            # Set status based on whether all items succeeded
-            all_ok = all(item.get('ok', False) for item in items)
-            if all_ok:
-                j['status'] = 'completed'
+            # Preserve 'cancelled' status — don't overwrite with 'failed'
+            if j['status'] == 'cancelled':
+                j['end_time'] = time.time()
             else:
-                j['status'] = 'failed'
-                # Collect first error for the error field
-                first_err = next((item.get('error') for item in items if item.get('error')), None)
-                j['error'] = first_err
-            j['end_time'] = time.time()
+                # Set status based on whether all items succeeded
+                all_ok = all(item.get('ok', False) for item in items)
+                if all_ok:
+                    j['status'] = 'completed'
+                else:
+                    j['status'] = 'failed'
+                    # Collect first error for the error field
+                    first_err = next((item.get('error') for item in items if item.get('error')), None)
+                    j['error'] = first_err
+                j['end_time'] = time.time()
     log_line(jid, '=== All conversions complete ===', 'success')
 
 
@@ -1639,15 +1661,19 @@ def metadata_worker(jid):
         j = jobs.get(jid)
         if j:
             j['overall_progress'] = 100.0
-            # Set status based on whether all items succeeded
-            all_ok = all(item.get('ok', False) for item in items)
-            if all_ok:
-                j['status'] = 'completed'
+            # Preserve 'cancelled' status — don't overwrite with 'failed'
+            if j['status'] == 'cancelled':
+                j['end_time'] = time.time()
             else:
-                j['status'] = 'failed'
-                first_err = next((item.get('error') for item in items if item.get('error')), None)
-                j['error'] = first_err
-            j['end_time'] = time.time()
+                # Set status based on whether all items succeeded
+                all_ok = all(item.get('ok', False) for item in items)
+                if all_ok:
+                    j['status'] = 'completed'
+                else:
+                    j['status'] = 'failed'
+                    first_err = next((item.get('error') for item in items if item.get('error')), None)
+                    j['error'] = first_err
+                j['end_time'] = time.time()
     log_line(jid, '=== All metadata operations complete ===', 'success')
 
 
@@ -3191,12 +3217,21 @@ def cancel(jid):
         if not j:
             return jsonify({'error': 'Job not found'}), 404
         j['status'] = 'cancelled'
+        j['paused'] = False  # Clear pause so check_pause() loop can exit
         proc = j.get('proc')
     if proc:
         try:
+            # On Windows, if the process was suspended by pause, we must resume
+            # it first so that TerminateProcess can actually take effect.
+            # NtSuspendProcess/NtResumeProcess are no-ops on non-Windows.
+            resume_process(proc.pid)
             proc.kill()
-        except:
-            pass
+            proc.wait(timeout=10)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
     log_line(jid, 'Job cancelled by user', 'warn')
     return jsonify({'ok': True})
 
