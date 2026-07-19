@@ -317,6 +317,7 @@ DEFAULT_PARAMS = {
     # Location metadata options
     'set_location':     False,
     'location_name':    '',
+    'location_address': '',
     'location_lat':     '',
     'location_lon':     '',
     'amap_api_key':     '',
@@ -778,13 +779,19 @@ def build_cmd(inp, out, params, pass_num=0, passlogfile=None):
     if creation_time:
         cmd += ['-metadata', f'creation_time={creation_time}']
 
-    # Metadata: location (ISO 6709 format: +lat-lon/)
+    # Metadata: location (ISO 6709 format: +lat-lon/) + location.name + comment (address)
     loc_lat = params.get('location_lat', '')
     loc_lon = params.get('location_lon', '')
     if params.get('set_location') and loc_lat and loc_lon:
         iso6709 = format_location_iso6709(loc_lat, loc_lon)
         if iso6709:
             cmd += ['-metadata:s:v:0', f'location={iso6709}']
+        loc_name = params.get('location_name', '')
+        if loc_name:
+            cmd += ['-metadata:s:v:0', f'location.name={loc_name}']
+        loc_addr = params.get('location_address', '')
+        if loc_addr:
+            cmd += ['-metadata', f'comment={loc_addr}']
 
     # Audio
     if pass_num == 1:
@@ -1293,7 +1300,7 @@ def convert_one(jid, inp, out, params):
     # Post-conversion: log location metadata status
     if params.get('set_location') and params.get('location_lat') and params.get('location_lon'):
         iso = format_location_iso6709(params['location_lat'], params['location_lon'])
-        log_line(jid, f'  Location metadata: {params.get("location_name", "")} ({iso})')
+        log_line(jid, f'  Location metadata: {params.get("location_name", "")} | {params.get("location_address", "")} ({iso})')
 
     # Cleanup stabilization temp files (v3.0)
     if stab_tmp:
@@ -1523,12 +1530,18 @@ def apply_metadata_one(jid, inp, out, params):
             cmd += ['-metadata', f'creation_time={effective_ct}']
             log_line(jid, f'  creation_time={effective_ct}')
 
-        # Metadata: location (ISO 6709)
+        # Metadata: location (ISO 6709) + location.name + comment (address)
         if apply_location and params.get('location_lat') and params.get('location_lon'):
             iso6709 = format_location_iso6709(params['location_lat'], params['location_lon'])
             if iso6709:
                 cmd += ['-metadata:s:v:0', f'location={iso6709}']
-                log_line(jid, f'  location={iso6709} ({params.get("location_name", "")})')
+            loc_name = params.get('location_name', '')
+            if loc_name:
+                cmd += ['-metadata:s:v:0', f'location.name={loc_name}']
+            loc_addr = params.get('location_address', '')
+            if loc_addr:
+                cmd += ['-metadata', f'comment={loc_addr}']
+            log_line(jid, f'  location={iso6709} name={loc_name} addr={loc_addr}')
 
         if params.get('faststart', True):
             cmd += ['-movflags', '+faststart']
@@ -3056,27 +3069,46 @@ def extract_date():
 
 @app.route('/api/geocode')
 def geocode_proxy():
-    """Proxy AMap REST API for fuzzy location search (avoids CORS)."""
+    """Proxy AMap REST API for location search & reverse geocoding (avoids CORS).
+
+    Special query '__regeo__' triggers reverse geocoding via /v3/geocode/regeo,
+    using the 'location' query param (lon,lat). All other queries use the
+    /v3/place/text fuzzy POI search endpoint.
+    """
     keywords = request.args.get('q', '')
     api_key = request.args.get('key', '')
     city = request.args.get('city', '')
+    location = request.args.get('location', '')
 
-    if not keywords:
-        return jsonify({'error': 'Missing query'}), 400
     if not api_key:
         return jsonify({'error': 'Missing AMap API key. Please enter your key in the settings.'}), 400
 
-    params = {
-        'key': api_key,
-        'keywords': keywords,
-        'offset': 20,
-        'page': 1,
-        'extensions': 'all',
-    }
-    if city:
-        params['city'] = city
+    if keywords == '__regeo__':
+        # Reverse geocoding: lon,lat → address
+        if not location:
+            return jsonify({'error': 'Missing location for reverse geocoding'}), 400
+        params = {
+            'key': api_key,
+            'location': location,
+            'extensions': 'all',
+            'output': 'json',
+        }
+        url = 'https://restapi.amap.com/v3/geocode/regeo?' + urllib.parse.urlencode(params)
+    else:
+        # Forward POI search
+        if not keywords:
+            return jsonify({'error': 'Missing query'}), 400
+        params = {
+            'key': api_key,
+            'keywords': keywords,
+            'offset': 20,
+            'page': 1,
+            'extensions': 'all',
+        }
+        if city:
+            params['city'] = city
+        url = 'https://restapi.amap.com/v3/place/text?' + urllib.parse.urlencode(params)
 
-    url = 'https://restapi.amap.com/v3/place/text?' + urllib.parse.urlencode(params)
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -3111,7 +3143,7 @@ def start_convert():
         log_line(jid, f'Date from filename: enabled (creation_time={merged.get("set_creation_time")}, file_created={merged.get("set_file_created")}, file_modified={merged.get("set_file_modified")})')
 
     if merged.get('set_location') and merged.get('location_lat'):
-        log_line(jid, f'Location: {merged.get("location_name", "")} ({merged.get("location_lat")}, {merged.get("location_lon")})')
+        log_line(jid, f'Location: {merged.get("location_name", "")} | {merged.get("location_address", "")} ({merged.get("location_lat")}, {merged.get("location_lon")})')
 
     t = threading.Thread(target=conversion_worker, args=(jid,), daemon=True)
     t.start()
@@ -3380,6 +3412,74 @@ def probe():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/probe-source')
+def probe_source():
+    """Extract GPS location and creation_time from a source video file.
+
+    Uses ffprobe to read format-level and stream-level metadata tags, then
+    parses the ISO 6709 'location' tag into lat/lon and normalizes
+    'creation_time'. Returns a clean JSON the frontend can display and
+    offer reuse options for.
+    """
+    path = resolve_real_path(request.args.get('path', ''))
+    if not path or not os.path.isfile(path):
+        return jsonify({'error': 'File not found'}), 404
+    try:
+        r = subprocess.run(
+            [FFPROBE_PATH, '-v', 'quiet', '-print_format', 'json',
+             '-show_format', '-show_streams', path],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding='utf-8', errors='replace', timeout=30,
+            env=_ffmpeg_env(), creationflags=NO_WINDOW
+        )
+        out = r.stdout or ''
+        if r.returncode != 0 or not out.strip():
+            return jsonify({'error': f'ffprobe failed: {r.stderr or ""}'}), 500
+
+        data = json.loads(out)
+        fmt_tags = (data.get('format') or {}).get('tags') or {}
+        streams = data.get('streams') or []
+        # creation_time can be at format level or stream level (prefer stream)
+        creation_time = fmt_tags.get('creation_time', '')
+        location_raw = fmt_tags.get('location', '')
+        location_name = fmt_tags.get('location.name', '') or fmt_tags.get('location_name', '')
+        for s in streams:
+            if not isinstance(s, dict):
+                continue
+            st_tags = s.get('tags') or {}
+            if not creation_time and st_tags.get('creation_time'):
+                creation_time = st_tags['creation_time']
+            if not location_raw and st_tags.get('location'):
+                location_raw = st_tags['location']
+            if not location_name and (st_tags.get('location.name') or st_tags.get('location_name')):
+                location_name = st_tags.get('location.name') or st_tags.get('location_name')
+
+        # Parse ISO 6709 location: +34.0522-118.2437/ or +34.0522-118.2437
+        gps = None
+        if location_raw:
+            import re as _re
+            m = _re.match(r'^([+-]\d+\.?\d*)\s*([+-]\d+\.?\d*)', location_raw.strip())
+            if m:
+                try:
+                    lat = float(m.group(1))
+                    lon = float(m.group(2))
+                    gps = {'lat': lat, 'lon': lon, 'raw': location_raw.strip()}
+                except ValueError:
+                    pass
+
+        return jsonify({
+            'has_gps': gps is not None,
+            'gps': gps,
+            'has_time': bool(creation_time),
+            'creation_time': creation_time,
+            'has_location_name': bool(location_name),
+            'location_name': location_name,
+            'filename': os.path.basename(path),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/report', methods=['POST'])
 def start_report():
     """Generate a metadata report for one or more video files using a job-based
@@ -3552,7 +3652,12 @@ def load_tasks():
 # ── App Settings ───────────────────────────────────────────────
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
-    defaults = {'auto_load_tasks': False}
+    defaults = {
+        'auto_load_tasks': False,
+        'amap_api_key': '',
+        'amap_security': '',
+        'custom_ffmpeg_path': '',
+    }
     if os.path.exists(SETTINGS_FILE):
         try:
             saved = json.loads(Path(SETTINGS_FILE).read_text(encoding='utf-8'))
@@ -3565,8 +3670,16 @@ def get_settings():
 @app.route('/api/settings', methods=['POST'])
 def save_settings():
     data = request.json
+    # Merge with existing settings so unspecified keys are preserved
+    existing = {}
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            existing = json.loads(Path(SETTINGS_FILE).read_text(encoding='utf-8'))
+        except:
+            pass
+    merged = {**existing, **data}
     try:
-        Path(SETTINGS_FILE).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding='utf-8')
+        Path(SETTINGS_FILE).write_text(json.dumps(merged, indent=2, ensure_ascii=False), encoding='utf-8')
         return jsonify({'ok': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500

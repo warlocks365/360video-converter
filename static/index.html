@@ -418,6 +418,27 @@ tr:hover td { background: var(--surface-hover); }
 }
 .location-info .selected-name { font-weight: 600; }
 .location-info .selected-coords { color: var(--accent); font-family: monospace; font-size: 0.8rem; }
+.location-info .selected-address { color: var(--text-muted); font-size: 0.78rem; }
+
+/* ── Source Info Panel ────────────────────────── */
+.source-info {
+  margin-top: 10px; padding: 10px 14px; border-radius: 8px;
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+.source-info .si-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.source-info .si-label { color: var(--text-muted); min-width: 70px; }
+.source-info .si-value { font-weight: 500; }
+.source-info .si-value.coords { color: var(--accent); font-family: monospace; }
+.source-info .si-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.source-info .si-btn {
+  padding: 4px 12px; border-radius: 4px; font-size: 0.78rem; cursor: pointer;
+  border: 1px solid var(--primary); background: var(--primary-light); color: var(--primary);
+  transition: all 0.2s;
+}
+.source-info .si-btn:hover { background: var(--primary); color: #fff; }
+.source-info .si-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.source-info .si-none { color: var(--text-muted); font-style: italic; }
 
 /* ── Info Box ─────────────────────────────────── */
 .info-box {
@@ -942,6 +963,10 @@ tr:hover td { background: var(--surface-hover); }
               <input class="input" id="p_location_lon" type="text" placeholder="如: 116.4074">
             </div>
           </div>
+          <div class="field">
+            <label class="field-label">详细地址<span class="tip-icon" data-tip="从高德地图选位自动提取的详细地址（如：北京市东城区东长安街），将写入视频元数据 comment 字段。">?</span></label>
+            <input class="input" id="p_location_address" placeholder="选取位置后自动填充..." readonly>
+          </div>
           <div id="locationInfo" class="info-box hidden"></div>
         </div>
       </div>
@@ -958,9 +983,10 @@ tr:hover td { background: var(--surface-hover); }
       <div class="field">
         <label class="field-label">原片文件</label>
         <div class="input-group">
-          <input class="input" id="singleInput" placeholder="选择或输入视频文件路径...">
+          <input class="input" id="singleInput" placeholder="选择或输入视频文件路径..." onchange="probeSourceVideo(this.value, 'p')">
           <button class="btn" onclick="openFileBrowser('singleInput', false, 'video')">浏览...</button>
         </div>
+        <div id="sourceInfo" class="source-info hidden"></div>
       </div>
       <div class="field">
         <label class="field-label">输出文件</label>
@@ -1065,9 +1091,10 @@ tr:hover td { background: var(--surface-hover); }
       <div id="metaSingleFile" class="field">
         <label class="field-label">视频文件</label>
         <div class="input-group">
-          <input class="input" id="metaInput" placeholder="选择或输入视频文件路径...">
+          <input class="input" id="metaInput" placeholder="选择或输入视频文件路径..." onchange="probeSourceVideo(this.value, 'm')">
           <button class="btn" onclick="openFileBrowser('metaInput', false, 'video')">浏览...</button>
         </div>
+        <div id="metaSourceInfo" class="source-info hidden"></div>
         <label class="check" style="margin-top:8px;">
           <input type="checkbox" id="metaInPlace" checked>
           原地修改（覆盖原文件）
@@ -1168,6 +1195,10 @@ tr:hover td { background: var(--surface-hover); }
             <label class="field-label">经度 (Longitude)</label>
             <input class="input" id="m_location_lon" type="text" placeholder="如: 116.4074">
           </div>
+        </div>
+        <div class="field">
+          <label class="field-label">详细地址</label>
+          <input class="input" id="m_location_address" placeholder="选取位置后自动填充..." readonly>
         </div>
         <div id="metaLocationInfo" class="info-box hidden"></div>
       </div>
@@ -1382,6 +1413,7 @@ tr:hover td { background: var(--surface-hover); }
     <div class="location-info" id="mapLocationInfo">
       <span class="selected-name" id="mapSelectedName">未选择位置</span>
       <span class="selected-coords" id="mapSelectedCoords"></span>
+      <span class="selected-address" id="mapSelectedAddress"></span>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="clearMapSelection()">清除选择</button>
@@ -1486,7 +1518,7 @@ const DEFAULT_PARAMS = {
   stabilize:false, stabilize_smoothing:30, stabilize_shakiness:5, stabilize_zoom:0.05,
   date_from_filename:false, set_creation_time:true, set_file_created:true,
   set_file_modified:true, manual_date:'',
-  set_location:false, location_name:'', location_lat:'', location_lon:'',
+  set_location:false, location_name:'', location_address:'', location_lat:'', location_lon:'',
 };
 
 // ── Theme ──────────────────────────────────────────
@@ -1682,11 +1714,32 @@ function toggleSphericalOptions(cb, prefix) {
 }
 
 // ── Map Picker ──────────────────────────────────────
+// AMap API key is persisted in backend _settings.json so it survives
+// pywebview window restarts (localStorage may be cleared on close).
+let _amapKey = '';
+let _amapSecurity = '';
+let _amapConfigLoaded = false;
+
+async function loadAmapConfig() {
+  // Load API key from backend settings (survives window close/restart)
+  try {
+    const r = await fetch('/api/settings');
+    const s = await r.json();
+    if (s.amap_api_key) _amapKey = s.amap_api_key;
+    if (s.amap_security) _amapSecurity = s.amap_security;
+    _amapConfigLoaded = true;
+  } catch(e) {
+    // Fallback: try localStorage if backend unreachable
+    _amapKey = localStorage.getItem('amap_api_key') || '';
+    _amapSecurity = localStorage.getItem('amap_security') || '';
+  }
+}
+
 function getAmapKey() {
-  return localStorage.getItem('amap_api_key') || '';
+  return _amapKey || localStorage.getItem('amap_api_key') || '';
 }
 function getAmapSecurity() {
-  return localStorage.getItem('amap_security') || '';
+  return _amapSecurity || localStorage.getItem('amap_security') || '';
 }
 
 function openMapPicker() {
@@ -1695,7 +1748,7 @@ function openMapPicker() {
   if (!key) {
     document.getElementById('mapContainer').innerHTML =
       '<div style="padding:40px;text-align:center;color:var(--text-muted);">' +
-      '请先在右上角"API Key"中设置高德地图 API Key<br>' +
+      '请先在"设置"中配置高德地图 API Key<br>' +
       '<button class="btn btn-primary" style="margin-top:12px;" onclick="closeMapPicker();openSettings();">前往设置</button></div>';
     return;
   }
@@ -1783,6 +1836,7 @@ function selectSearchResult(lat, lon, name, address) {
   mapSelectedLocation = { name, lat, lon, address };
   document.getElementById('mapSelectedName').textContent = name;
   document.getElementById('mapSelectedCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+  document.getElementById('mapSelectedAddress').textContent = address || '';
 }
 
 async function reverseGeocode(lat, lon) {
@@ -1790,23 +1844,40 @@ async function reverseGeocode(lat, lon) {
   if (mapMarker) mapInstance.remove(mapMarker);
   mapMarker = new AMap.Marker({ position: [lon, lat] });
   mapInstance.add(mapMarker);
+  mapInstance.setZoomAndCenter(15, [lon, lat]);
 
-  // Try reverse geocode
+  // Reverse geocode via backend proxy (handles __regeo__ → /v3/geocode/regeo)
+  let name = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+  let address = '';
   try {
-    const url = `https://restapi.amap.com/v3/geocode/regeo?location=${lon},${lat}&key=${key}&extensions=all`;
-    const r = await fetch(`/api/geocode?q=__regeo__&key=${key}&location=${lon},${lat}`);
-    // Fallback: just use coordinates
-    mapSelectedLocation = {
-      name: `${lat.toFixed(4)}, ${lon.toFixed(4)}`,
-      lat, lon, address: ''
-    };
-    document.getElementById('mapSelectedName').textContent = mapSelectedLocation.name;
-    document.getElementById('mapSelectedCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+    const r = await fetch(`/api/geocode?q=__regeo__&key=${encodeURIComponent(key)}&location=${lon},${lat}`);
+    const data = await r.json();
+    if (data && data.status === '1' && data.regeocode) {
+      const rg = data.regeocode;
+      const comp = rg.addressComponent || {};
+      const prov = comp.province || '';
+      const city = typeof comp.city === 'string' ? comp.city : '';
+      const dist = comp.district || '';
+      const road = comp.township || '';
+      // Build a friendly display name from the most specific available parts
+      const addrParts = [prov, city, dist, road].filter(Boolean);
+      address = rg.formatted_address || addrParts.join('');
+      if (comp.building && comp.building.name) {
+        name = comp.building.name;
+      } else if (comp.neighborhood && comp.neighborhood.name) {
+        name = comp.neighborhood.name;
+      } else {
+        name = dist || road || address || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+      }
+    }
   } catch(e) {
-    mapSelectedLocation = { name: `位置 ${lat.toFixed(4)}, ${lon.toFixed(4)}`, lat, lon, address: '' };
-    document.getElementById('mapSelectedName').textContent = mapSelectedLocation.name;
-    document.getElementById('mapSelectedCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+    // Network/backend error — fall back to raw coordinates
   }
+
+  mapSelectedLocation = { name, lat, lon, address };
+  document.getElementById('mapSelectedName').textContent = name;
+  document.getElementById('mapSelectedCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+  document.getElementById('mapSelectedAddress').textContent = address || '';
 }
 
 function clearMapSelection() {
@@ -1814,24 +1885,9 @@ function clearMapSelection() {
   mapSelectedLocation = null;
   document.getElementById('mapSelectedName').textContent = '未选择位置';
   document.getElementById('mapSelectedCoords').textContent = '';
+  document.getElementById('mapSelectedAddress').textContent = '';
   document.getElementById('mapSearchResults').innerHTML = '';
   document.getElementById('mapSearchInput').value = '';
-}
-
-function confirmMapSelection() {
-  if (!mapSelectedLocation) {
-    alert('请先在地图上选择一个位置');
-    return;
-  }
-  document.getElementById('p_location_name').value = mapSelectedLocation.name;
-  document.getElementById('p_location_lat').value = mapSelectedLocation.lat.toFixed(6);
-  document.getElementById('p_location_lon').value = mapSelectedLocation.lon.toFixed(6);
-
-  const info = document.getElementById('locationInfo');
-  info.classList.remove('hidden');
-  info.innerHTML = `已选择: <strong>${mapSelectedLocation.name}</strong> &mdash; 纬度 ${mapSelectedLocation.lat.toFixed(4)}, 经度 ${mapSelectedLocation.lon.toFixed(4)}`;
-
-  closeMapPicker();
 }
 
 function closeMapPicker() {
@@ -1840,16 +1896,20 @@ function closeMapPicker() {
 
 // ── Settings ────────────────────────────────────────
 async function openSettings() {
-  document.getElementById('settings_amap_key').value = getAmapKey();
-  document.getElementById('settings_amap_security').value = getAmapSecurity();
   document.getElementById('ffmpegTestResult').style.display = 'none';
-  // Load settings from backend
+  // Load all settings from backend (API keys are persisted server-side now)
   try {
     const r = await fetch('/api/settings');
     const s = await r.json();
+    document.getElementById('settings_amap_key').value = s.amap_api_key || '';
+    document.getElementById('settings_amap_security').value = s.amap_security || '';
     document.getElementById('settings_auto_load').checked = s.auto_load_tasks || false;
     document.getElementById('settings_custom_ffmpeg').value = s.custom_ffmpeg_path || '';
-  } catch(e) {}
+  } catch(e) {
+    // Fallback to localStorage if backend unreachable
+    document.getElementById('settings_amap_key').value = getAmapKey();
+    document.getElementById('settings_amap_security').value = getAmapSecurity();
+  }
   document.getElementById('settingsModal').classList.add('active');
 }
 function closeSettings() {
@@ -1941,16 +2001,29 @@ async function openAbout(section) {
   modal.classList.add('active');
 }
 async function saveSettings() {
-  localStorage.setItem('amap_api_key', document.getElementById('settings_amap_key').value.trim());
-  localStorage.setItem('amap_security', document.getElementById('settings_amap_security').value.trim());
+  const amapKey = document.getElementById('settings_amap_key').value.trim();
+  const amapSecurity = document.getElementById('settings_amap_security').value.trim();
   const autoLoad = document.getElementById('settings_auto_load').checked;
   const customFfmpeg = document.getElementById('settings_custom_ffmpeg').value.trim();
+  // Persist all settings to backend (survives pywebview window restart)
   try {
     await fetch('/api/settings', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({auto_load_tasks: autoLoad, custom_ffmpeg_path: customFfmpeg})
+      body: JSON.stringify({
+        amap_api_key: amapKey,
+        amap_security: amapSecurity,
+        auto_load_tasks: autoLoad,
+        custom_ffmpeg_path: customFfmpeg
+      })
     });
-  } catch(e) {}
+    // Update in-memory cache so map picker picks up new key immediately
+    _amapKey = amapKey;
+    _amapSecurity = amapSecurity;
+  } catch(e) {
+    // Fallback: save to localStorage if backend unreachable
+    localStorage.setItem('amap_api_key', amapKey);
+    localStorage.setItem('amap_security', amapSecurity);
+  }
   closeSettings();
   // Re-check codecs if custom ffmpeg path was set
   if (customFfmpeg) {
@@ -2168,6 +2241,7 @@ function collectParams() {
     // Location metadata
     set_location: document.getElementById('p_set_location').checked,
     location_name: val('p_location_name'),
+    location_address: val('p_location_address'),
     location_lat: val('p_location_lat'),
     location_lon: val('p_location_lon'),
     amap_api_key: getAmapKey(),
@@ -2243,6 +2317,7 @@ function applyParams(p) {
   // Location
   document.getElementById('p_set_location').checked = p.set_location || false;
   set('p_location_name', p.location_name || '');
+  set('p_location_address', p.location_address || '');
   set('p_location_lat', p.location_lat || '');
   set('p_location_lon', p.location_lon || '');
   // Test-encode toggle (global action bar control) — restore from task params
@@ -3301,7 +3376,7 @@ function openMapPicker(target) {
   if (!key) {
     document.getElementById('mapContainer').innerHTML =
       '<div style="padding:40px;text-align:center;color:var(--text-muted);">' +
-      '请先在右上角"API Key"中设置高德地图 API Key<br>' +
+      '请先在"设置"中配置高德地图 API Key<br>' +
       '<button class="btn btn-primary" style="margin-top:12px;" onclick="closeMapPicker();openSettings();">前往设置</button></div>';
     return;
   }
@@ -3313,22 +3388,133 @@ function confirmMapSelection() {
     alert('请先在地图上选择一个位置');
     return;
   }
+  const addr = mapSelectedLocation.address || '';
   if (mapPickerTarget === 'meta') {
     document.getElementById('m_location_name').value = mapSelectedLocation.name;
+    document.getElementById('m_location_address').value = addr;
     document.getElementById('m_location_lat').value = mapSelectedLocation.lat.toFixed(6);
     document.getElementById('m_location_lon').value = mapSelectedLocation.lon.toFixed(6);
     const info = document.getElementById('metaLocationInfo');
     info.classList.remove('hidden');
-    info.innerHTML = `已选择: <strong>${mapSelectedLocation.name}</strong> &mdash; 纬度 ${mapSelectedLocation.lat.toFixed(4)}, 经度 ${mapSelectedLocation.lon.toFixed(4)}`;
+    info.innerHTML = `已选择: <strong>${mapSelectedLocation.name}</strong>` +
+      (addr ? `<br><span style="opacity:0.7">地址: ${addr}</span>` : '') +
+      `<br>纬度 ${mapSelectedLocation.lat.toFixed(4)}, 经度 ${mapSelectedLocation.lon.toFixed(4)}`;
   } else {
     document.getElementById('p_location_name').value = mapSelectedLocation.name;
+    document.getElementById('p_location_address').value = addr;
     document.getElementById('p_location_lat').value = mapSelectedLocation.lat.toFixed(6);
     document.getElementById('p_location_lon').value = mapSelectedLocation.lon.toFixed(6);
     const info = document.getElementById('locationInfo');
     info.classList.remove('hidden');
-    info.innerHTML = `已选择: <strong>${mapSelectedLocation.name}</strong> &mdash; 纬度 ${mapSelectedLocation.lat.toFixed(4)}, 经度 ${mapSelectedLocation.lon.toFixed(4)}`;
+    info.innerHTML = `已选择: <strong>${mapSelectedLocation.name}</strong>` +
+      (addr ? `<br><span style="opacity:0.7">地址: ${addr}</span>` : '') +
+      `<br>纬度 ${mapSelectedLocation.lat.toFixed(4)}, 经度 ${mapSelectedLocation.lon.toFixed(4)}`;
   }
   closeMapPicker();
+}
+
+// ── Source Video Probe (GPS + creation_time extraction) ────────
+let _lastSourceProbe = null;  // {gps, creation_time, location_name, filename}
+
+async function probeSourceVideo(path, target) {
+  // target: 'p' (encode panel) or 'm' (metadata panel)
+  const panelId = target === 'm' ? 'metaSourceInfo' : 'sourceInfo';
+  const panel = document.getElementById(panelId);
+  if (!path) { panel.classList.add('hidden'); panel.innerHTML = ''; return; }
+
+  panel.classList.remove('hidden');
+  panel.innerHTML = '<div class="si-row"><span class="si-label">提取中...</span></div>';
+
+  try {
+    const r = await fetch('/api/probe-source?path=' + encodeURIComponent(path));
+    const data = await r.json();
+    if (data.error) {
+      panel.innerHTML = `<div class="si-row"><span class="si-none">元数据提取失败: ${data.error}</span></div>`;
+      return;
+    }
+    _lastSourceProbe = data;
+
+    const gps = data.gps;
+    const ct = data.creation_time;
+    const locName = data.location_name || '';
+    let html = '<div class="si-row"><span class="si-label">文件:</span><span class="si-value">' + (data.filename || '') + '</span></div>';
+
+    // GPS row
+    if (data.has_gps && gps) {
+      html += `<div class="si-row"><span class="si-label">GPS 坐标:</span>` +
+        `<span class="si-value coords">${gps.lat.toFixed(6)}, ${gps.lon.toFixed(6)}</span></div>`;
+      if (locName) {
+        html += `<div class="si-row"><span class="si-label">地点名称:</span><span class="si-value">${locName}</span></div>`;
+      }
+    } else {
+      html += '<div class="si-row"><span class="si-label">GPS 坐标:</span><span class="si-none">未找到</span></div>';
+    }
+
+    // Creation time row
+    if (data.has_time && ct) {
+      const ctDisplay = ct.replace('T', ' ').replace(/\.\d+Z?$/, '').replace('Z', '');
+      html += `<div class="si-row"><span class="si-label">拍摄时间:</span><span class="si-value">${ctDisplay}</span></div>`;
+    } else {
+      html += '<div class="si-row"><span class="si-label">拍摄时间:</span><span class="si-none">未找到</span></div>';
+    }
+
+    // Action buttons
+    html += '<div class="si-actions">';
+    html += `<button class="si-btn" onclick="reuseSourceGPS('${target}')" ${(!data.has_gps) ? 'disabled' : ''}>&#128205; 复用 GPS 位置</button>`;
+    html += `<button class="si-btn" onclick="reuseSourceTime('${target}')" ${(!data.has_time) ? 'disabled' : ''}>&#128197; 复用拍摄时间</button>`;
+    html += '</div>';
+
+    panel.innerHTML = html;
+  } catch(e) {
+    panel.innerHTML = `<div class="si-row"><span class="si-none">提取失败: ${e.message}</span></div>`;
+  }
+}
+
+function reuseSourceGPS(target) {
+  if (!_lastSourceProbe || !_lastSourceProbe.has_gps) return;
+  const gps = _lastSourceProbe.gps;
+  const locName = _lastSourceProbe.location_name || '';
+  if (target === 'm') {
+    document.getElementById('m_location_lat').value = gps.lat.toFixed(6);
+    document.getElementById('m_location_lon').value = gps.lon.toFixed(6);
+    if (locName) document.getElementById('m_location_name').value = locName;
+    document.getElementById('m_apply_location').checked = true;
+    toggleMetaLocation();
+    const info = document.getElementById('metaLocationInfo');
+    info.classList.remove('hidden');
+    info.innerHTML = `已复用源视频 GPS: <strong>${gps.lat.toFixed(4)}, ${gps.lon.toFixed(4)}</strong>` + (locName ? ` (${locName})` : '');
+  } else {
+    document.getElementById('p_location_lat').value = gps.lat.toFixed(6);
+    document.getElementById('p_location_lon').value = gps.lon.toFixed(6);
+    if (locName) document.getElementById('p_location_name').value = locName;
+    document.getElementById('p_set_location').checked = true;
+    toggleLocation();
+    const info = document.getElementById('locationInfo');
+    info.classList.remove('hidden');
+    info.innerHTML = `已复用源视频 GPS: <strong>${gps.lat.toFixed(4)}, ${gps.lon.toFixed(4)}</strong>` + (locName ? ` (${locName})` : '');
+  }
+}
+
+function reuseSourceTime(target) {
+  if (!_lastSourceProbe || !_lastSourceProbe.has_time) return;
+  let ct = _lastSourceProbe.creation_time;
+  // Normalize: "2024-01-15T10:30:00.000000Z" → "2024-01-15T10:30:00"
+  // Also handle EXIF format "2024:01:15 10:30:00" → "2024-01-15T10:30:00"
+  ct = ct.replace(/^(\d{4}):(\d{2}):(\d{2})\s/, '$1-$2-$3T');
+  ct = ct.replace(/\.(\d+)Z?$/, '').replace('Z', '');
+  // Truncate to seconds precision
+  const m = ct.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
+  const dateStr = m ? m[1] : ct.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || ct;
+
+  if (target === 'm') {
+    document.getElementById('m_manual_date').value = dateStr;
+    document.getElementById('m_date_from_filename').checked = false;
+    updateMetaDatePreview();
+  } else {
+    document.getElementById('p_manual_date').value = dateStr;
+    document.getElementById('p_date_from_filename').checked = false;
+    updateDatePreview();
+  }
 }
 
 async function startMetadataApply() {
@@ -3346,6 +3532,7 @@ async function startMetadataApply() {
     manual_date: document.getElementById('m_manual_date').value,
     // Location params
     location_name: document.getElementById('m_location_name').value,
+    location_address: document.getElementById('m_location_address').value,
     location_lat: document.getElementById('m_location_lat').value,
     location_lon: document.getElementById('m_location_lon').value,
     // Other
@@ -4195,6 +4382,8 @@ function showGlobalTooltip(iconEl, tipText) {
 
 // ── Init ────────────────────────────────────────────
 async function init() {
+  // Load AMap API key from backend (persisted in _settings.json) before any map use
+  await loadAmapConfig();
   applyParams(DEFAULT_PARAMS);
   refreshPresets();
   initTooltips();
