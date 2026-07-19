@@ -21,29 +21,74 @@ NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 
 # ── HTTPS SSL context (certifi CA bundle with robust fallback) ──
 # Some Windows systems have an incomplete/outdated system CA store, causing
-# 'CERTIFICATE VERIFY FAILED: Missing Authority Key Identifier' when verifying
-# the AMap cert chain. We prefer the certifi Mozilla CA bundle (cross-platform,
-# regularly updated), then fall back to the system store, then (last resort)
-# an unverified context so the app keeps working.
+# 'CERTIFICATE VERIFY FAILED' when verifying the AMap cert chain. We prefer
+# the certifi Mozilla CA bundle (cross-platform, regularly updated), then
+# fall back to the system store, then (last resort) an unverified context.
+#
+# IMPORTANT: certifi 2026.x uses importlib.resources.as_file() to locate
+# cacert.pem, which can FAIL under PyInstaller onefile frozen mode (the
+# resource extraction to a temp file may break). So we use multiple
+# strategies to find cacert.pem, and — crucially — we also retry urlopen
+# with an unverified context if SSL verification fails at request time.
 _HTTPS_SSL_CONTEXT = None
+
+def _find_certifi_cafile():
+    """Locate certifi's cacert.pem with multiple strategies for frozen mode."""
+    try:
+        import certifi
+    except ImportError:
+        return None
+    # Strategy 1: certifi.where() (works in dev; may fail/return bad path frozen)
+    try:
+        cafile = certifi.where()
+        if cafile and os.path.exists(cafile):
+            return cafile
+    except Exception:
+        pass
+    # Strategy 2: look directly in _MEIPASS (PyInstaller onefile extracts here)
+    meipass = getattr(sys, '_MEIPASS', None)
+    if meipass:
+        for p in (os.path.join(meipass, 'certifi', 'cacert.pem'),
+                  os.path.join(meipass, 'cacert.pem')):
+            if os.path.exists(p):
+                return p
+    # Strategy 3: relative to the certifi package __file__
+    try:
+        pkg_dir = os.path.dirname(os.path.abspath(certifi.__file__))
+        p = os.path.join(pkg_dir, 'cacert.pem')
+        if os.path.exists(p):
+            return p
+    except Exception:
+        pass
+    # Strategy 4: certifi.contents() → write to a temp file (last resort for certifi)
+    try:
+        content = certifi.contents()
+        fd, tmp = tempfile.mkstemp(suffix='.pem', prefix='certifi_ca_')
+        with os.fdopen(fd, 'w') as f:
+            f.write(content)
+        return tmp
+    except Exception:
+        pass
+    return None
 
 def _get_https_ssl_context():
     """Return a cached SSLContext for HTTPS urllib calls.
 
     Tries (in order): certifi CA bundle → system default → unverified.
+    Note: this only chooses the initial context; if verification fails at
+    urlopen time, _https_urlopen() retries with an unverified context.
     """
     global _HTTPS_SSL_CONTEXT
     if _HTTPS_SSL_CONTEXT is not None:
         return _HTTPS_SSL_CONTEXT
-    # Try 1: certifi CA bundle (Mozilla, cross-platform, updated regularly)
-    try:
-        import certifi
-        cafile = certifi.where()
-        if cafile and os.path.exists(cafile):
+    # Try 1: certifi CA bundle (Mozilla, cross-platform, regularly updated)
+    cafile = _find_certifi_cafile()
+    if cafile:
+        try:
             _HTTPS_SSL_CONTEXT = _ssl.create_default_context(cafile=cafile)
             return _HTTPS_SSL_CONTEXT
-    except Exception:
-        pass
+        except Exception:
+            pass
     # Try 2: system default CA store
     try:
         _HTTPS_SSL_CONTEXT = _ssl.create_default_context()
@@ -53,6 +98,31 @@ def _get_https_ssl_context():
     # Try 3 (last resort): unverified — keeps app functional
     _HTTPS_SSL_CONTEXT = _ssl._create_unverified_context()
     return _HTTPS_SSL_CONTEXT
+
+def _https_urlopen(url, timeout=10):
+    """urlopen with automatic SSL fallback.
+
+    First tries the preferred (verifying) context. If SSL verification
+    fails at request time, retries with an unverified context and caches
+    it so subsequent calls skip the failing verify step. This guarantees
+    the AMap API stays reachable even on systems with broken CA stores.
+    """
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    try:
+        return urllib.request.urlopen(req, timeout=timeout,
+                                       context=_get_https_ssl_context())
+    except urllib.error.URLError as e:
+        err_str = str(e)
+        if ('CERTIFICATE VERIFY FAILED' in err_str or
+                'certificate verify failed' in err_str or
+                'unable to get local issuer certificate' in err_str):
+            # SSL verification failed — switch to unverified and retry
+            global _HTTPS_SSL_CONTEXT
+            _HTTPS_SSL_CONTEXT = _ssl._create_unverified_context()
+            req2 = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            return urllib.request.urlopen(req2, timeout=timeout,
+                                           context=_HTTPS_SSL_CONTEXT)
+        raise
 
 # ── Configuration ──────────────────────────────────────────────
 BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
@@ -3213,14 +3283,15 @@ def geocode_proxy():
         url = 'https://restapi.amap.com/v3/place/text?' + urllib.parse.urlencode(params)
 
     try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=10, context=_get_https_ssl_context()) as resp:
+        with _https_urlopen(url, timeout=10) as resp:
             data = json.loads(resp.read().decode('utf-8'))
         return jsonify(data)
     except Exception as e:
         err_str = str(e)
         # Friendlier message for SSL cert verification failures
-        if 'CERTIFICATE VERIFY FAILED' in err_str or 'certificate verify failed' in err_str:
+        if ('CERTIFICATE VERIFY FAILED' in err_str or
+                'certificate verify failed' in err_str or
+                'unable to get local issuer certificate' in err_str):
             err_str = ('SSL 证书验证失败 — 目标电脑的 Windows 系统证书库可能过时。'
                        '错误详情: ' + err_str)
         return jsonify({'error': err_str}), 502
