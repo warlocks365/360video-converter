@@ -1132,6 +1132,17 @@ def run_ffmpeg(cmd, jid, duration, pass_label=''):
             line = line.rstrip()
             if not line:
                 continue
+            # FIX (v3.3.5): Explicitly check cancelled status here.
+            # check_pause() only detects cancelled when paused=True,
+            # so without this check, run_ffmpeg would keep reading
+            # ffmpeg output even after cancel set status='cancelled'.
+            with job_lock:
+                _j = jobs.get(jid)
+                if not _j or _j['status'] == 'cancelled':
+                    try: proc.kill()
+                    except Exception: pass
+                    proc.wait()
+                    return -1
             # Check pause state
             if not check_pause(jid, proc):
                 proc.kill()
@@ -1247,11 +1258,13 @@ def merge_files(jid, input_files, output_path):
         # 容错参数（v3.3.3）：GoPro 源文件可能包含损坏的 NAL unit，
         # stream copy 模式下虽然会报告错误但通常仍能继续，添加显式容错避免
         # 因个别损坏帧导致整个合并阶段失败或产生不可恢复的临时文件。
+        # FIX（v3.3.5）：移除 -max_errors -1，该选项不是 ffmpeg 标准选项，
+        # 当前 ffmpeg 构建（N-125608）不支持，导致 "Unrecognized option" 错误，
+        # 合并直接失败。-err_detect ignore_err + -fflags +discardcorrupt 已足够。
         cmd = [
             FFMPEG_PATH, '-y',
             '-err_detect', 'ignore_err',
             '-fflags', '+discardcorrupt',
-            '-max_errors', '-1',
             '-f', 'concat',
             '-safe', '0',
             '-i', list_path,
@@ -1606,6 +1619,13 @@ def conversion_worker(jid):
                 item['error'] = merr
                 item['end_time'] = time.time()
                 log_line(jid, f'  {merr}', 'error')
+                # FIX (v3.3.5): Check cancelled after merge failure.
+                # If user clicked stop during merge, exit the loop
+                # instead of continuing to the next task.
+                with job_lock:
+                    _j = jobs.get(jid)
+                    if not _j or _j['status'] == 'cancelled':
+                        break
                 continue
             inp = merged_tmp
             log_line(jid, f'  merged input: {merged_tmp}')
@@ -3547,8 +3567,22 @@ def cancel(jid):
             # NtSuspendProcess/NtResumeProcess are no-ops on non-Windows.
             resume_process(proc.pid)
             proc.kill()
-            proc.wait(timeout=10)
+            # FIX (v3.3.5): Reduced timeout from 10s to 5s to avoid long
+            # blocking on the cancel endpoint, which causes the frontend
+            # "停止中..." state to persist.
+            proc.wait(timeout=5)
         except Exception:
+            # FIX (v3.3.5): If proc.kill() / proc.wait() fails, try
+            # taskkill /F /T to forcefully terminate the process tree.
+            try:
+                if os.name == 'nt':
+                    subprocess.run(
+                        ['taskkill', '/F', '/T', '/PID', str(proc.pid)],
+                        capture_output=True, timeout=5,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+            except Exception:
+                pass
             try:
                 proc.kill()
             except Exception:

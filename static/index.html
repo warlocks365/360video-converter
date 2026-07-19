@@ -1125,6 +1125,8 @@ tr:hover td { background: var(--surface-hover); }
           <button class="btn btn-sm" onclick="removeSelectedTasks()">移除选中</button>
           <button class="btn btn-sm btn-danger" onclick="removeUnselectedBatch()">仅保留选中</button>
           <button class="btn btn-sm btn-primary" onclick="applySettingsToSelected()">&#9881; 应用设置到选中任务</button>
+          <button class="btn btn-sm" onclick="exportTasksToFile()" title="将当前任务列表导出为 JSON 文件">&#128190; 保存到文件</button>
+          <button class="btn btn-sm" onclick="importTasksFromFile()" title="从 JSON 文件导入任务列表">&#128194; 从文件导入</button>
         </div>
       </div>
       <div class="info-box" style="margin-bottom:8px;font-size:0.78rem;">
@@ -2307,6 +2309,138 @@ async function loadSavedTasks() {
   }
 }
 
+// ── Export/Import Task List to File (v3.3.5) ───────
+// These complement saveCurrentTasks/loadSavedTasks (which use the backend
+// auto-save file) by letting the user export/import arbitrary JSON files.
+function exportTasksToFile() {
+  if (batchTasks.length === 0) { alert('当前没有任务可导出'); return; }
+  const params = collectParams();
+  const outMode = document.querySelector('input[name="batchOutMode"]:checked')?.value || 'unified';
+  const items = batchTasks.map(t => ({
+    input: t.path,
+    output: t.output || t.custom_output || '',
+    name: t.name,
+    custom_output: t.custom_output || '',
+    is_merge: t.is_merge || false,
+    inputs: t.inputs || null,
+    is_manual: t.is_manual || false,
+    size_mb: t.size_mb,
+    size_str: t.size_str,
+    dir: t.dir,
+    date_in_name: t.date_in_name,
+    params: t.params || params,
+    out_mode: t.out_mode || outMode,
+    out_dir: t.out_dir || '',
+    formula: t.formula || '',
+    project_dir: t.project_dir || ''
+  }));
+  const data = {
+    version: '1.0',
+    saved_at: new Date().toISOString(),
+    mode: 'batch',
+    items: items,
+    params: params,
+    batch_formula: document.getElementById('batchFormula')?.value || '',
+    batch_out_dir: document.getElementById('batchOutDir')?.value || '',
+    project_dir: document.getElementById('projectDir')?.value || '',
+  };
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const now = new Date();
+  const ts = now.getFullYear() + String(now.getMonth()+1).padStart(2,'0') + String(now.getDate()).padStart(2,'0') +
+             '_' + String(now.getHours()).padStart(2,'0') + String(now.getMinutes()).padStart(2,'0') + String(now.getSeconds()).padStart(2,'0');
+  const filename = `360VideoConverter_任务列表_${ts}.json`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast(`已导出 ${batchTasks.length} 个任务到文件`, 'success');
+}
+
+function importTasksFromFile() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json,application/json';
+  input.onchange = async function(ev) {
+    const file = ev.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data.items || !Array.isArray(data.items) || data.items.length === 0) {
+        alert('文件格式无效：缺少 items 数组或为空');
+        return;
+      }
+      // Confirm replace if current list is non-empty
+      if (batchTasks.length > 0) {
+        if (!confirm(`当前已有 ${batchTasks.length} 个任务，导入将替换现有列表。是否继续？`)) return;
+      }
+      // Restore task list from file items
+      batchTasks = data.items.map(item => {
+        const path = item.input || item.path || '';
+        const name = item.name || path.split(/[\/\\]/).pop() || '';
+        const dir = item.dir || path.split(/[\/\\]/).slice(0, -1).join('\\');
+        return {
+          path: path,
+          name: name,
+          dir: dir,
+          size_str: item.size_str || null,
+          size_mb: item.size_mb || 0,
+          date_in_name: item.date_in_name || null,
+          is_merge: item.is_merge || false,
+          inputs: item.inputs || null,
+          is_manual: item.is_manual || false,
+          custom_output: item.custom_output || '',
+          params: item.params || {},
+          out_mode: item.out_mode || 'unified',
+          out_dir: item.out_dir || '',
+          formula: item.formula || '',
+          project_dir: item.project_dir || '',
+          output: item.output || item.custom_output || '',
+          skipped: false, ok: null, error: null
+        };
+      });
+      // Re-extract dates if missing
+      for (const t of batchTasks) {
+        if (!t.date_in_name && t.name) {
+          try {
+            const dr = await fetch('/api/extract_date', {
+              method:'POST', headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({filename: t.name})
+            });
+            const d = await dr.json();
+            t.date_in_name = d.date_str;
+          } catch(e) {}
+        }
+      }
+      // Restore global output defaults
+      if (data.params) {
+        applyParams({...DEFAULT_PARAMS, ...data.params});
+      }
+      if (data.batch_formula) document.getElementById('batchFormula').value = data.batch_formula;
+      if (data.batch_out_dir) document.getElementById('batchOutDir').value = data.batch_out_dir;
+      if (data.project_dir) document.getElementById('projectDir').value = data.project_dir;
+      // Set global output-mode radio
+      const firstMode = batchTasks.find(t => !t.custom_output)?.out_mode || 'unified';
+      const radio = document.querySelector(`input[name="batchOutMode"][value="${firstMode}"]`);
+      if (radio) radio.checked = true;
+      document.getElementById('unifiedOutput').classList.toggle('hidden', firstMode !== 'unified');
+      document.getElementById('formulaOutput').classList.toggle('hidden', firstMode !== 'formula');
+      document.getElementById('scanCount').textContent = `${batchTasks.length} 个文件`;
+      await recomputeOutputs();
+      renderBatchTable();
+      showToast(`已从文件导入 ${batchTasks.length} 个任务`, 'success');
+    } catch(e) {
+      alert('导入失败: ' + e.message);
+    }
+  };
+  input.click();
+}
+
 // ── Collect Params from UI ─────────────────────────
 function collectParams() {
   const params = {
@@ -3194,11 +3328,19 @@ async function cancelConversion() {
   const metaProgLabel = document.getElementById('metaProgressLabel');
   if (encodeProgLabel) encodeProgLabel.textContent = '⏳ 正在停止任务...';
   if (metaProgLabel) metaProgLabel.textContent = '⏳ 正在停止任务...';
+  // FIX (v3.3.5): Add 5-second timeout to the cancel request.
+  // If the backend takes too long (e.g. proc.kill/proc.wait stuck),
+  // abort the fetch. Polling will still detect the 'cancelled' status
+  // and reset the UI — we don't need to wait for the cancel response.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
   try {
-    await fetch(`/api/cancel/${jobId}`, {method: 'POST'});
+    await fetch(`/api/cancel/${jobId}`, {method: 'POST', signal: controller.signal});
   } catch (e) {
-    // Even if the request fails, the polling will detect the final state
+    // Even if the request fails or times out, the polling will detect the final state
     console.error('Cancel request failed:', e);
+  } finally {
+    clearTimeout(timeoutId);
   }
   // Buttons will be fully hidden when polling detects 'cancelled' status
 }
