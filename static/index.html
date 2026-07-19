@@ -913,6 +913,81 @@ tr:hover td { background: var(--surface-hover); }
         </div>
       </div>
 
+      <!-- Okaa Dual-Fisheye Correction (Experimental) -->
+      <div class="section-divider">Okaa 双鱼眼校正（实验性）<span class="tip-icon" data-tip="将 Okaa 等早期双镜头全景相机拍摄的左右双鱼眼视频，转换为标准 360° 等距柱状（equirectangular）全景视频，与 Insta360 等相机输出格式一致。启用后会禁用普通缩放滤镜，输出强制为 2:1 全景比例并自动注入 GSpherical 元数据。接缝效果受镜头参数影响，可通过下方高级参数微调。">?</span></div>
+      <div class="check-group">
+        <label class="check">
+          <input type="checkbox" id="p_okaa_correction" onchange="toggleOkaaCorrection()">
+          启用 Okaa 双鱼眼 → 360° 全景校正<span class="tip-icon" data-tip="勾选后将输入视频视为左右并排的双鱼眼源，每个镜头分别反畸变并拼接为完整 360° 等距柱状视频。">?</span>
+        </label>
+        <div id="okaaCorrectionOptions" class="hidden" style="margin-left:26px;margin-top:8px;">
+          <div class="grid-4">
+            <div class="field">
+              <label class="field-label">镜头视场角 (FOV)<span class="tip-icon" data-tip="单个鱼眼镜头的对角视场角。Okaa 等相机通常在 180°-210° 之间。值越大，单个镜头覆盖的范围越广，拼接时的重叠区也越大。推荐从 200° 开始尝试，根据接缝情况微调。">?</span></label>
+              <input class="input" id="p_okaa_fov" type="number" value="200" min="150" max="240" step="1" style="width:80px;">
+            </div>
+            <div class="field">
+              <label class="field-label">融合模式<span class="tip-icon" data-tip="两个镜头重叠区域的融合方式。Replace：优先使用左镜头，右镜头只填补左镜头未覆盖区域；Average：重叠区取平均值，过渡更自然但可能发虚；Max：取两镜头中较亮像素。推荐 Replace。">?</span></label>
+              <select class="select" id="p_okaa_blend" style="width:120px;">
+                <option value="replace" selected>Replace</option>
+                <option value="average">Average</option>
+                <option value="max">Max</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="field-label">输出分辨率<span class="tip-icon" data-tip="校正后的全景视频分辨率。360° 等距柱状视频为 2:1 宽高比。4K 全景 (3840x1920) 推荐作为起点；2K (2048x1024) 文件更小但细节较少。">?</span></label>
+              <select class="select" id="p_okaa_out_resolution" style="width:140px;">
+                <option value="4096x2048">4096x2048</option>
+                <option value="3840x1920" selected>3840x1920</option>
+                <option value="2880x1440">2880x1440</option>
+                <option value="2048x1024">2048x1024</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="field-label">输入布局<span class="tip-icon" data-tip="两个鱼眼在源视频中的排列方式。Side-by-Side：左右并排（如 Okaa 1920x960）；Top-Bottom：上下排列。Okaa 为左右并排。">?</span></label>
+              <select class="select" id="p_okaa_layout" style="width:140px;">
+                <option value="sbs" selected>左右并排 (SBS)</option>
+                <option value="tb">上下排列 (TB)</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid-4">
+            <div class="field">
+              <label class="field-label">左镜头 Yaw<span class="tip-icon" data-tip="左镜头在全景中的水平朝向（度）。0 表示朝前，180 表示朝后。对于大多数背对背双鱼眼相机，左镜头朝前 (0)、右镜头朝后 (180)。">?</span></label>
+              <input class="input" id="p_okaa_yaw_l" type="number" value="0" min="-180" max="180" step="1" style="width:80px;">
+            </div>
+            <div class="field">
+              <label class="field-label">右镜头 Yaw<span class="tip-icon" data-tip="右镜头在全景中的水平朝向（度）。对于左右并排的双鱼眼源，左右镜头通常都朝同一方向（0），由 hstack 自动排布前后半球。若画面拼接方向反了，可尝试改为 180。">?</span></label>
+              <input class="input" id="p_okaa_yaw_r" type="number" value="0" min="-180" max="180" step="1" style="width:80px;">
+            </div>
+            <div class="field">
+              <label class="field-label">左镜头 Pitch<span class="tip-icon" data-tip="左镜头的垂直俯仰角（度）。用于修正镜头没有严格水平安装时的上下偏移。">?</span></label>
+              <input class="input" id="p_okaa_pitch_l" type="number" value="0" min="-90" max="90" step="1" style="width:80px;">
+            </div>
+            <div class="field">
+              <label class="field-label">右镜头 Pitch<span class="tip-icon" data-tip="右镜头的垂直俯仰角（度）。">?</span></label>
+              <input class="input" id="p_okaa_pitch_r" type="number" value="0" min="-90" max="90" step="1" style="width:80px;">
+            </div>
+          </div>
+          <div class="grid-4">
+            <div class="field">
+              <label class="field-label">左镜头 Roll<span class="tip-icon" data-tip="左镜头绕光轴的旋转角（度）。用于修正镜头没有严格正向安装时的旋转偏移。">?</span></label>
+              <input class="input" id="p_okaa_roll_l" type="number" value="0" min="-180" max="180" step="1" style="width:80px;">
+            </div>
+            <div class="field">
+              <label class="field-label">右镜头 Roll<span class="tip-icon" data-tip="右镜头绕光轴的旋转角（度）。">?</span></label>
+              <input class="input" id="p_okaa_roll_r" type="number" value="0" min="-180" max="180" step="1" style="width:80px;">
+            </div>
+            <div class="field" style="grid-column: span 2;">
+              <label class="field-label">说明</label>
+              <div style="font-size:0.75rem;color:var(--text-muted);padding:6px 0;">
+                启用后编码面板中的「分辨率」将被输出分辨率覆盖，并自动注入 360° 全景元数据。
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Date Metadata -->
       <div class="section-divider">日期元数据 (从文件名提取)<span class="tip-icon" data-tip="从视频文件名中自动提取拍摄日期（支持 YYYYMMDD、YYYY-MM-DD 等格式），并将该日期写入视频元数据和文件系统属性。适用于修复拍摄设备未正确记录日期的视频。">?</span></div>
       <div class="check-group">
@@ -1519,10 +1594,14 @@ const DEFAULT_PARAMS = {
   brand:'mp42', faststart:true, inject_spherical:true,
   pano_type:'360', stereo_mode:'mono',
   stabilize:false, stabilize_smoothing:30, stabilize_shakiness:5, stabilize_zoom:0.05,
-  date_from_filename:false, set_creation_time:true, set_file_created:true,
-  set_file_modified:true, manual_date:'',
-  set_location:false, location_name:'', location_address:'', location_lat:'', location_lon:'',
-};
+      date_from_filename:false, set_creation_time:true, set_file_created:true,
+      set_file_modified:true, manual_date:'',
+      set_location:false, location_name:'', location_address:'', location_lat:'', location_lon:'',
+      // Okaa dual-fisheye correction
+      okaa_correction:false, okaa_fov:200, okaa_yaw_l:0, okaa_yaw_r:0,
+      okaa_pitch_l:0, okaa_pitch_r:0, okaa_roll_l:0, okaa_roll_r:0,
+      okaa_blend:'replace', okaa_layout:'sbs', okaa_out_resolution:'3840x1920',
+    };
 
 // ── Theme ──────────────────────────────────────────
 function toggleTheme() {
@@ -2257,6 +2336,18 @@ function collectParams() {
     stabilize_smoothing: num('p_stabilize_smoothing') || 30,
     stabilize_shakiness: num('p_stabilize_shakiness') || 5,
     stabilize_zoom: parseFloat(val('p_stabilize_zoom')) || 0.05,
+    // Okaa dual-fisheye correction
+    okaa_correction: document.getElementById('p_okaa_correction').checked,
+    okaa_fov: parseInt(val('p_okaa_fov')) || 185,
+    okaa_yaw_l: parseInt(val('p_okaa_yaw_l')) || 0,
+    okaa_yaw_r: parseInt(val('p_okaa_yaw_r')) || 180,
+    okaa_pitch_l: parseInt(val('p_okaa_pitch_l')) || 0,
+    okaa_pitch_r: parseInt(val('p_okaa_pitch_r')) || 0,
+    okaa_roll_l: parseInt(val('p_okaa_roll_l')) || 0,
+    okaa_roll_r: parseInt(val('p_okaa_roll_r')) || 0,
+    okaa_blend: val('p_okaa_blend') || 'replace',
+    okaa_layout: val('p_okaa_layout') || 'sbs',
+    okaa_out_resolution: val('p_okaa_out_resolution') || '3840x1920',
     // Date metadata
     date_from_filename: document.getElementById('p_date_from_filename').checked,
     set_creation_time: document.getElementById('p_set_creation_time').checked,
@@ -2306,6 +2397,19 @@ function toggleStabilize() {
   }
 }
 
+function toggleOkaaCorrection() {
+  const cb = document.getElementById('p_okaa_correction');
+  const opts = document.getElementById('okaaCorrectionOptions');
+  if (!cb || !opts) return;
+  if (cb.checked) {
+    opts.classList.remove('hidden');
+    opts.style.display = '';
+  } else {
+    opts.classList.add('hidden');
+    opts.style.display = 'none';
+  }
+}
+
 // ── Apply Params to UI ─────────────────────────────
 function applyParams(p) {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
@@ -2333,6 +2437,19 @@ function applyParams(p) {
   set('p_stabilize_shakiness', p.stabilize_shakiness !== undefined ? p.stabilize_shakiness : 5);
   set('p_stabilize_zoom', p.stabilize_zoom !== undefined ? p.stabilize_zoom : 0.05);
   toggleStabilize();
+  // Okaa dual-fisheye correction
+  document.getElementById('p_okaa_correction').checked = p.okaa_correction || false;
+  set('p_okaa_fov', p.okaa_fov !== undefined ? p.okaa_fov : 200);
+  set('p_okaa_yaw_l', p.okaa_yaw_l !== undefined ? p.okaa_yaw_l : 0);
+  set('p_okaa_yaw_r', p.okaa_yaw_r !== undefined ? p.okaa_yaw_r : 0);
+  set('p_okaa_pitch_l', p.okaa_pitch_l !== undefined ? p.okaa_pitch_l : 0);
+  set('p_okaa_pitch_r', p.okaa_pitch_r !== undefined ? p.okaa_pitch_r : 0);
+  set('p_okaa_roll_l', p.okaa_roll_l !== undefined ? p.okaa_roll_l : 0);
+  set('p_okaa_roll_r', p.okaa_roll_r !== undefined ? p.okaa_roll_r : 0);
+  set('p_okaa_blend', p.okaa_blend || 'replace');
+  set('p_okaa_layout', p.okaa_layout || 'sbs');
+  set('p_okaa_out_resolution', p.okaa_out_resolution || '3840x1920');
+  toggleOkaaCorrection();
   // Date
   document.getElementById('p_date_from_filename').checked = p.date_from_filename || false;
   document.getElementById('p_set_creation_time').checked = p.set_creation_time !== false;

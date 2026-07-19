@@ -660,6 +660,55 @@ def _check_hw_runtime_dlls():
     return result
 
 
+def build_okaa_filter_complex(params):
+    """Build an ffmpeg filter_complex that converts a side-by-side/top-bottom dual fisheye
+    video (e.g. Okaa 360 camera) into a standard equirectangular 360° panorama.
+
+    Each lens is cropped, de-fisheyed to a 180°x180° equirectangular hemisphere, and
+    horizontally stacked. The resulting frame is 2:1 (equirect) and matches the output
+    resolution specified by okaa_out_resolution."""
+    fov = float(params.get('okaa_fov', 200))
+    yaw_l = float(params.get('okaa_yaw_l', 0))
+    yaw_r = float(params.get('okaa_yaw_r', 0))
+    pitch_l = float(params.get('okaa_pitch_l', 0))
+    pitch_r = float(params.get('okaa_pitch_r', 0))
+    roll_l = float(params.get('okaa_roll_l', 0))
+    roll_r = float(params.get('okaa_roll_r', 0))
+    layout = params.get('okaa_layout', 'sbs')
+    out_res = params.get('okaa_out_resolution', '3840x1920')
+    out_w, out_h = out_res.split('x')
+    # Each hemisphere is a 180°x180° square in equirectangular projection, so it occupies
+    # half of the final width and the full height.
+    half_w = int(int(out_w) / 2)
+    half_h = int(out_h)
+
+    if layout == 'tb':
+        left_crop = 'iw:ih/2:0:0'
+        right_crop = 'iw:ih/2:0:ih/2'
+    else:
+        # side-by-side (default)
+        left_crop = 'iw/2:ih:0:0'
+        right_crop = 'iw/2:ih:iw/2:0'
+
+    # h_fov=180:v_fov=180 makes each output a 180° hemisphere in equirectangular space.
+    # Using square output (half_w x half_h) keeps the equirect 2:1 aspect after hstack.
+    fc = (
+        f"[0:v]split[left_in][right_in];"
+        f"[left_in]crop={left_crop},"
+        f"v360=fisheye:equirect:ih_fov={fov}:iv_fov={fov}:"
+        f"h_fov=180:v_fov=180:"
+        f"yaw={yaw_l}:pitch={pitch_l}:roll={roll_l}:"
+        f"w={half_w}:h={half_h}:interp=lanczos[left];"
+        f"[right_in]crop={right_crop},"
+        f"v360=fisheye:equirect:ih_fov={fov}:iv_fov={fov}:"
+        f"h_fov=180:v_fov=180:"
+        f"yaw={yaw_r}:pitch={pitch_r}:roll={roll_r}:"
+        f"w={half_w}:h={half_h}:interp=lanczos[right];"
+        f"[left][right]hstack=inputs=2[vout]"
+    )
+    return fc
+
+
 def build_cmd(inp, out, params, pass_num=0, passlogfile=None):
     """Build ffmpeg command list, supporting multiple codecs."""
     codec = params.get('codec', 'libx264')
@@ -670,19 +719,26 @@ def build_cmd(inp, out, params, pass_num=0, passlogfile=None):
     codec = params.get('codec', 'libx264')
     cp = CODEC_PROFILES.get(codec, CODEC_PROFILES['libx264'])
 
-    # Video filter chain: vidstab transform (if enabled) + scale
-    filters = []
-    if params.get('_stab_trf') and vidstab_transform_filter is not None:
-        trf = params['_stab_trf']
-        sm = params.get('stabilize_smoothing', 30)
-        zoom = params.get('stabilize_zoom', 0.05)
-        filters.append(vidstab_transform_filter(trf, smoothing=sm, zoom=zoom, crop=True))
-    res = params.get('resolution', '')
-    if res and res != 'original':
-        w, h = res.split('x')
-        filters.append(f'scale={w}:{h}:flags=lanczos')
-    if filters:
-        cmd += ['-vf', ','.join(filters)]
+    # Video filter chain: Okaa dual-fisheye correction OR vidstab transform + scale
+    if params.get('okaa_correction'):
+        # Okaa双鱼眼校正：使用 filter_complex，替换普通 -vf
+        fc = build_okaa_filter_complex(params)
+        cmd += ['-filter_complex', fc, '-map', '[vout]']
+        if pass_num != 1:
+            cmd += ['-map', '0:a?']
+    else:
+        filters = []
+        if params.get('_stab_trf') and vidstab_transform_filter is not None:
+            trf = params['_stab_trf']
+            sm = params.get('stabilize_smoothing', 30)
+            zoom = params.get('stabilize_zoom', 0.05)
+            filters.append(vidstab_transform_filter(trf, smoothing=sm, zoom=zoom, crop=True))
+        res = params.get('resolution', '')
+        if res and res != 'original':
+            w, h = res.split('x')
+            filters.append(f'scale={w}:{h}:flags=lanczos')
+        if filters:
+            cmd += ['-vf', ','.join(filters)]
 
     # Set encoder
     cmd += ['-c:v', cp['encoder']]
@@ -1112,6 +1168,17 @@ def merge_files(jid, input_files, output_path):
 
 def convert_one(jid, inp, out, params):
     """Convert a single file."""
+    # Okaa dual-fisheye correction: force panoramic metadata and disable stabilization
+    # (the correction already builds a filter_complex that conflicts with vidstab -vf)
+    if params.get('okaa_correction'):
+        params['inject_spherical'] = True
+        params['pano_type'] = '360'
+        params['stereo_mode'] = 'mono'
+        if params.get('stabilize'):
+            log_line(jid, 'Okaa 校正启用：禁用画面防抖（与双鱼眼滤镜链冲突）', 'warn')
+            params['stabilize'] = False
+            params.pop('_stab_trf', None)
+
     # Test encoding mode: modify output filename and use test duration
     test_dur = params.get('test_duration', 0)
     if test_dur and test_dur > 0:
