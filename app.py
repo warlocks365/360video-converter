@@ -820,7 +820,14 @@ def build_cmd(inp, out, params, pass_num=0, passlogfile=None):
     codec = params.get('codec', 'libx264')
     # Use the ffmpeg path determined by codec_check (may be system ffmpeg for hw encoders)
     ffmpeg = _encoder_ffmpeg_map.get(codec, FFMPEG_PATH)
-    cmd = [ffmpeg, '-y', '-i', inp]
+    # 容错参数（v3.3.3）：合并临时文件或源文件可能包含损坏的 NAL unit，
+    # 软件解码器（native h264）通常能容忍，但硬件解码器（NVENC cuvid）对
+    # 损坏数据极敏感，容易触发 0xC0000005 访问违规崩溃。在输入前添加容错
+    # 参数，让 ffmpeg 丢弃损坏包而不是终止进程。
+    cmd = [ffmpeg, '-y',
+           '-err_detect', 'ignore_err',
+           '-fflags', '+discardcorrupt',
+           '-i', inp]
 
     codec = params.get('codec', 'libx264')
     cp = CODEC_PROFILES.get(codec, CODEC_PROFILES['libx264'])
@@ -1237,8 +1244,14 @@ def merge_files(jid, input_files, output_path):
                     'start_time': time.time(),
                 }
 
+        # 容错参数（v3.3.3）：GoPro 源文件可能包含损坏的 NAL unit，
+        # stream copy 模式下虽然会报告错误但通常仍能继续，添加显式容错避免
+        # 因个别损坏帧导致整个合并阶段失败或产生不可恢复的临时文件。
         cmd = [
             FFMPEG_PATH, '-y',
+            '-err_detect', 'ignore_err',
+            '-fflags', '+discardcorrupt',
+            '-max_errors', '-1',
             '-f', 'concat',
             '-safe', '0',
             '-i', list_path,
@@ -1424,7 +1437,32 @@ def convert_one(jid, inp, out, params):
         cmd = build_cmd(inp, temp_out, params)
         rc = run_ffmpeg(cmd, jid, progress_duration)
         if rc != 0:
-            return False, f'ffmpeg failed (rc={rc})', out
+            # NVENC 崩溃自动回退软件编码（v3.3.3）
+            # 0xC0000005 = 3221225477 (unsigned) = -1073741819 (signed)
+            # NVENC 硬件编码器对源文件中损坏的 NAL unit 极敏感，会触发访问
+            # 违规崩溃；软件编码器（libx264/libx265）对损坏数据容忍度高，
+            # 通常能跳过损坏帧继续编码。检测到该错误码时自动切换到对应
+            # 软件编码器重试一次，避免批量任务因个别文件中断。
+            if rc in (3221225477, -1073741819):
+                codec = params.get('codec', '')
+                fallback_map = {'hevc_nvenc': 'libx265', 'h264_nvenc': 'libx264'}
+                fallback = fallback_map.get(codec)
+                if fallback:
+                    log_line(jid, f'NVENC 编码器崩溃 (rc={rc}, 0xC0000005 访问违规)', 'warn')
+                    log_line(jid, f'自动回退到 {fallback} 软件编码（速度较慢但容忍损坏数据）', 'warn')
+                    # 清理失败的临时输出文件
+                    try: os.remove(temp_out)
+                    except: pass
+                    # 切换 codec 并重建命令
+                    params['codec'] = fallback
+                    cp_new = CODEC_PROFILES.get(fallback, CODEC_PROFILES['libx264'])
+                    log_line(jid, f'Fallback codec: {cp_new["label"]}')
+                    cmd = build_cmd(inp, temp_out, params)
+                    rc = run_ffmpeg(cmd, jid, progress_duration)
+                    if rc == 0:
+                        log_line(jid, '软件编码回退成功', 'success')
+            if rc != 0:
+                return False, f'ffmpeg failed (rc={rc})', out
 
     with job_lock:
         jobs[jid]['file_progress'] = 100.0
