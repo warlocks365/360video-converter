@@ -35,5 +35,7 @@ desktop.ini
 
 # ── Local scratch / debug (this workspace) ──
 _installer_build.log
+build_exe_v*.log
+build_installer_v*.log
 _extract.py
 _test_*.py

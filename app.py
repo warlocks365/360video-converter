@@ -1576,6 +1576,12 @@ def conversion_worker(jid):
         inp = item.get('input', '')
         out = item['output']
         item['start_time'] = time.time()
+        # FIX: 任务已实际开始执行，清除 skipped 标记，确保后续状态以真实结果为准。
+        # 场景：用户在 ffmpeg 运行中点"跳过" → skipped=True，但 ffmpeg 不会立即中断，
+        # 继续跑完后 ok=False/error=... → 前端会按实际结果渲染，不会被 skipped 覆盖。
+        if item.get('skipped'):
+            item['skipped'] = False
+            log_line(jid, f'  [Note] Item {idx+1} was skipped but already started executing, clearing skip flag', 'info')
         log_line(jid, f'[{idx+1}/{total}] {os.path.basename(inp) if inp else "合并任务"}')
         if inp:
             log_line(jid, f'  in:  {inp}')

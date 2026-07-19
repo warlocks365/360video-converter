@@ -4125,7 +4125,9 @@ function updateItemTimeInfo(row, item, itemIndex, data, nowSec) {
   const timeCell = row.cells[8];
   if (!timeCell) return;
 
-  if (item.skipped) {
+  // FIX: 只有未真正执行（无 start_time）的跳过才显示"跳过"；
+  // 已开始执行的任务（即使被标记 skipped）按实际结果渲染，避免最后任务失败后仍显示"跳过"。
+  if (item.skipped && !item.start_time) {
     timeCell.innerHTML = '<span style="color:var(--text-muted);">跳过</span>';
     return;
   }
@@ -4172,7 +4174,9 @@ function renderItemStatus(cell, actionCell, item, i, data, isPaused) {
   if (!cell) return;
   const terminal = (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled');
   let html, showSkip = false;
-  if (item.skipped) {
+  // FIX: 只有未真正执行（无 start_time）的跳过才显示"跳过"；
+  // 已开始执行的跳过（ffmpeg 继续跑完/失败）按实际结果渲染。
+  if (item.skipped && !item.start_time) {
     html = '<span class="status-dot" style="background:var(--text-muted);"></span> 跳过';
   } else if (terminal) {
     html = item.ok === false
