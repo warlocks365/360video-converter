@@ -163,6 +163,7 @@ def build_pyinstaller():
         '--hidden-import', 'clr_loader',
         '--hidden-import', 'pythonnet',
         '--hidden-import', 'pynvml',
+        '--hidden-import', 'certifi',
         '--add-data', f'{SCRIPT_DIR / "inject_spherical_metadata.py"};.',
         '--add-data', f'{SCRIPT_DIR / "sysmon.py"};.',
         '--add-data', f'{SCRIPT_DIR / "stabilize.py"};.',
@@ -174,6 +175,7 @@ def build_pyinstaller():
         '--collect-all', 'psutil',
         '--collect-all', 'cv2',
         '--collect-all', 'numpy',
+        '--collect-all', 'certifi',
         str(SCRIPT_DIR / 'app.py'),
     ]
 

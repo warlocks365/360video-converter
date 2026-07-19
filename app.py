@@ -11,12 +11,48 @@ import ctypes
 import platform as platform_module
 import urllib.request
 import urllib.parse
+import ssl as _ssl
 from pathlib import Path, PurePath
 from datetime import datetime
 from flask import Flask, request, jsonify, send_from_directory
 
 # ── Windows: suppress console window for all subprocess calls ──
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+
+# ── HTTPS SSL context (certifi CA bundle with robust fallback) ──
+# Some Windows systems have an incomplete/outdated system CA store, causing
+# 'CERTIFICATE VERIFY FAILED: Missing Authority Key Identifier' when verifying
+# the AMap cert chain. We prefer the certifi Mozilla CA bundle (cross-platform,
+# regularly updated), then fall back to the system store, then (last resort)
+# an unverified context so the app keeps working.
+_HTTPS_SSL_CONTEXT = None
+
+def _get_https_ssl_context():
+    """Return a cached SSLContext for HTTPS urllib calls.
+
+    Tries (in order): certifi CA bundle → system default → unverified.
+    """
+    global _HTTPS_SSL_CONTEXT
+    if _HTTPS_SSL_CONTEXT is not None:
+        return _HTTPS_SSL_CONTEXT
+    # Try 1: certifi CA bundle (Mozilla, cross-platform, updated regularly)
+    try:
+        import certifi
+        cafile = certifi.where()
+        if cafile and os.path.exists(cafile):
+            _HTTPS_SSL_CONTEXT = _ssl.create_default_context(cafile=cafile)
+            return _HTTPS_SSL_CONTEXT
+    except Exception:
+        pass
+    # Try 2: system default CA store
+    try:
+        _HTTPS_SSL_CONTEXT = _ssl.create_default_context()
+        return _HTTPS_SSL_CONTEXT
+    except Exception:
+        pass
+    # Try 3 (last resort): unverified — keeps app functional
+    _HTTPS_SSL_CONTEXT = _ssl._create_unverified_context()
+    return _HTTPS_SSL_CONTEXT
 
 # ── Configuration ──────────────────────────────────────────────
 BASE_DIR     = os.path.dirname(os.path.abspath(__file__))
@@ -3178,11 +3214,16 @@ def geocode_proxy():
 
     try:
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10, context=_get_https_ssl_context()) as resp:
             data = json.loads(resp.read().decode('utf-8'))
         return jsonify(data)
     except Exception as e:
-        return jsonify({'error': str(e)}), 502
+        err_str = str(e)
+        # Friendlier message for SSL cert verification failures
+        if 'CERTIFICATE VERIFY FAILED' in err_str or 'certificate verify failed' in err_str:
+            err_str = ('SSL 证书验证失败 — 目标电脑的 Windows 系统证书库可能过时。'
+                       '错误详情: ' + err_str)
+        return jsonify({'error': err_str}), 502
 
 
 @app.route('/api/convert', methods=['POST'])
