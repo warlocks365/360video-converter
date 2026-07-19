@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>360° Video Converter</title>
 <style>
 /* ── Theme Variables ──────────────────────────── */
@@ -1742,18 +1745,7 @@ function getAmapSecurity() {
   return _amapSecurity || localStorage.getItem('amap_security') || '';
 }
 
-function openMapPicker() {
-  document.getElementById('mapModal').classList.add('active');
-  const key = getAmapKey();
-  if (!key) {
-    document.getElementById('mapContainer').innerHTML =
-      '<div style="padding:40px;text-align:center;color:var(--text-muted);">' +
-      '请先在"设置"中配置高德地图 API Key<br>' +
-      '<button class="btn btn-primary" style="margin-top:12px;" onclick="closeMapPicker();openSettings();">前往设置</button></div>';
-    return;
-  }
-  initMap();
-}
+// openMapPicker(target) is defined later with target parameter support ('encode' | 'meta')
 
 function initMap() {
   const key = getAmapKey();
@@ -1794,61 +1786,94 @@ function createMapInstance() {
   });
 }
 
+// Cached search results — onclick passes index, avoiding special-char injection
+let _searchResults = [];
+
 async function searchMap() {
   const query = document.getElementById('mapSearchInput').value.trim();
   if (!query) return;
   const key = getAmapKey();
-  if (!key) { alert('请先设置高德地图 API Key'); return; }
-
-  const r = await fetch(`/api/geocode?q=${encodeURIComponent(query)}&key=${encodeURIComponent(key)}`);
-  const data = await r.json();
+  if (!key) { alert('请先在"设置"中配置高德地图 API Key'); return; }
 
   const resultsEl = document.getElementById('mapSearchResults');
-  if (data.error) {
-    resultsEl.innerHTML = `<div style="padding:12px;color:var(--error);">${data.error}</div>`;
-    return;
-  }
+  resultsEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);">搜索中...</div>';
 
-  if (!data.pois || data.pois.length === 0) {
-    resultsEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);">未找到相关地点</div>';
-    return;
-  }
+  try {
+    const r = await fetch(`/api/geocode?q=${encodeURIComponent(query)}&key=${encodeURIComponent(key)}`);
+    const data = await r.json();
 
-  resultsEl.innerHTML = data.pois.slice(0, 15).map(poi => {
-    const [lon, lat] = poi.location ? poi.location.split(',').map(parseFloat) : [0, 0];
-    return `<div class="search-result-item" onclick="selectSearchResult(${lat}, ${lon}, '${escapeStr(poi.name)}', '${escapeStr(poi.address || '')}')">
-      <div class="name">${poi.name}</div>
-      <div class="addr">${poi.address || poi.cityname || ''}</div>
-      <div class="coords">${lat.toFixed(4)}, ${lon.toFixed(4)}</div>
-    </div>`;
-  }).join('');
+    if (data.error) {
+      resultsEl.innerHTML = `<div style="padding:12px;color:var(--error);">${escapeHtml(data.error)}</div>`;
+      return;
+    }
+
+    if (!data.pois || data.pois.length === 0) {
+      resultsEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);">未找到相关地点</div>';
+      return;
+    }
+
+    // Store results for safe click handling (avoids special-char injection in onclick)
+    _searchResults = data.pois.slice(0, 15).map(poi => {
+      const [lon, lat] = poi.location ? poi.location.split(',').map(parseFloat) : [0, 0];
+      // Build full address synchronously from POI fields (province/city/district/street)
+      const cityname = poi.cityname || '';
+      const adname = poi.adname || '';
+      const street = poi.address || '';
+      const fullAddr = [cityname, adname, street].filter(Boolean).join('');
+      return {
+        name: poi.name || '',
+        address: fullAddr,
+        lat: lat || 0,
+        lon: lon || 0,
+      };
+    });
+
+    resultsEl.innerHTML = _searchResults.map((poi, i) =>
+      `<div class="search-result-item" onclick="selectSearchResultByIndex(${i})">
+        <div class="name">${escapeHtml(poi.name)}</div>
+        <div class="addr">${escapeHtml(poi.address)}</div>
+        <div class="coords">${poi.lat.toFixed(4)}, ${poi.lon.toFixed(4)}</div>
+      </div>`
+    ).join('');
+  } catch(e) {
+    resultsEl.innerHTML = `<div style="padding:12px;color:var(--error);">搜索失败: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function selectSearchResultByIndex(i) {
+  const poi = _searchResults[i];
+  if (!poi) return;
+  selectSearchResult(poi.lat, poi.lon, poi.name, poi.address);
 }
 
 function selectSearchResult(lat, lon, name, address) {
+  // Immediately place marker and show POI info
   if (mapMarker) mapInstance.remove(mapMarker);
-  mapMarker = new AMap.Marker({
-    position: [lon, lat],
-    title: name
-  });
+  mapMarker = new AMap.Marker({ position: [lon, lat], title: name });
   mapInstance.add(mapMarker);
   mapInstance.setZoomAndCenter(15, [lon, lat]);
 
+  // Show POI info right away
   mapSelectedLocation = { name, lat, lon, address };
   document.getElementById('mapSelectedName').textContent = name;
   document.getElementById('mapSelectedCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-  document.getElementById('mapSelectedAddress').textContent = address || '';
+  document.getElementById('mapSelectedAddress').textContent = address || '获取完整地址中...';
+
+  // Asynchronously fetch complete address via reverse geocoding (keeps POI name)
+  reverseGeocode(lat, lon, name);
 }
 
-async function reverseGeocode(lat, lon) {
+async function reverseGeocode(lat, lon, fallbackName) {
   const key = getAmapKey();
   if (mapMarker) mapInstance.remove(mapMarker);
   mapMarker = new AMap.Marker({ position: [lon, lat] });
   mapInstance.add(mapMarker);
   mapInstance.setZoomAndCenter(15, [lon, lat]);
 
-  // Reverse geocode via backend proxy (handles __regeo__ → /v3/geocode/regeo)
-  let name = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+  // Default name: fallbackName (from POI) or raw coordinates
+  let name = fallbackName || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
   let address = '';
+
   try {
     const r = await fetch(`/api/geocode?q=__regeo__&key=${encodeURIComponent(key)}&location=${lon},${lat}`);
     const data = await r.json();
@@ -1859,25 +1884,25 @@ async function reverseGeocode(lat, lon) {
       const city = typeof comp.city === 'string' ? comp.city : '';
       const dist = comp.district || '';
       const road = comp.township || '';
-      // Build a friendly display name from the most specific available parts
       const addrParts = [prov, city, dist, road].filter(Boolean);
       address = rg.formatted_address || addrParts.join('');
+      // Use building/neighborhood name if available; otherwise keep POI name (fallbackName)
       if (comp.building && comp.building.name) {
         name = comp.building.name;
       } else if (comp.neighborhood && comp.neighborhood.name) {
         name = comp.neighborhood.name;
-      } else {
+      } else if (!fallbackName) {
         name = dist || road || address || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
       }
     }
   } catch(e) {
-    // Network/backend error — fall back to raw coordinates
+    // Network/backend error — keep fallback name and empty address
   }
 
   mapSelectedLocation = { name, lat, lon, address };
   document.getElementById('mapSelectedName').textContent = name;
   document.getElementById('mapSelectedCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-  document.getElementById('mapSelectedAddress').textContent = address || '';
+  document.getElementById('mapSelectedAddress').textContent = address || '(无地址信息)';
 }
 
 function clearMapSelection() {
@@ -3271,6 +3296,12 @@ function escapeStr(s) {
   return String(s || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
 }
 
+// Escape HTML special chars for safe innerHTML rendering (prevents XSS from POI names)
+function escapeHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 // ── Metadata Tool ──────────────────────────────────
 let metaScannedFiles = [];
 let mapPickerTarget = 'encode'; // 'encode' or 'meta'
@@ -3396,8 +3427,8 @@ function confirmMapSelection() {
     document.getElementById('m_location_lon').value = mapSelectedLocation.lon.toFixed(6);
     const info = document.getElementById('metaLocationInfo');
     info.classList.remove('hidden');
-    info.innerHTML = `已选择: <strong>${mapSelectedLocation.name}</strong>` +
-      (addr ? `<br><span style="opacity:0.7">地址: ${addr}</span>` : '') +
+    info.innerHTML = `已选择: <strong>${escapeHtml(mapSelectedLocation.name)}</strong>` +
+      (addr ? `<br><span style="opacity:0.7">地址: ${escapeHtml(addr)}</span>` : '') +
       `<br>纬度 ${mapSelectedLocation.lat.toFixed(4)}, 经度 ${mapSelectedLocation.lon.toFixed(4)}`;
   } else {
     document.getElementById('p_location_name').value = mapSelectedLocation.name;
@@ -3406,8 +3437,8 @@ function confirmMapSelection() {
     document.getElementById('p_location_lon').value = mapSelectedLocation.lon.toFixed(6);
     const info = document.getElementById('locationInfo');
     info.classList.remove('hidden');
-    info.innerHTML = `已选择: <strong>${mapSelectedLocation.name}</strong>` +
-      (addr ? `<br><span style="opacity:0.7">地址: ${addr}</span>` : '') +
+    info.innerHTML = `已选择: <strong>${escapeHtml(mapSelectedLocation.name)}</strong>` +
+      (addr ? `<br><span style="opacity:0.7">地址: ${escapeHtml(addr)}</span>` : '') +
       `<br>纬度 ${mapSelectedLocation.lat.toFixed(4)}, 经度 ${mapSelectedLocation.lon.toFixed(4)}`;
   }
   closeMapPicker();

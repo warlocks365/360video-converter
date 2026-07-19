@@ -3652,10 +3652,13 @@ def load_tasks():
 # ── App Settings ───────────────────────────────────────────────
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
+    # Built-in default AMap key — works out of the box; users can override in Settings
+    _BUILTIN_KEY = '9a6182171cfb3a1207fa97b75755cefd'
+    _BUILTIN_SEC = '167425ffdd39f516cb6383a9207ba317'
     defaults = {
         'auto_load_tasks': False,
-        'amap_api_key': '',
-        'amap_security': '',
+        'amap_api_key':     _BUILTIN_KEY,
+        'amap_security':    _BUILTIN_SEC,
         'custom_ffmpeg_path': '',
     }
     if os.path.exists(SETTINGS_FILE):
@@ -3664,6 +3667,11 @@ def get_settings():
             defaults.update(saved)
         except:
             pass
+    # Fall back to built-in defaults if saved value is empty
+    if not defaults.get('amap_api_key'):
+        defaults['amap_api_key'] = _BUILTIN_KEY
+    if not defaults.get('amap_security'):
+        defaults['amap_security'] = _BUILTIN_SEC
     return jsonify(defaults)
 
 
