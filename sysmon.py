@@ -70,7 +70,7 @@ class SysMon:
         # nvidia-smi fallback (when pynvml / NVML DLL unavailable)
         self._nvidia_smi_path = None
         self._nvidia_smi_ok = False
-        self._smi_last_ts = 0.0          # throttle nvidia-smi to every ~3s
+        self._smi_last_ts = 0.0          # throttle nvidia-smi to every ~1s (was 3s)
         self._smi_cache = {}            # cached GPU data between nvidia-smi calls
 
         # GPU name (detected once)
@@ -325,19 +325,26 @@ class SysMon:
     def _sample_gpu_nvidia_smi(self, data):
         """Sample GPU metrics via nvidia-smi command (fallback).
 
-        nvidia-smi is throttled to every ~3 seconds (it takes 50-200ms per
-        call); between calls the cached values from the last successful
-        nvidia-smi query are returned.
+        v3.5.0 fixes:
+        - Throttle reduced from 3s to 1s for near-real-time updates
+        - All queries (including encoder_utilization) combined into a single
+          nvidia-smi call to reduce subprocess overhead
         """
         now = time.time()
-        if now - self._smi_last_ts < 3.0 and self._smi_cache:
+        if now - self._smi_last_ts < 1.0 and self._smi_cache:
             data.update(self._smi_cache)
             return
 
         try:
+            # FIX (v3.5.0): Single combined query — include encoder_utilization.avg
+            # in the same nvidia-smi call instead of a separate subprocess.
+            # Old code made 2 subprocess calls per sample (main + encoder),
+            # doubling overhead and making encoder stats lag behind.
             cmd = [
                 self._nvidia_smi_path,
-                '--query-gpu=utilization.gpu,utilization.memory,memory.total,memory.used,temperature.gpu',
+                '--query-gpu=utilization.gpu,utilization.memory,'
+                'memory.total,memory.used,temperature.gpu,'
+                'encoder_utilization.avg',
                 '--format=csv,noheader,nounits',
             ]
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
@@ -356,24 +363,16 @@ class SysMon:
                     'gpu_mem_used_mb': int(parts[3]),
                     'gpu_temp': int(parts[4]),
                 }
+                # Encoder utilization (6th field, may not exist on all drivers)
+                if len(parts) >= 6 and parts[5]:
+                    try:
+                        gpu_data['gpu_enc_percent'] = int(parts[5])
+                    except ValueError:
+                        pass  # Non-numeric (e.g. "N/A") — skip
+
                 self._smi_cache = gpu_data
                 self._smi_last_ts = now
                 data.update(gpu_data)
-
-                # Encoder utilization (separate query — not supported on all drivers)
-                try:
-                    r_enc = subprocess.run(
-                        [self._nvidia_smi_path,
-                         '--query-gpu=encoder_utilization.avg',
-                         '--format=csv,noheader,nounits'],
-                        capture_output=True, text=True, timeout=5
-                    )
-                    if r_enc.returncode == 0 and r_enc.stdout.strip():
-                        enc_val = r_enc.stdout.strip().split()[0]
-                        data['gpu_enc_percent'] = int(enc_val)
-                        self._smi_cache['gpu_enc_percent'] = int(enc_val)
-                except Exception:
-                    pass
         except Exception:
             if self._smi_cache:
                 data.update(self._smi_cache)

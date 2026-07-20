@@ -770,9 +770,12 @@ def build_okaa_filter_complex(params):
     """Build an ffmpeg filter_complex that converts a side-by-side/top-bottom dual fisheye
     video (e.g. Okaa 360 camera) into a standard equirectangular 360° panorama.
 
-    Each lens is cropped, de-fisheyed to a 180°x180° equirectangular hemisphere, and
-    horizontally stacked. The resulting frame is 2:1 (equirect) and matches the output
-    resolution specified by okaa_out_resolution."""
+    v3.5.0: Added seam blending (流光拼接) mode.
+    - 'replace': Original hstack approach (fast, visible seam at center)
+    - 'seam': Each lens projected to full 360° equirect, cosine-weighted blend
+    - 'average': Full 360° projection, 50/50 blend in overlap
+    - 'max': Full 360° projection, take brighter pixel at each position
+    """
     fov = float(params.get('okaa_fov', 200))
     yaw_l = float(params.get('okaa_yaw_l', 0))
     yaw_r = float(params.get('okaa_yaw_r', 0))
@@ -781,12 +784,15 @@ def build_okaa_filter_complex(params):
     roll_l = float(params.get('okaa_roll_l', 0))
     roll_r = float(params.get('okaa_roll_r', 0))
     layout = params.get('okaa_layout', 'sbs')
+    blend_mode = params.get('okaa_blend', 'replace')
     out_res = params.get('okaa_out_resolution', '3840x1920')
     out_w, out_h = out_res.split('x')
+    out_w = int(out_w)
+    out_h = int(out_h)
     # Each hemisphere is a 180°x180° square in equirectangular projection, so it occupies
     # half of the final width and the full height.
-    half_w = int(int(out_w) / 2)
-    half_h = int(out_h)
+    half_w = int(out_w / 2)
+    half_h = out_h
 
     if layout == 'tb':
         left_crop = 'iw:ih/2:0:0'
@@ -796,6 +802,60 @@ def build_okaa_filter_complex(params):
         left_crop = 'iw/2:ih:0:0'
         right_crop = 'iw/2:ih:iw/2:0'
 
+    # ── Seam blending modes (v3.5.0) ─────────────────────────────
+    # Each lens is projected to a FULL 360° equirectangular panorama.
+    # Areas outside the lens FOV are black; the two panoramas are blended
+    # with cosine weighting that naturally handles the seam transition.
+    if blend_mode in ('seam', 'average', 'max'):
+        # Project each lens to full 360° equirect (h_fov=360, w=out_w)
+        fc = (
+            f"[0:v]split[left_in][right_in];"
+            f"[left_in]crop={left_crop},"
+            f"v360=fisheye:equirect:ih_fov={fov}:iv_fov={fov}:"
+            f"h_fov=360:v_fov=180:"
+            f"yaw={yaw_l}:pitch={pitch_l}:roll={roll_l}:"
+            f"w={out_w}:h={out_h}:interp=lanczos[left_full];"
+            f"[right_in]crop={right_crop},"
+            f"v360=fisheye:equirect:ih_fov={fov}:iv_fov={fov}:"
+            f"h_fov=360:v_fov=180:"
+            f"yaw={yaw_r}:pitch={pitch_r}:roll={roll_r}:"
+            f"w={out_w}:h={out_h}:interp=lanczos[right_full];"
+        )
+
+        if blend_mode == 'max':
+            # Take the brighter pixel at each position — simple and effective
+            # for non-overlapping regions (black=0 is never chosen over real data)
+            fc += f"[left_full][right_full]blend=all_expr='max(A,B)'[vout]"
+        elif blend_mode == 'average':
+            # Simple 50/50 blend — smooths the seam but may soften detail
+            fc += f"[left_full][right_full]blend=all_expr='0.5*A+0.5*B'[vout]"
+        else:  # 'seam' — cosine-weighted blend (流光拼接)
+            # Each pixel is weighted by cosine of its angular distance from
+            # the lens center. This gives maximum weight at the center of
+            # each lens's visible region and smoothly fades to zero at the
+            # edges, producing a natural seamless transition.
+            #
+            # Azimuth in radians: T = (X/W)*2*PI - PI  (ranges -PI to +PI)
+            # Weight for left lens (centered at yaw_l):  wl = (1+cos(T-yl))/2
+            # Weight for right lens (centered at yaw_r): wr = (1+cos(T-yr))/2
+            # Result = (wl*A + wr*B) / (wl + wr + epsilon)
+            #
+            # epsilon prevents division by zero in regions where both lenses
+            # have no data (both weights ≈ 0). Using 0.001 is small enough
+            # to be negligible in visible regions.
+            import math
+            yl_rad = yaw_l * math.pi / 180.0
+            yr_rad = yaw_r * math.pi / 180.0
+            # Build the blend expression
+            # T = (X/W)*2*PI - PI
+            T = "(X/W)*2*PI-PI"
+            wl = f"(1+cos({T}-{yl_rad}))/2"
+            wr = f"(1+cos({T}-{yr_rad}))/2"
+            blend_expr = f"({wl}*A+{wr}*B)/({wl}+{wr}+0.001)"
+            fc += f"[left_full][right_full]blend=all_expr='{blend_expr}'[vout]"
+        return fc
+
+    # ── Default: replace mode (original hstack approach) ─────────
     # h_fov=180:v_fov=180 makes each output a 180° hemisphere in equirectangular space.
     # Using square output (half_w x half_h) keeps the equirect 2:1 aspect after hstack.
     fc = (
@@ -1191,9 +1251,57 @@ def merge_files(jid, input_files, output_path):
     """Merge multiple video files into one using ffmpeg concat demuxer.
 
     Returns (success, error_msg).
+
+    v3.5.0 fixes:
+    - Pre-validate file accessibility; skip inaccessible files with warning
+    - Use .mkv intermediate container to avoid MP4's 32-bit DTS overflow
+      (Assertion next_dts <= 0x7fffffff failed) for very long merges (>6h)
+    - Add cancel checks during duration probing phase
     """
     if len(input_files) < 2:
         return True, None  # Nothing to merge
+
+    # ── Pre-validate file accessibility ──────────────────────────
+    # Network drives (\\server\share) may have intermittent access failures.
+    # Check all files BEFORE creating the concat list to avoid mid-merge crashes.
+    accessible_files = []
+    skipped_files = []
+    for fp in input_files:
+        # Check cancel during file validation
+        with job_lock:
+            _j = jobs.get(jid)
+            if not _j or _j['status'] == 'cancelled':
+                return False, 'Cancelled by user'
+        if os.path.isfile(fp) and os.access(fp, os.R_OK):
+            accessible_files.append(fp)
+        else:
+            skipped_files.append(fp)
+            log_line(jid, f'  [SKIP] 文件不可访问: {os.path.basename(fp)}', 'warn')
+            log_line(jid, f'         路径: {fp}', 'warn')
+
+    if skipped_files:
+        log_line(jid, f'  ⚠ {len(skipped_files)} 个文件被跳过（不可访问）', 'warn')
+
+    if len(accessible_files) < 2:
+        return False, '合并失败：有效文件不足 2 个（其余不可访问）'
+    if len(accessible_files) < len(input_files):
+        log_line(jid, f'  将继续合并 {len(accessible_files)}/{len(input_files)} 个可访问文件', 'warn')
+
+    input_files = accessible_files
+
+    # ── Determine output container ───────────────────────────────
+    # MP4/MOV muxer uses 32-bit signed integers for DTS internally.
+    # For >6h videos (172 GoPro files ≈ 16.7h), DTS overflows causing
+    # "Assertion next_dts <= 0x7fffffff failed" crash (rc=3221226505 = 0xC0000409).
+    # FIX: Use Matroska (.mkv) container for the intermediate merged file,
+    # which supports 64-bit timestamps. The subsequent encoding step creates
+    # fresh timestamps in the final MP4 output.
+    original_ext = os.path.splitext(output_path)[1].lower()
+    if original_ext in ('.mp4', '.mov'):
+        # Change intermediate to .mkv to avoid DTS overflow
+        merge_output = output_path + '.merged.mkv'
+    else:
+        merge_output = output_path
 
     # Create concat list file
     list_fd, list_path = tempfile.mkstemp(suffix='.txt', prefix='ffconcat_')
@@ -1221,17 +1329,33 @@ def merge_files(jid, input_files, output_path):
         file_durations = []
         cumulative = 0.0
         cumulative_list = []  # [(end_time, filename), ...]
-        for fp in input_files:
+        for i, fp in enumerate(input_files):
+            # Check cancel during duration probing (can be slow on network drives)
+            if i % 10 == 0:
+                with job_lock:
+                    _j = jobs.get(jid)
+                    if not _j or _j['status'] == 'cancelled':
+                        return False, 'Cancelled by user'
             d = get_duration(fp)
             file_durations.append(d)
             cumulative += d
             cumulative_list.append((cumulative, os.path.basename(fp)))
         total_duration = cumulative
 
+        # Warn about DTS overflow risk for very long videos
+        if total_duration > 23860 and original_ext in ('.mp4', '.mov'):
+            log_line(jid, f'  ⚠ 总时长 {total_duration:.0f}s 超过 MP4 DTS 上限 (~23860s), 已自动切换为 MKV 中间容器', 'warn')
+
         if total_duration > 0:
             log_line(jid, f'  总时长 {total_duration:.1f}s, 将实时显示合并进度')
         else:
             log_line(jid, f'  无法获取时长信息, 此阶段不显示进度条, 请耐心等待...')
+
+        # Final cancel check before starting ffmpeg
+        with job_lock:
+            _j = jobs.get(jid)
+            if not _j or _j['status'] == 'cancelled':
+                return False, 'Cancelled by user'
 
         # Set merge_status so frontend can show merge-specific progress
         with job_lock:
@@ -1261,6 +1385,7 @@ def merge_files(jid, input_files, output_path):
         # FIX（v3.3.5）：移除 -max_errors -1，该选项不是 ffmpeg 标准选项，
         # 当前 ffmpeg 构建（N-125608）不支持，导致 "Unrecognized option" 错误，
         # 合并直接失败。-err_detect ignore_err + -fflags +discardcorrupt 已足够。
+        # FIX（v3.5.0）：输出到 .mkv 容器避免 32-bit DTS 溢出崩溃。
         cmd = [
             FFMPEG_PATH, '-y',
             '-err_detect', 'ignore_err',
@@ -1272,13 +1397,26 @@ def merge_files(jid, input_files, output_path):
             '-map', '0:a:0',        # Only copy first audio stream
             '-ignore_unknown',       # Skip unknown streams (GoPro tmcd etc.)
             '-c', 'copy',
-            output_path
+            merge_output
         ]
-        log_line(jid, '  Running ffmpeg concat (stream copy, no re-encode)...')
+        log_line(jid, f'  Running ffmpeg concat (stream copy → {os.path.basename(merge_output)})...')
         # Pass total_duration so parse_progress() can track merge progress
         rc = run_ffmpeg(cmd, jid, total_duration)
+
+        # Check if cancelled during merge
+        with job_lock:
+            _j = jobs.get(jid)
+            if not _j or _j['status'] == 'cancelled':
+                try: os.remove(merge_output)
+                except: pass
+                with job_lock:
+                    j = jobs.get(jid)
+                    if j:
+                        j['merge_status'] = None
+                return False, 'Cancelled by user'
+
         if rc != 0:
-            try: os.remove(output_path)
+            try: os.remove(merge_output)
             except: pass
             # Clear merge_status on failure
             with job_lock:
@@ -1287,6 +1425,17 @@ def merge_files(jid, input_files, output_path):
                     j['merge_status'] = None
             return False, f'Merge failed (rc={rc})'
         log_line(jid, '  Merge: OK', 'success')
+
+        # If we used .mkv intermediate, update the output_path so convert_one
+        # reads from the MKV file instead of the original (nonexistent) MP4 path
+        if merge_output != output_path:
+            # Rename the module-level variable — but we can't, so we update the
+            # caller's reference. Instead, we write the path to the job dict.
+            with job_lock:
+                j = jobs.get(jid)
+                if j:
+                    j['_merged_tmp_path'] = merge_output
+
         # Clear merge_status — encoding phase will begin next
         with job_lock:
             j = jobs.get(jid)
@@ -1325,6 +1474,14 @@ def convert_one(jid, inp, out, params):
 
     # For progress calculation: use test_duration if in test mode
     progress_duration = min(duration, test_dur) if test_dur and test_dur > 0 else duration
+
+    # FIX (v3.5.0): Cancel check at the start of convert_one.
+    # Without this, if cancel happens between merge and encode, the
+    # encoding still starts on the (possibly deleted) merged file.
+    with job_lock:
+        j = jobs.get(jid)
+        if not j or j['status'] == 'cancelled':
+            return False, 'Cancelled by user', out
 
     # ── Stabilization preprocessing (v3.0) ──
     stab_tmp = None
@@ -1611,6 +1768,8 @@ def conversion_worker(jid):
                 j = jobs.get(jid)
                 if not j or j['status'] == 'cancelled':
                     return
+            # FIX (v3.5.0): merge_files() now handles .mkv intermediate internally
+            # to avoid MP4 32-bit DTS overflow. It sets _merged_tmp_path in job dict.
             merged_tmp = out + '.merged_tmp' + os.path.splitext(merge_inputs[0])[1]
             mok, merr = merge_files(jid, merge_inputs, merged_tmp)
             if not mok:
@@ -1627,8 +1786,16 @@ def conversion_worker(jid):
                     if not _j or _j['status'] == 'cancelled':
                         break
                 continue
+            # Check if merge_files used .mkv intermediate (DTS overflow protection)
+            with job_lock:
+                _j = jobs.get(jid)
+                actual_merged = _j.pop('_merged_tmp_path', None) if _j else None
+            if actual_merged and actual_merged != merged_tmp:
+                merged_tmp = actual_merged
+                log_line(jid, f'  merged input (mkv): {merged_tmp}')
+            else:
+                log_line(jid, f'  merged input: {merged_tmp}')
             inp = merged_tmp
-            log_line(jid, f'  merged input: {merged_tmp}')
             # Reset file_progress for encoding phase
             with job_lock:
                 j = jobs.get(jid)
@@ -1636,6 +1803,17 @@ def conversion_worker(jid):
                     j['file_progress'] = 0.0
                     if j['total'] > 0:
                         j['overall_progress'] = (j['current_index'] / j['total']) * 100
+
+        # FIX (v3.5.0): Cancel check between merge and encode phases.
+        # Without this, if user clicks stop during merge, the merge output
+        # gets cleaned up but encoding starts anyway on the (deleted) file.
+        with job_lock:
+            j = jobs.get(jid)
+            if not j or j['status'] == 'cancelled':
+                if merged_tmp:
+                    try: os.remove(merged_tmp)
+                    except: pass
+                return
 
         # Each task may carry its own export parameters; fall back to job-level defaults
         item_params = dict(item.get('params') or job_params)
@@ -3876,7 +4054,11 @@ def get_config():
 # ── Task Save/Load ─────────────────────────────────────────────
 @app.route('/api/tasks/save', methods=['POST'])
 def save_tasks():
-    """Save current task list and params to file."""
+    """Save current task list and params to file.
+
+    v3.5.0: Supports custom file path via 'path' field. If not provided,
+    falls back to the default TASKS_FILE (auto-save behavior).
+    """
     data = request.json
     task_data = {
         'mode': data.get('mode', 'batch'),
@@ -3887,20 +4069,41 @@ def save_tasks():
         'project_dir': data.get('project_dir', ''),
         'saved_at': datetime.now().isoformat(),
     }
+    # v3.5.0: Use custom path if provided (from file save dialog)
+    save_path = data.get('path') or TASKS_FILE
     try:
-        Path(TASKS_FILE).write_text(json.dumps(task_data, indent=2, ensure_ascii=False), encoding='utf-8')
-        return jsonify({'ok': True, 'saved_at': task_data['saved_at']})
+        Path(save_path).write_text(json.dumps(task_data, indent=2, ensure_ascii=False), encoding='utf-8')
+        return jsonify({'ok': True, 'saved_at': task_data['saved_at'], 'path': save_path})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/tasks/load')
 def load_tasks():
-    """Load saved task list."""
+    """Load saved task list from default file."""
     if not os.path.exists(TASKS_FILE):
         return jsonify({'error': 'No saved tasks'}), 404
     try:
         data = json.loads(Path(TASKS_FILE).read_text(encoding='utf-8'))
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/tasks/load_file', methods=['POST'])
+def load_tasks_file():
+    """Load task list from a specific file path (v3.5.0).
+
+    Body: {path: str}
+    """
+    data = request.json or {}
+    file_path = data.get('path', '')
+    if not file_path:
+        return jsonify({'error': 'No file path provided'}), 400
+    if not os.path.exists(file_path):
+        return jsonify({'error': f'File not found: {file_path}'}), 404
+    try:
+        data = json.loads(Path(file_path).read_text(encoding='utf-8'))
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
