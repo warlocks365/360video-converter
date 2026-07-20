@@ -67,6 +67,12 @@ class SysMon:
         self._nvml_handle = None
         self._pynvml = None
 
+        # nvidia-smi fallback (when pynvml / NVML DLL unavailable)
+        self._nvidia_smi_path = None
+        self._nvidia_smi_ok = False
+        self._smi_last_ts = 0.0          # throttle nvidia-smi to every ~3s
+        self._smi_cache = {}            # cached GPU data between nvidia-smi calls
+
         # GPU name (detected once)
         self._gpu_name = None
         self._gpu_name_checked = False
@@ -101,8 +107,12 @@ class SysMon:
                     self._gpu_name = self._gpu_name.decode('utf-8', errors='replace')
             except Exception:
                 pass
-        except Exception:
+            print('[sysmon] GPU monitoring: pynvml active')
+        except Exception as e:
             self._nvml_ok = False
+            print(f'[sysmon] pynvml init failed: {e}')
+            # Try nvidia-smi fallback (more reliable — ships with NVIDIA driver)
+            self._init_nvidia_smi()
 
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -174,6 +184,8 @@ class SysMon:
                 data['gpu_name'] = self._gpu_name
             if self._nvml_ok:
                 self._sample_gpu(data)
+            elif self._nvidia_smi_ok:
+                self._sample_gpu(data)
             self._data = data
             return
 
@@ -226,11 +238,23 @@ class SysMon:
             data['gpu_name'] = self._gpu_name
         if self._nvml_ok:
             self._sample_gpu(data)
+        elif self._nvidia_smi_ok:
+            self._sample_gpu(data)
 
         self._data = data
 
     def _sample_gpu(self, data):
-        """Sample NVIDIA GPU metrics into `data`."""
+        """Sample NVIDIA GPU metrics into `data`.
+
+        Uses pynvml if available, otherwise falls back to nvidia-smi.
+        """
+        if self._nvml_ok:
+            self._sample_gpu_pynvml(data)
+        elif self._nvidia_smi_ok:
+            self._sample_gpu_nvidia_smi(data)
+
+    def _sample_gpu_pynvml(self, data):
+        """Sample GPU metrics via pynvml (preferred — in-process, fast)."""
         try:
             pynvml = self._pynvml
             handle = self._nvml_handle
@@ -260,3 +284,96 @@ class SysMon:
                 pass
         except Exception:
             pass
+
+    def _init_nvidia_smi(self):
+        """Find nvidia-smi executable and verify it works.
+
+        nvidia-smi ships with the NVIDIA driver and is more reliable than
+        pynvml (which depends on nvml.dll that may be missing on some systems).
+        """
+        candidates = [
+            'nvidia-smi',  # In PATH
+        ]
+        if platform.system() == 'Windows':
+            windir = os.getenv('WINDIR', r'C:\Windows')
+            progfiles = os.getenv('ProgramFiles', r'C:\Program Files')
+            candidates.extend([
+                os.path.join(windir, 'System32', 'nvidia-smi.exe'),
+                os.path.join(progfiles, 'NVIDIA Corporation', 'NVSMI', 'nvidia-smi.exe'),
+            ])
+
+        for path in candidates:
+            try:
+                r = subprocess.run(
+                    [path, '--query-gpu=name', '--format=csv,noheader,nounits'],
+                    capture_output=True, text=True, timeout=5
+                )
+                if r.returncode == 0 and r.stdout.strip():
+                    self._nvidia_smi_path = path
+                    self._nvidia_smi_ok = True
+                    gpu_name = r.stdout.strip().splitlines()[0].strip()
+                    if not self._gpu_name:
+                        self._gpu_name = gpu_name
+                    print(f'[sysmon] GPU monitoring: nvidia-smi fallback active ({path})')
+                    return
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                continue
+            except Exception:
+                continue
+        print('[sysmon] GPU monitoring: no NVIDIA GPU detected (pynvml and nvidia-smi both unavailable)')
+
+    def _sample_gpu_nvidia_smi(self, data):
+        """Sample GPU metrics via nvidia-smi command (fallback).
+
+        nvidia-smi is throttled to every ~3 seconds (it takes 50-200ms per
+        call); between calls the cached values from the last successful
+        nvidia-smi query are returned.
+        """
+        now = time.time()
+        if now - self._smi_last_ts < 3.0 and self._smi_cache:
+            data.update(self._smi_cache)
+            return
+
+        try:
+            cmd = [
+                self._nvidia_smi_path,
+                '--query-gpu=utilization.gpu,utilization.memory,memory.total,memory.used,temperature.gpu',
+                '--format=csv,noheader,nounits',
+            ]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            if r.returncode != 0 or not r.stdout.strip():
+                # nvidia-smi failed — keep using cached data
+                if self._smi_cache:
+                    data.update(self._smi_cache)
+                return
+
+            parts = [p.strip() for p in r.stdout.strip().split(',')]
+            if len(parts) >= 5:
+                gpu_data = {
+                    'gpu_percent': int(parts[0]),
+                    'gpu_mem_percent': int(parts[1]),
+                    'gpu_mem_total_mb': int(parts[2]),
+                    'gpu_mem_used_mb': int(parts[3]),
+                    'gpu_temp': int(parts[4]),
+                }
+                self._smi_cache = gpu_data
+                self._smi_last_ts = now
+                data.update(gpu_data)
+
+                # Encoder utilization (separate query — not supported on all drivers)
+                try:
+                    r_enc = subprocess.run(
+                        [self._nvidia_smi_path,
+                         '--query-gpu=encoder_utilization.avg',
+                         '--format=csv,noheader,nounits'],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if r_enc.returncode == 0 and r_enc.stdout.strip():
+                        enc_val = r_enc.stdout.strip().split()[0]
+                        data['gpu_enc_percent'] = int(enc_val)
+                        self._smi_cache['gpu_enc_percent'] = int(enc_val)
+                except Exception:
+                    pass
+        except Exception:
+            if self._smi_cache:
+                data.update(self._smi_cache)
