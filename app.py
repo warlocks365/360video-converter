@@ -2294,15 +2294,26 @@ def _run_ps_dialog(script, timeout=600):
     )
     full_script = ps_prefix + script
     try:
-        # Build a minimal environment to avoid Windows 64KB env block limit
-        # (some environments have 300KB+ of env vars, exceeding the process creation limit)
-        env = {}
-        for key in ('SystemRoot', 'PATH', 'TEMP', 'TMP', 'USERPROFILE', 'USERNAME',
-                     'windir', 'PATHEXT', 'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE',
-                     'PSModulePath', 'APPDATA', 'LOCALAPPDATA', 'HOMEDRIVE', 'HOMEPATH',
-                     'COMPUTERNAME', 'OS', 'USERDOMAIN'):
-            if key in os.environ:
-                env[key] = os.environ[key]
+        # Inherit the FULL parent environment so that network mapped drives
+        # (S:\, Z:\, etc.) are visible in file dialogs. Windows mapped drives
+        # are per-logon-session DOS device mappings; a subprocess with a
+        # stripped-down env cannot see them in the Shell namespace, so the
+        # OpenFileDialog / SaveFileDialog won't list network drives.
+        #
+        # CreateProcessW has a ~32K-character env block limit. If the parent's
+        # environment is too large, fall back to a minimal set (network drives
+        # may be invisible, but at least the dialog works).
+        env = None  # None = inherit full parent environment (default)
+        env_size = sum(len(k) + len(v) + 2 for k, v in os.environ.items())
+        if env_size > 30000:
+            env = {}
+            for key in ('SystemRoot', 'PATH', 'TEMP', 'TMP', 'USERPROFILE',
+                        'USERNAME', 'windir', 'PATHEXT', 'NUMBER_OF_PROCESSORS',
+                        'PROCESSOR_ARCHITECTURE', 'PSModulePath', 'APPDATA',
+                        'LOCALAPPDATA', 'HOMEDRIVE', 'HOMEPATH', 'COMPUTERNAME',
+                        'OS', 'USERDOMAIN'):
+                if key in os.environ:
+                    env[key] = os.environ[key]
         result = subprocess.run(
             ['powershell', '-NoProfile', '-NonInteractive', '-STA', '-Command', full_script],
             capture_output=True, text=True, timeout=timeout,
@@ -2640,11 +2651,14 @@ def resolve_real_path(path):
     p = path.strip()
     if not p:
         return p
-    # Already a normal absolute filesystem path -> verify it resolves
+    # Already a normal absolute filesystem path -> return as-is.
+    # NOTE: Don't require os.path.exists() — network mapped drives (S:\) or
+    # UNC paths may not be stat-able by Python in all cases (UAC elevation,
+    # session differences, intermittent network), but the path is still
+    # valid for ffmpeg and other tools that run in the user's session.
     try:
         if os.path.isabs(p) and not p.startswith('::') and not p.lower().startswith('shell:'):
-            if os.path.isdir(p) or os.path.isfile(p) or os.path.exists(p):
-                return p
+            return p
     except Exception:
         pass
     # shell:Downloads etc.
@@ -2800,8 +2814,12 @@ def native_dialog_api():
     if initial_dir:
         if os.path.isfile(initial_dir):
             initial_dir = os.path.dirname(initial_dir)
-        elif not os.path.isdir(initial_dir):
-            initial_dir = ''
+        # NOTE: Don't clear initial_dir if os.path.isdir() returns False.
+        # Network mapped drives (S:\) or UNC paths (\\server\share) may not
+        # be stat-able by Python due to session/elevation differences, but the
+        # file dialog (running in the same user session) can still navigate
+        # to them. The dialog will silently fall back to its default location
+        # if the path truly doesn't exist.
 
     if dialog_type == 'open_file':
         result = _native_open_file(title, initial_dir, file_filter)
