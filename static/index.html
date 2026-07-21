@@ -398,7 +398,14 @@ tr:hover td { background: var(--surface-hover); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Map Modal ────────────────────────────────── */
-#mapContainer { width: 100%; height: 400px; border-radius: 8px; overflow: hidden; }
+#mapContainer {
+  width: 100%; height: 400px; min-height: 400px;
+  /* CRITICAL: in .modal (flex column, max-height) the default flex-shrink:1
+     lets the map box be squeezed to ~0 when siblings overflow — Leaflet then
+     renders into a 0×0 viewport and shows nothing. Pin it. */
+  flex-shrink: 0;
+  border-radius: 8px; overflow: hidden;
+}
 .map-search-bar {
   display: flex; gap: 8px; padding: 12px 20px;
   border-bottom: 1px solid var(--border);
@@ -547,12 +554,8 @@ tr:hover td { background: var(--surface-hover); }
 .report-row .value.warn { color: var(--warning); }
 @media (max-width: 768px) { .report-grid { grid-template-columns: 1fr; } }
 </style>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf6tD5IK0k5BO6AlQ2LdJEI="
-      crossorigin=""/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCckB9nE9w8N08nZghZy7XwQ05RMxD6Wc4u6V6k4o="
-        crossorigin=""></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 <div class="app">
@@ -1900,6 +1903,19 @@ function createMapInstance() {
     try { mapInstance.remove(); } catch(e) {}
     mapInstance = null;
   }
+  // Guard: ensure the container actually has a non-zero size. If the modal
+  // hasn't been laid out yet, retry a few times instead of creating a
+  // broken 0×0 map. After MAX retries, force-create anyway so the user at
+  // least sees a map (invalidateSize will fix tiles once it gets real size).
+  const container = document.getElementById('mapContainer');
+  const w = container ? container.clientWidth : 0;
+  const h = container ? container.clientHeight : 0;
+  if ((w === 0 || h === 0) && createMapInstance._tries < 8) {
+    createMapInstance._tries = (createMapInstance._tries || 0) + 1;
+    setTimeout(() => createMapInstance(), 60);
+    return;
+  }
+  createMapInstance._tries = 0;
   // Leaflet uses [lat, lng] order (unlike AMap which uses [lng, lat])
   mapInstance = L.map('mapContainer', {
     zoom: 5,
@@ -1919,27 +1935,41 @@ function createMapInstance() {
     reverseGeocode(lat, lng);
   });
 
-  // Force Leaflet to recalculate tile layout after modal becomes visible
-  setTimeout(() => { if (mapInstance) mapInstance.invalidateSize(); }, 200);
+  // Force Leaflet to recalculate tile layout after modal becomes visible.
+  // Pass animate=false so the size update applies synchronously. Repeat at
+  // 200/600/1200ms — some WebViews paint the modal lazily.
+  [200, 600, 1200].forEach((ms) => {
+    setTimeout(() => { if (mapInstance) mapInstance.invalidateSize(false); }, ms);
+  });
 }
 
 // Cached search results — onclick passes index, avoiding special-char injection
 let _searchResults = [];
+
+// fetch with timeout — default fetch never aborts, so a hung Nominatim/AMap
+// request would leave the user staring at "搜索中..." forever.
+function fetchWithTimeout(url, ms) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timer));
+}
 
 async function searchMap() {
   const query = document.getElementById('mapSearchInput').value.trim();
   if (!query) return;
 
   const resultsEl = document.getElementById('mapSearchResults');
-  resultsEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);">搜索中（国内+全球双源）...</div>';
+  resultsEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);">搜索中（国内+全球双源，首次约 2–4 秒）...</div>';
 
   const key = getAmapKey();
   let allResults = [];
+  let amapError = null;
+  let osmError = null;
 
   // Source 1: AMap POI search (if key configured) — returns GCJ-02 coords
   if (key) {
     try {
-      const r = await fetch(`/api/geocode?q=${encodeURIComponent(query)}&key=${encodeURIComponent(key)}`);
+      const r = await fetchWithTimeout(`/api/geocode?q=${encodeURIComponent(query)}&key=${encodeURIComponent(key)}`, 12000);
       const data = await r.json();
       if (!data.error && data.pois && data.pois.length > 0) {
         const amapResults = data.pois.slice(0, 10).map(poi => {
@@ -1959,15 +1989,17 @@ async function searchMap() {
           };
         });
         allResults = allResults.concat(amapResults);
+      } else if (data.error) {
+        amapError = data.error;
       }
-    } catch(e) { /* AMap failed, continue to Nominatim */ }
+    } catch(e) { amapError = e.message || String(e); }
   }
 
   // Source 2: Nominatim (OpenStreetMap) — global, returns WGS-84
   try {
-    const r = await fetch(`/api/nominatim?q=${encodeURIComponent(query)}`);
+    const r = await fetchWithTimeout(`/api/nominatim?q=${encodeURIComponent(query)}`, 15000);
     const data = await r.json();
-    if (!data.error && Array.isArray(data) && data.length > 0) {
+    if (data && !data.error && Array.isArray(data) && data.length > 0) {
       const osmResults = data.slice(0, 10).map(item => {
         const lat = parseFloat(item.lat);
         const lon = parseFloat(item.lon);
@@ -1987,12 +2019,23 @@ async function searchMap() {
         };
       });
       allResults = allResults.concat(osmResults);
+    } else if (data && data.error) {
+      osmError = data.error;
     }
-  } catch(e) { /* Nominatim failed */ }
+  } catch(e) { osmError = e.message || String(e); }
 
   if (allResults.length === 0) {
-    const hint = key ? '未找到相关地点' : '未找到相关地点（如需国内精准搜索，请在设置中配置高德 API Key）';
-    resultsEl.innerHTML = `<div style="padding:12px;color:var(--text-muted);">${hint}</div>`;
+    let hint = '未找到相关地点';
+    if (!key && amapError === null && osmError) {
+      hint = `搜索失败：${osmError}`;
+    } else if (amapError && osmError) {
+      hint = `双源搜索均失败：高德[${amapError}] / OSM[${osmError}]`;
+    } else if (amapError && !osmError) {
+      hint = `高德搜索失败：${amapError}（OSM 未返回结果）`;
+    } else if (!key) {
+      hint = '未找到相关地点（如需国内精准搜索，请在设置中配置高德 API Key）';
+    }
+    resultsEl.innerHTML = `<div style="padding:12px;color:var(--warning);">${escapeHtml(hint)}</div>`;
     return;
   }
 
@@ -2045,6 +2088,7 @@ async function reverseGeocode(lat, lon, fallbackName) {
   // Default name: fallbackName (from POI) or raw coordinates
   let name = fallbackName || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
   let address = '';
+  let lastError = '';
 
   // Determine source by location: China → AMap regeo, elsewhere → Nominatim
   const inChina = !_outOfChina(lon, lat);
@@ -2054,7 +2098,7 @@ async function reverseGeocode(lat, lon, fallbackName) {
     // China: use AMap reverse geocoding (convert WGS-84 → GCJ-02 for AMap API)
     const [gcjLng, gcjLat] = wgs84ToGcj02(lon, lat);
     try {
-      const r = await fetch(`/api/geocode?q=__regeo__&key=${encodeURIComponent(key)}&location=${gcjLng},${gcjLat}`);
+      const r = await fetchWithTimeout(`/api/geocode?q=__regeo__&key=${encodeURIComponent(key)}&location=${gcjLng},${gcjLat}`, 12000);
       const data = await r.json();
       if (data && data.status === '1' && data.regeocode) {
         const rg = data.regeocode;
@@ -2072,14 +2116,16 @@ async function reverseGeocode(lat, lon, fallbackName) {
         } else if (!fallbackName) {
           name = dist || road || address || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
         }
+      } else if (data && data.error) {
+        lastError = `高德: ${data.error}`;
       }
-    } catch(e) { /* fall through to Nominatim */ }
+    } catch(e) { lastError = `高德: ${e.name === 'AbortError' ? '超时' : (e.message || String(e))}`; }
   }
 
   if (!address) {
     // Global (or AMap failed): use Nominatim reverse geocoding
     try {
-      const r = await fetch(`/api/nominatim?reverse=1&lat=${lat}&lon=${lon}`);
+      const r = await fetchWithTimeout(`/api/nominatim?reverse=1&lat=${lat}&lon=${lon}`, 15000);
       const data = await r.json();
       if (data && !data.error) {
         address = data.display_name || '';
@@ -2091,8 +2137,18 @@ async function reverseGeocode(lat, lon, fallbackName) {
                    (address.split(',')[0]) || name;
           }
         }
+      } else if (data && data.error) {
+        lastError = lastError ? `${lastError} / OSM: ${data.error}` : `OSM: ${data.error}`;
       }
-    } catch(e) { /* keep fallback */ }
+    } catch(e) {
+      const e2 = `OSM: ${e.name === 'AbortError' ? '超时' : (e.message || String(e))}`;
+      lastError = lastError ? `${lastError} / ${e2}` : e2;
+    }
+  }
+
+  if (!address && lastError) {
+    // Surface the underlying failure instead of silently showing "(无地址信息)"
+    address = `(地址获取失败 — ${lastError})`;
   }
 
   mapSelectedLocation = { name, lat, lon, address };
@@ -3734,13 +3790,27 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('metaOutputField').classList.toggle('hidden', this.checked);
     });
   }
+  // Test entry: auto-open map picker for automated regression screenshot.
+  // Only triggers when URL contains ?maptest=1.
+  if (/[?&]maptest=1/.test(location.search)) {
+    setTimeout(() => openMapPicker('encode'), 600);
+  }
 });
 
 // Override map picker to support both targets
 function openMapPicker(target) {
   mapPickerTarget = target || 'encode';
   document.getElementById('mapModal').classList.add('active');
-  initMap();
+  // CRITICAL: Leaflet must measure container size after the modal becomes
+  // visible. classList.add('active') flips display:none → flex synchronously,
+  // but the browser hasn't run a reflow yet, so #mapContainer still reports
+  // 0×0. Calling L.map() here yields a 0×0 viewport and NO tiles ever load.
+  // Double rAF guarantees one paint has happened before we initialize.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      initMap();
+    });
+  });
 }
 
 function confirmMapSelection() {
