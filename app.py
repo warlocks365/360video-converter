@@ -1623,6 +1623,17 @@ def convert_one(jid, inp, out, params):
                     # 清理失败的临时输出文件
                     try: os.remove(temp_out)
                     except: pass
+                    # FIX (v3.5.1): NVENC preset (p1-p7) 不被 libx264/libx265 支持，
+                    # 必须映射到软件编码器的 preset（ultrafast ~ slower）。
+                    # 否则 libx265 报 "Error setting preset/tune p4" 直接失败。
+                    nvenc_preset_map = {
+                        'p1': 'ultrafast', 'p2': 'superfast', 'p3': 'veryfast',
+                        'p4': 'fast', 'p5': 'medium', 'p6': 'slow', 'p7': 'slower',
+                    }
+                    old_preset = params.get('preset', 'p4')
+                    new_preset = nvenc_preset_map.get(old_preset, 'fast')
+                    params['preset'] = new_preset
+                    log_line(jid, f'  preset 映射: {old_preset} → {new_preset}', 'info')
                     # 切换 codec 并重建命令
                     params['codec'] = fallback
                     cp_new = CODEC_PROFILES.get(fallback, CODEC_PROFILES['libx264'])
