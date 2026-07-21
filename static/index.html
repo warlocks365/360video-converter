@@ -314,12 +314,14 @@ tr:hover td { background: var(--surface-hover); }
 .modal-header {
   padding: 16px 20px; border-bottom: 1px solid var(--border);
   display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
 }
 .modal-header h3 { font-size: 1rem; }
 .modal-body { flex: 1; overflow-y: auto; padding: 8px; }
 .modal-footer {
   padding: 12px 20px; border-top: 1px solid var(--border);
   display: flex; gap: 8px; justify-content: flex-end;
+  flex-shrink: 0;
 }
 .dir-item {
   padding: 10px 16px; cursor: pointer; border-radius: 6px;
@@ -398,8 +400,12 @@ tr:hover td { background: var(--surface-hover); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Map Modal ────────────────────────────────── */
+/* Map picker needs more vertical room than a standard modal */
+#mapModal .modal.large {
+  max-height: 92vh;
+}
 #mapContainer {
-  width: 100%; height: 400px; min-height: 400px;
+  width: 100%; height: 380px; min-height: 300px;
   /* CRITICAL: in .modal (flex column, max-height) the default flex-shrink:1
      lets the map box be squeezed to ~0 when siblings overflow — Leaflet then
      renders into a 0×0 viewport and shows nothing. Pin it. */
@@ -409,10 +415,15 @@ tr:hover td { background: var(--surface-hover); }
 .map-search-bar {
   display: flex; gap: 8px; padding: 12px 20px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 .map-search-bar .input { flex: 1; }
 .search-results {
-  max-height: 180px; overflow-y: auto; border-bottom: 1px solid var(--border);
+  max-height: 280px; min-height: 120px;
+  overflow-y: auto; border-bottom: 1px solid var(--border);
+  /* This is the only flexible item in the modal column — it shrinks on
+     short viewports but never below 120px (≈2 result items visible) */
+  flex: 0 1 280px;
 }
 .search-result-item {
   padding: 10px 16px; cursor: pointer; border-bottom: 1px solid var(--border);
@@ -425,6 +436,7 @@ tr:hover td { background: var(--surface-hover); }
 .location-info {
   padding: 12px 20px; border-top: 1px solid var(--border);
   display: flex; justify-content: space-between; align-items: center;
+  flex-shrink: 0;
 }
 .location-info .selected-name { font-weight: 600; }
 .location-info .selected-coords { color: var(--accent); font-family: monospace; font-size: 0.8rem; }
