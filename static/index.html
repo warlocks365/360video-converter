@@ -547,6 +547,12 @@ tr:hover td { background: var(--surface-hover); }
 .report-row .value.warn { color: var(--warning); }
 @media (max-width: 768px) { .report-grid { grid-template-columns: 1fr; } }
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf6tD5IK0k5BO6AlQ2LdJEI="
+      crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCckB9nE9w8N08nZghZy7XwQ05RMxD6Wc4u6V6k4o="
+        crossorigin=""></script>
 </head>
 <body>
 <div class="app">
@@ -1018,17 +1024,17 @@ tr:hover td { background: var(--surface-hover); }
       </div>
 
       <!-- Location Metadata -->
-      <div class="section-divider">拍摄位置元数据 (GPS)<span class="tip-icon" data-tip="将 GPS 经纬度坐标写入视频元数据（ISO 6709 格式），使照片管理软件能按地点分类和显示视频位置。需配合高德地图 API 使用。">?</span></div>
+      <div class="section-divider">拍摄位置元数据 (GPS)<span class="tip-icon" data-tip="将 GPS 经纬度坐标写入视频元数据（ISO 6709 格式），使照片管理软件能按地点分类和显示视频位置。支持国内外地址搜索，无需 API Key 即可使用。">?</span></div>
       <div class="check-group">
         <label class="check">
           <input type="checkbox" id="p_set_location" onchange="toggleLocation()">
-          写入拍摄位置标签<span class="tip-icon" data-tip="勾选后可使用高德地图选取拍摄位置，将 GPS 经纬度和地点名称写入视频元数据。支持模糊搜索地点名称。">?</span> (GPS 经纬度 + 地点名称)
+          写入拍摄位置标签<span class="tip-icon" data-tip="勾选后可使用地图选取拍摄位置（支持国内外地址搜索），将 GPS 经纬度和地点名称写入视频元数据。也可直接手动填写。">?</span> (GPS 经纬度 + 地点名称)
         </label>
         <div id="locationOptions" class="hidden" style="margin-left:26px;margin-top:8px;">
           <div class="field">
-            <label class="field-label">拍摄地点<span class="tip-icon" data-tip="点击右侧按钮打开高德地图，支持模糊搜索地点名称（如「故宫博物院」），在地图上选取精确位置后会自动填充经纬度。">?</span></label>
+            <label class="field-label">拍摄地点<span class="tip-icon" data-tip="点击右侧按钮在地图上选取，或直接手动输入地点名称（如「故宫博物院」「马尔代夫」）。支持国内外地址搜索。">?</span></label>
             <div class="input-group">
-              <input class="input" id="p_location_name" placeholder="点击右侧按钮在地图上选取..." readonly>
+              <input class="input" id="p_location_name" placeholder="点击右侧按钮在地图选取，或直接输入...">
               <button class="btn btn-accent" onclick="openMapPicker()">&#128205; 选取位置</button>
             </div>
           </div>
@@ -1043,8 +1049,8 @@ tr:hover td { background: var(--surface-hover); }
             </div>
           </div>
           <div class="field">
-            <label class="field-label">详细地址<span class="tip-icon" data-tip="从高德地图选位自动提取的详细地址（如：北京市东城区东长安街），将写入视频元数据 comment 字段。">?</span></label>
-            <input class="input" id="p_location_address" placeholder="选取位置后自动填充..." readonly>
+            <label class="field-label">详细地址<span class="tip-icon" data-tip="可从地图选位自动填充，也可直接手动输入完整地址（如：北京市东城区东长安街 / Maldives）。将写入视频元数据 comment 字段。">?</span></label>
+            <input class="input" id="p_location_address" placeholder="选取位置自动填充，或直接输入...">
           </div>
           <div id="locationInfo" class="info-box hidden"></div>
         </div>
@@ -1255,15 +1261,15 @@ tr:hover td { background: var(--surface-hover); }
           <span class="toggle-slider"></span>
         </label>
         <div class="toggle-label">
-          <strong>&#128205; 拍摄位置 GPS <span class="tip-icon" data-tip="通过高德地图选取位置，将 GPS 经纬度以 ISO 6709 格式写入视频元数据。支持模糊搜索地点名称。处理速度极快（不重编码）。">?</span></strong>
-          <small>通过高德地图选取位置，写入 GPS 经纬度标签</small>
+          <strong>&#128205; 拍摄位置 GPS <span class="tip-icon" data-tip="通过地图选取位置（支持国内外地址搜索），将 GPS 经纬度以 ISO 6709 格式写入视频元数据。也可直接手动填写。处理速度极快（不重编码）。">?</span></strong>
+          <small>通过全球地图选取位置，写入 GPS 经纬度标签</small>
         </div>
       </div>
       <div id="metaLocationOptions" class="toggle-options hidden">
         <div class="field">
           <label class="field-label">拍摄地点</label>
           <div class="input-group">
-            <input class="input" id="m_location_name" placeholder="点击右侧按钮在地图上选取..." readonly>
+            <input class="input" id="m_location_name" placeholder="点击右侧按钮在地图选取，或直接输入...">
             <button class="btn btn-accent" onclick="openMapPicker('meta')">&#128205; 选取位置</button>
           </div>
         </div>
@@ -1279,7 +1285,7 @@ tr:hover td { background: var(--surface-hover); }
         </div>
         <div class="field">
           <label class="field-label">详细地址</label>
-          <input class="input" id="m_location_address" placeholder="选取位置后自动填充..." readonly>
+          <input class="input" id="m_location_address" placeholder="选取位置自动填充，或直接输入...">
         </div>
         <div id="metaLocationInfo" class="info-box hidden"></div>
       </div>
@@ -1482,11 +1488,11 @@ tr:hover td { background: var(--surface-hover); }
 <div class="modal-overlay" id="mapModal">
   <div class="modal large">
     <div class="modal-header">
-      <h3>&#128205; 选取拍摄位置 (高德地图)</h3>
+      <h3>&#128205; 选取拍摄位置 (全球地图)</h3>
       <button class="btn btn-sm" onclick="closeMapPicker()">&#10005;</button>
     </div>
     <div class="map-search-bar">
-      <input class="input" id="mapSearchInput" placeholder="输入地点名称进行模糊搜索 (如: 故宫博物院)..." onkeydown="if(event.key==='Enter')searchMap()">
+      <input class="input" id="mapSearchInput" placeholder="输入地点搜索 (国内+全球均可，如: 故宫 / Maldives / Paris)..." onkeydown="if(event.key==='Enter')searchMap()">
       <button class="btn btn-primary" onclick="searchMap()">搜索</button>
     </div>
     <div class="search-results" id="mapSearchResults"></div>
@@ -1507,21 +1513,22 @@ tr:hover td { background: var(--surface-hover); }
 <div class="modal-overlay" id="settingsModal">
   <div class="modal">
     <div class="modal-header">
-      <h3>设置 - 高德地图 API Key</h3>
+      <h3>设置 - 地图与位置</h3>
       <button class="btn btn-sm" onclick="closeSettings()">&#10005;</button>
     </div>
     <div class="modal-body" style="padding:20px;">
       <div class="info-box">
-        高德地图 API Key 用于地点模糊搜索和地图显示。<br>
+        <strong>地图引擎已升级为 Leaflet + OpenStreetMap</strong>，支持全球地图显示和搜索，无需任何 API Key 即可使用。<br><br>
+        <strong>高德地图 API Key（可选）</strong>：配置后可增强<strong>中国境内</strong>地点搜索的精准度（POI 数据更丰富）。国外地址搜索使用 OpenStreetMap Nominatim 服务，无需配置。<br>
         免费申请: <a href="https://lbs.amap.com/" target="_blank" style="color:inherit;font-weight:600;">https://lbs.amap.com/</a> &rarr; 注册 &rarr; 创建应用 &rarr; 获取 Web服务 Key
       </div>
       <div class="field">
-        <label class="field-label">高德地图 API Key (Web服务)</label>
-        <input class="input" id="settings_amap_key" type="text" placeholder="粘贴你的高德地图 Web服务 API Key...">
+        <label class="field-label">高德地图 API Key (Web服务, 可选)</label>
+        <input class="input" id="settings_amap_key" type="text" placeholder="可选 — 配置后增强国内搜索精度...">
       </div>
       <div class="field">
-        <label class="field-label">高德地图 JS API 安全密钥 (可选, 部分功能需要)</label>
-        <input class="input" id="settings_amap_security" type="text" placeholder="安全密钥 (securityJsCode)...">
+        <label class="field-label">高德地图安全密钥 (可选)</label>
+        <input class="input" id="settings_amap_security" type="text" placeholder="安全密钥 (securityJsCode, 可选)...">
       </div>
       <div class="section-divider">任务管理</div>
       <label class="check">
@@ -1829,43 +1836,91 @@ function getAmapSecurity() {
 
 // openMapPicker(target) is defined later with target parameter support ('encode' | 'meta')
 
+// ── GCJ-02 ↔ WGS-84 coordinate conversion ──────────────────────
+// AMap APIs return GCJ-02 (offset) coordinates; OSM tiles use WGS-84.
+// Conversion needed so AMap search results display correctly on Leaflet/OSM.
+const _GCJ_PI = 3.1415926535897932384626;
+const _GCJ_A = 6378245.0;
+const _GCJ_EE = 0.00669342162296594323;
+
+function _outOfChina(lng, lat) {
+  // Rough bounding box for mainland China
+  return lng < 72.004 || lng > 137.8477 || lat < 0.8293 || lat > 55.8271;
+}
+
+function _transformLat(x, y) {
+  let ret = -100.0 + 2.0 * x + 3.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+  ret += (20.0 * Math.sin(6.0 * x * _GCJ_PI) + 20.0 * Math.sin(2.0 * x * _GCJ_PI)) * 2.0 / 3.0;
+  ret += (20.0 * Math.sin(x * _GCJ_PI) + 40.0 * Math.sin(x / 3.0 * _GCJ_PI)) * 2.0 / 3.0;
+  ret += (160.0 * Math.sin(x / 12.0 * _GCJ_PI) + 320 * Math.sin(x * _GCJ_PI / 30.0)) * 2.0 / 3.0;
+  return ret;
+}
+
+function _transformLng(x, y) {
+  let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+  ret += (20.0 * Math.sin(6.0 * x * _GCJ_PI) + 20.0 * Math.sin(2.0 * x * _GCJ_PI)) * 2.0 / 3.0;
+  ret += (20.0 * Math.sin(x * _GCJ_PI) + 40.0 * Math.sin(x / 3.0 * _GCJ_PI)) * 2.0 / 3.0;
+  ret += (150.0 * Math.sin(x / 12.0 * _GCJ_PI) + 300.0 * Math.sin(x / 30.0 * _GCJ_PI)) * 2.0 / 3.0;
+  return ret;
+}
+
+function gcj02ToWgs84(lng, lat) {
+  if (_outOfChina(lng, lat)) return [lng, lat];
+  let dLat = _transformLat(lng - 105.0, lat - 35.0);
+  let dLng = _transformLng(lng - 105.0, lat - 35.0);
+  const radLat = lat / 180.0 * _GCJ_PI;
+  let magic = Math.sin(radLat);
+  magic = 1 - _GCJ_EE * magic * magic;
+  const sqrtMagic = Math.sqrt(magic);
+  dLat = (dLat * 180.0) / ((_GCJ_A * (1 - _GCJ_EE)) / (magic * sqrtMagic) * _GCJ_PI);
+  dLng = (dLng * 180.0) / (_GCJ_A / sqrtMagic * Math.cos(radLat) * _GCJ_PI);
+  return [lng - dLng, lat - dLat];
+}
+
+function wgs84ToGcj02(lng, lat) {
+  if (_outOfChina(lng, lat)) return [lng, lat];
+  let dLat = _transformLat(lng - 105.0, lat - 35.0);
+  let dLng = _transformLng(lng - 105.0, lat - 35.0);
+  const radLat = lat / 180.0 * _GCJ_PI;
+  let magic = Math.sin(radLat);
+  magic = 1 - _GCJ_EE * magic * magic;
+  const sqrtMagic = Math.sqrt(magic);
+  dLat = (dLat * 180.0) / ((_GCJ_A * (1 - _GCJ_EE)) / (magic * sqrtMagic) * _GCJ_PI);
+  dLng = (dLng * 180.0) / (_GCJ_A / sqrtMagic * Math.cos(radLat) * _GCJ_PI);
+  return [lng + dLng, lat + dLat];
+}
+
 function initMap() {
-  const key = getAmapKey();
-  const security = getAmapSecurity();
-
-  // Set security code if provided
-  if (security) {
-    window._AMapSecurityConfig = { securityJsCode: security };
-  }
-
-  // Load AMap JS API if not already loaded
-  if (typeof AMap === 'undefined') {
-    const script = document.createElement('script');
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${key}`;
-    script.onload = () => createMapInstance();
-    script.onerror = () => {
-      document.getElementById('mapContainer').innerHTML =
-        '<div style="padding:40px;text-align:center;color:var(--error);">地图加载失败，请检查 API Key 是否正确</div>';
-    };
-    document.head.appendChild(script);
-  } else {
-    createMapInstance();
-  }
+  createMapInstance();
 }
 
 function createMapInstance() {
-  mapInstance = new AMap.Map('mapContainer', {
+  // Destroy previous Leaflet instance if any (avoids "already initialized" error)
+  if (mapInstance) {
+    try { mapInstance.remove(); } catch(e) {}
+    mapInstance = null;
+  }
+  // Leaflet uses [lat, lng] order (unlike AMap which uses [lng, lat])
+  mapInstance = L.map('mapContainer', {
     zoom: 5,
-    center: [116.397428, 39.90923],  // Default: Beijing
-    mapStyle: 'amap://styles/normal'
+    center: [39.90923, 116.397428],  // Default: Beijing
+    zoomControl: true,
   });
+  // OSM tiles — global coverage, WGS-84 coordinate system
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19,
+  }).addTo(mapInstance);
 
   // Click to select location
   mapInstance.on('click', (e) => {
-    const lng = e.lnglat.getLng();
-    const lat = e.lnglat.getLat();
+    const lat = e.latlng.lat;
+    const lng = e.latlng.lng;
     reverseGeocode(lat, lng);
   });
+
+  // Force Leaflet to recalculate tile layout after modal becomes visible
+  setTimeout(() => { if (mapInstance) mapInstance.invalidateSize(); }, 200);
 }
 
 // Cached search results — onclick passes index, avoiding special-char injection
@@ -1874,52 +1929,90 @@ let _searchResults = [];
 async function searchMap() {
   const query = document.getElementById('mapSearchInput').value.trim();
   if (!query) return;
-  const key = getAmapKey();
-  if (!key) { alert('请先在"设置"中配置高德地图 API Key'); return; }
 
   const resultsEl = document.getElementById('mapSearchResults');
-  resultsEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);">搜索中...</div>';
+  resultsEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);">搜索中（国内+全球双源）...</div>';
 
-  try {
-    const r = await fetch(`/api/geocode?q=${encodeURIComponent(query)}&key=${encodeURIComponent(key)}`);
-    const data = await r.json();
+  const key = getAmapKey();
+  let allResults = [];
 
-    if (data.error) {
-      resultsEl.innerHTML = `<div style="padding:12px;color:var(--error);">${escapeHtml(data.error)}</div>`;
-      return;
-    }
-
-    if (!data.pois || data.pois.length === 0) {
-      resultsEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);">未找到相关地点</div>';
-      return;
-    }
-
-    // Store results for safe click handling (avoids special-char injection in onclick)
-    _searchResults = data.pois.slice(0, 15).map(poi => {
-      const [lon, lat] = poi.location ? poi.location.split(',').map(parseFloat) : [0, 0];
-      // Build full address synchronously from POI fields (province/city/district/street)
-      const cityname = poi.cityname || '';
-      const adname = poi.adname || '';
-      const street = poi.address || '';
-      const fullAddr = [cityname, adname, street].filter(Boolean).join('');
-      return {
-        name: poi.name || '',
-        address: fullAddr,
-        lat: lat || 0,
-        lon: lon || 0,
-      };
-    });
-
-    resultsEl.innerHTML = _searchResults.map((poi, i) =>
-      `<div class="search-result-item" onclick="selectSearchResultByIndex(${i})">
-        <div class="name">${escapeHtml(poi.name)}</div>
-        <div class="addr">${escapeHtml(poi.address)}</div>
-        <div class="coords">${poi.lat.toFixed(4)}, ${poi.lon.toFixed(4)}</div>
-      </div>`
-    ).join('');
-  } catch(e) {
-    resultsEl.innerHTML = `<div style="padding:12px;color:var(--error);">搜索失败: ${escapeHtml(e.message)}</div>`;
+  // Source 1: AMap POI search (if key configured) — returns GCJ-02 coords
+  if (key) {
+    try {
+      const r = await fetch(`/api/geocode?q=${encodeURIComponent(query)}&key=${encodeURIComponent(key)}`);
+      const data = await r.json();
+      if (!data.error && data.pois && data.pois.length > 0) {
+        const amapResults = data.pois.slice(0, 10).map(poi => {
+          const [gcjLng, gcjLat] = poi.location ? poi.location.split(',').map(parseFloat) : [0, 0];
+          // Convert GCJ-02 → WGS-84 for display on OSM tiles
+          const [wgsLng, wgsLat] = gcj02ToWgs84(gcjLng, gcjLat);
+          const cityname = poi.cityname || '';
+          const adname = poi.adname || '';
+          const street = poi.address || '';
+          const fullAddr = [cityname, adname, street].filter(Boolean).join('');
+          return {
+            name: poi.name || '',
+            address: fullAddr,
+            lat: wgsLat,
+            lon: wgsLng,
+            source: 'amap',
+          };
+        });
+        allResults = allResults.concat(amapResults);
+      }
+    } catch(e) { /* AMap failed, continue to Nominatim */ }
   }
+
+  // Source 2: Nominatim (OpenStreetMap) — global, returns WGS-84
+  try {
+    const r = await fetch(`/api/nominatim?q=${encodeURIComponent(query)}`);
+    const data = await r.json();
+    if (!data.error && Array.isArray(data) && data.length > 0) {
+      const osmResults = data.slice(0, 10).map(item => {
+        const lat = parseFloat(item.lat);
+        const lon = parseFloat(item.lon);
+        let name = item.name || '';
+        if (!name && item.address) {
+          name = item.address.name || item.address.tourism || item.address.amenity ||
+                 item.address.building || (item.display_name || '').split(',')[0] || '';
+        }
+        if (!name) name = (item.display_name || '').split(',')[0] || '';
+        const addr = item.display_name || '';
+        return {
+          name: name,
+          address: addr,
+          lat: lat,
+          lon: lon,
+          source: 'osm',
+        };
+      });
+      allResults = allResults.concat(osmResults);
+    }
+  } catch(e) { /* Nominatim failed */ }
+
+  if (allResults.length === 0) {
+    const hint = key ? '未找到相关地点' : '未找到相关地点（如需国内精准搜索，请在设置中配置高德 API Key）';
+    resultsEl.innerHTML = `<div style="padding:12px;color:var(--text-muted);">${hint}</div>`;
+    return;
+  }
+
+  // Deduplicate by approximate coordinates (within 0.001°)
+  _searchResults = [];
+  for (const r of allResults.slice(0, 20)) {
+    const dup = _searchResults.find(x => Math.abs(x.lat - r.lat) < 0.001 && Math.abs(x.lon - r.lon) < 0.001);
+    if (!dup) _searchResults.push(r);
+  }
+
+  resultsEl.innerHTML = _searchResults.map((poi, i) => {
+    const tag = poi.source === 'amap'
+      ? '<span style="color:var(--success);font-size:0.7rem;">[高德]</span>'
+      : '<span style="color:var(--accent);font-size:0.7rem;">[OSM]</span>';
+    return `<div class="search-result-item" onclick="selectSearchResultByIndex(${i})">
+      <div class="name">${tag} ${escapeHtml(poi.name)}</div>
+      <div class="addr">${escapeHtml(poi.address)}</div>
+      <div class="coords">${poi.lat.toFixed(4)}, ${poi.lon.toFixed(4)}</div>
+    </div>`;
+  }).join('');
 }
 
 function selectSearchResultByIndex(i) {
@@ -1929,11 +2022,10 @@ function selectSearchResultByIndex(i) {
 }
 
 function selectSearchResult(lat, lon, name, address) {
-  // Immediately place marker and show POI info
-  if (mapMarker) mapInstance.remove(mapMarker);
-  mapMarker = new AMap.Marker({ position: [lon, lat], title: name });
-  mapInstance.add(mapMarker);
-  mapInstance.setZoomAndCenter(15, [lon, lat]);
+  // Leaflet uses [lat, lng] order
+  if (mapMarker) mapInstance.removeLayer(mapMarker);
+  mapMarker = L.marker([lat, lon]).addTo(mapInstance);
+  mapInstance.setView([lat, lon], 15);
 
   // Show POI info right away
   mapSelectedLocation = { name, lat, lon, address };
@@ -1946,39 +2038,61 @@ function selectSearchResult(lat, lon, name, address) {
 }
 
 async function reverseGeocode(lat, lon, fallbackName) {
-  const key = getAmapKey();
-  if (mapMarker) mapInstance.remove(mapMarker);
-  mapMarker = new AMap.Marker({ position: [lon, lat] });
-  mapInstance.add(mapMarker);
-  mapInstance.setZoomAndCenter(15, [lon, lat]);
+  if (mapMarker) mapInstance.removeLayer(mapMarker);
+  mapMarker = L.marker([lat, lon]).addTo(mapInstance);
+  mapInstance.setView([lat, lon], 15);
 
   // Default name: fallbackName (from POI) or raw coordinates
   let name = fallbackName || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
   let address = '';
 
-  try {
-    const r = await fetch(`/api/geocode?q=__regeo__&key=${encodeURIComponent(key)}&location=${lon},${lat}`);
-    const data = await r.json();
-    if (data && data.status === '1' && data.regeocode) {
-      const rg = data.regeocode;
-      const comp = rg.addressComponent || {};
-      const prov = comp.province || '';
-      const city = typeof comp.city === 'string' ? comp.city : '';
-      const dist = comp.district || '';
-      const road = comp.township || '';
-      const addrParts = [prov, city, dist, road].filter(Boolean);
-      address = rg.formatted_address || addrParts.join('');
-      // Use building/neighborhood name if available; otherwise keep POI name (fallbackName)
-      if (comp.building && comp.building.name) {
-        name = comp.building.name;
-      } else if (comp.neighborhood && comp.neighborhood.name) {
-        name = comp.neighborhood.name;
-      } else if (!fallbackName) {
-        name = dist || road || address || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+  // Determine source by location: China → AMap regeo, elsewhere → Nominatim
+  const inChina = !_outOfChina(lon, lat);
+  const key = getAmapKey();
+
+  if (inChina && key) {
+    // China: use AMap reverse geocoding (convert WGS-84 → GCJ-02 for AMap API)
+    const [gcjLng, gcjLat] = wgs84ToGcj02(lon, lat);
+    try {
+      const r = await fetch(`/api/geocode?q=__regeo__&key=${encodeURIComponent(key)}&location=${gcjLng},${gcjLat}`);
+      const data = await r.json();
+      if (data && data.status === '1' && data.regeocode) {
+        const rg = data.regeocode;
+        const comp = rg.addressComponent || {};
+        const prov = comp.province || '';
+        const city = typeof comp.city === 'string' ? comp.city : '';
+        const dist = comp.district || '';
+        const road = comp.township || '';
+        const addrParts = [prov, city, dist, road].filter(Boolean);
+        address = rg.formatted_address || addrParts.join('');
+        if (comp.building && comp.building.name) {
+          name = comp.building.name;
+        } else if (comp.neighborhood && comp.neighborhood.name) {
+          name = comp.neighborhood.name;
+        } else if (!fallbackName) {
+          name = dist || road || address || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
+        }
       }
-    }
-  } catch(e) {
-    // Network/backend error — keep fallback name and empty address
+    } catch(e) { /* fall through to Nominatim */ }
+  }
+
+  if (!address) {
+    // Global (or AMap failed): use Nominatim reverse geocoding
+    try {
+      const r = await fetch(`/api/nominatim?reverse=1&lat=${lat}&lon=${lon}`);
+      const data = await r.json();
+      if (data && !data.error) {
+        address = data.display_name || '';
+        if (!fallbackName) {
+          if (data.name) {
+            name = data.name;
+          } else if (data.address) {
+            name = data.address.name || data.address.tourism || data.address.amenity ||
+                   (address.split(',')[0]) || name;
+          }
+        }
+      }
+    } catch(e) { /* keep fallback */ }
   }
 
   mapSelectedLocation = { name, lat, lon, address };
@@ -1988,7 +2102,7 @@ async function reverseGeocode(lat, lon, fallbackName) {
 }
 
 function clearMapSelection() {
-  if (mapMarker) { mapInstance.remove(mapMarker); mapMarker = null; }
+  if (mapMarker) { mapInstance.removeLayer(mapMarker); mapMarker = null; }
   mapSelectedLocation = null;
   document.getElementById('mapSelectedName').textContent = '未选择位置';
   document.getElementById('mapSelectedCoords').textContent = '';
@@ -3626,14 +3740,6 @@ document.addEventListener('DOMContentLoaded', function() {
 function openMapPicker(target) {
   mapPickerTarget = target || 'encode';
   document.getElementById('mapModal').classList.add('active');
-  const key = getAmapKey();
-  if (!key) {
-    document.getElementById('mapContainer').innerHTML =
-      '<div style="padding:40px;text-align:center;color:var(--text-muted);">' +
-      '请先在"设置"中配置高德地图 API Key<br>' +
-      '<button class="btn btn-primary" style="margin-top:12px;" onclick="closeMapPicker();openSettings();">前往设置</button></div>';
-    return;
-  }
   initMap();
 }
 

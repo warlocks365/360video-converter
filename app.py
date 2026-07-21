@@ -3568,6 +3568,83 @@ def geocode_proxy():
         return jsonify({'error': err_str}), 502
 
 
+# ── Nominatim (OpenStreetMap) proxy for global geocoding ──────────
+# Throttle: Nominatim usage policy requires max 1 req/s.
+_nominatim_last_ts = 0.0
+
+def _nominatim_request(url, timeout=10):
+    """Fetch from Nominatim with a compliant User-Agent and 1 req/s throttle."""
+    global _nominatim_last_ts
+    now = time.time()
+    wait = 1.0 - (now - _nominatim_last_ts)
+    if wait > 0:
+        time.sleep(wait)
+    _nominatim_last_ts = time.time()
+    # Nominatim policy requires a descriptive User-Agent with app name + version
+    req = urllib.request.Request(url, headers={
+        'User-Agent': '360VideoConverter/3.6.0 (desktop app; pywebview)',
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=timeout,
+                                     context=_get_https_ssl_context()) as resp:
+            return json.loads(resp.read().decode('utf-8'))
+    except urllib.error.URLError as e:
+        err_str = str(e)
+        if ('CERTIFICATE VERIFY FAILED' in err_str or
+                'certificate verify failed' in err_str or
+                'unable to get local issuer certificate' in err_str):
+            global _HTTPS_SSL_CONTEXT
+            _HTTPS_SSL_CONTEXT = _ssl._create_unverified_context()
+            req2 = urllib.request.Request(url, headers={
+                'User-Agent': '360VideoConverter/3.6.0 (desktop app; pywebview)',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            })
+            with urllib.request.urlopen(req2, timeout=timeout,
+                                         context=_HTTPS_SSL_CONTEXT) as resp:
+                return json.loads(resp.read().decode('utf-8'))
+        raise
+
+
+@app.route('/api/nominatim')
+def nominatim_proxy():
+    """Proxy Nominatim (OpenStreetMap) for global location search & reverse geocoding.
+
+    Handles both forward search (q=place name) and reverse geocoding
+    (reverse=1 with lat/lon). Returns normalized results compatible with
+    the frontend's search-result rendering.
+    """
+    keywords = request.args.get('q', '')
+    is_reverse = request.args.get('reverse', '') == '1'
+    lat = request.args.get('lat', '')
+    lon = request.args.get('lon', '')
+
+    try:
+        if is_reverse:
+            if not lat or not lon:
+                return jsonify({'error': 'Missing lat/lon for reverse geocoding'}), 400
+            url = (f'https://nominatim.openstreetmap.org/reverse?'
+                   f'lat={lat}&lon={lon}&format=json&addressdetails=1&accept-language=zh')
+            data = _nominatim_request(url)
+            return jsonify(data)
+        else:
+            if not keywords:
+                return jsonify({'error': 'Missing query'}), 400
+            url = (f'https://nominatim.openstreetmap.org/search?'
+                   f'q={urllib.parse.quote(keywords)}&format=json&limit=20'
+                   f'&addressdetails=1&accept-language=zh')
+            data = _nominatim_request(url)
+            return jsonify(data)
+    except Exception as e:
+        err_str = str(e)
+        if ('CERTIFICATE VERIFY FAILED' in err_str or
+                'certificate verify failed' in err_str or
+                'unable to get local issuer certificate' in err_str):
+            err_str = ('SSL 证书验证失败 — 目标电脑的 Windows 系统证书库可能过时。'
+                       '错误详情: ' + err_str)
+        return jsonify({'error': err_str}), 502
+
+
 @app.route('/api/convert', methods=['POST'])
 def start_convert():
     data = request.json
