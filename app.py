@@ -537,7 +537,8 @@ def set_file_dates(filepath, dt, set_created=True, set_modified=True):
 
 # ── Job State ──────────────────────────────────────────────────
 jobs = {}
-job_lock = threading.Lock()
+job_lock = threading.RLock()  # RLock: allows reentrant acquisition (fixes nested-lock deadlock BUG-S01)
+_last_job_cleanup = 0.0  # FIX BUG-L09: throttle cleanup_old_jobs to once per minute
 
 
 def new_job(mode, items, params):
@@ -573,6 +574,23 @@ def log_line(jid, msg, level='info'):
             j['log'].append({'ts': ts, 'msg': msg, 'level': level})
             if len(j['log']) > 800:
                 j['log'] = j['log'][-800:]
+
+
+def cleanup_old_jobs(max_age_seconds=3600):
+    """FIX BUG-L09: Remove completed/cancelled/failed jobs older than max_age_seconds.
+    Prevents unbounded memory growth from accumulated job data."""
+    with job_lock:
+        now = time.time()
+        expired = [
+            jid for jid, j in jobs.items()
+            if j.get('status') in ('completed', 'cancelled', 'failed')
+            and j.get('end_time')
+            and (now - j['end_time']) > max_age_seconds
+        ]
+        for jid in expired:
+            del jobs[jid]
+    if expired:
+        logger.info(f"Cleaned up {len(expired)} expired job(s) from memory")
 
 
 # ── Path Formula Expansion ─────────────────────────────────────
@@ -651,7 +669,7 @@ def _get_custom_ffmpeg():
             path = saved.get('custom_ffmpeg_path', '')
             if path and os.path.isfile(path):
                 return path
-    except:
+    except Exception:
         pass
     return None
 
@@ -1201,12 +1219,14 @@ def run_ffmpeg(cmd, jid, duration, pass_label=''):
                 if not _j or _j['status'] == 'cancelled':
                     try: proc.kill()
                     except Exception: pass
-                    proc.wait()
+                    try: proc.wait(timeout=5)
+                    except Exception: pass
                     return -1
             # Check pause state
             if not check_pause(jid, proc):
                 proc.kill()
-                proc.wait()
+                try: proc.wait(timeout=5)
+                except Exception: pass
                 return -1
             if 'frame=' in line or 'time=' in line:
                 prog = parse_progress(line, duration)
@@ -1242,7 +1262,8 @@ def run_ffmpeg(cmd, jid, duration, pass_label=''):
         except Exception:
             pass
 
-    proc.wait()
+    try: proc.wait(timeout=10)
+    except Exception: pass
 
     return proc.returncode
 
@@ -1408,7 +1429,7 @@ def merge_files(jid, input_files, output_path):
             _j = jobs.get(jid)
             if not _j or _j['status'] == 'cancelled':
                 try: os.remove(merge_output)
-                except: pass
+                except Exception: pass
                 with job_lock:
                     j = jobs.get(jid)
                     if j:
@@ -1417,7 +1438,7 @@ def merge_files(jid, input_files, output_path):
 
         if rc != 0:
             try: os.remove(merge_output)
-            except: pass
+            except Exception: pass
             # Clear merge_status on failure
             with job_lock:
                 j = jobs.get(jid)
@@ -1444,7 +1465,7 @@ def merge_files(jid, input_files, output_path):
         return True, None
     finally:
         try: os.remove(list_path)
-        except: pass
+        except Exception: pass
 
 
 def convert_one(jid, inp, out, params):
@@ -1515,7 +1536,7 @@ def convert_one(jid, inp, out, params):
             else:
                 log_line(jid, f'球面防抖失败: {serr}, 使用原始文件', 'warn')
                 try: os.remove(stab_tmp)
-                except: pass
+                except Exception: pass
                 stab_tmp = None
         else:
             # Strategy A: vidstab detect pass -> .trf file (transform inlined in -vf)
@@ -1535,7 +1556,7 @@ def convert_one(jid, inp, out, params):
             else:
                 log_line(jid, 'vidstab 分析失败, 跳过防抖', 'warn')
                 try: os.remove(trf_path)
-                except: pass
+                except Exception: pass
 
     # Check if job was cancelled during stabilization preprocessing
     with job_lock:
@@ -1543,11 +1564,11 @@ def convert_one(jid, inp, out, params):
         if not j or j['status'] == 'cancelled':
             if stab_tmp:
                 try: os.remove(stab_tmp)
-                except: pass
+                except Exception: pass
             trf = params.pop('_stab_trf', None)
             if trf:
                 try: os.remove(trf)
-                except: pass
+                except Exception: pass
             return False, 'Cancelled by user', out
 
     # Determine effective creation_time from filename or manual override
@@ -1599,7 +1620,7 @@ def convert_one(jid, inp, out, params):
         rc = run_ffmpeg(cmd2, jid, progress_duration, '[P2] ')
         for f in Path(os.path.dirname(temp_out)).glob(f'{os.path.basename(passlog)}*'):
             try: f.unlink()
-            except: pass
+            except Exception: pass
         if rc != 0:
             return False, f'Pass 2 failed (rc={rc})', out
     else:
@@ -1622,7 +1643,7 @@ def convert_one(jid, inp, out, params):
                     log_line(jid, f'自动回退到 {fallback} 软件编码（速度较慢但容忍损坏数据）', 'warn')
                     # 清理失败的临时输出文件
                     try: os.remove(temp_out)
-                    except: pass
+                    except Exception: pass
                     # FIX (v3.5.1): NVENC preset (p1-p7) 不被 libx264/libx265 支持，
                     # 必须映射到软件编码器的 preset（ultrafast ~ slower）。
                     # 否则 libx265 报 "Error setting preset/tune p4" 直接失败。
@@ -1667,7 +1688,7 @@ def convert_one(jid, inp, out, params):
             shutil.copy2(temp_out, out)
         finally:
             try: os.remove(temp_out)
-            except: pass
+            except Exception: pass
     elif temp_out != out:
         import shutil
         shutil.move(temp_out, out)
@@ -1697,11 +1718,11 @@ def convert_one(jid, inp, out, params):
     # Cleanup stabilization temp files (v3.0)
     if stab_tmp:
         try: os.remove(stab_tmp)
-        except: pass
+        except Exception: pass
     trf = params.pop('_stab_trf', None)
     if trf:
         try: os.remove(trf)
-        except: pass
+        except Exception: pass
 
     return True, None, out
 
@@ -1823,7 +1844,7 @@ def conversion_worker(jid):
             if not j or j['status'] == 'cancelled':
                 if merged_tmp:
                     try: os.remove(merged_tmp)
-                    except: pass
+                    except Exception: pass
                 return
 
         # Each task may carry its own export parameters; fall back to job-level defaults
@@ -1853,7 +1874,7 @@ def conversion_worker(jid):
         # Clean up merged temp file
         if merged_tmp:
             try: os.remove(merged_tmp)
-            except: pass
+            except Exception: pass
 
         if ok:
             log_line(jid, f'  Done', 'success')
@@ -1980,7 +2001,7 @@ def apply_metadata_one(jid, inp, out, params):
 
         if rc != 0:
             try: os.remove(temp_out)
-            except: pass
+            except Exception: pass
             return False, f'ffmpeg stream copy failed (rc={rc})', out
 
         # Inject spherical metadata if needed
@@ -2004,7 +2025,7 @@ def apply_metadata_one(jid, inp, out, params):
             finally:
                 if temp_out != final_out:
                     try: os.remove(temp_out)
-                    except: pass
+                    except Exception: pass
         else:
             final_out = temp_out
 
@@ -2628,7 +2649,10 @@ def _resolve_known_folder_guid(guid_str):
         SHGetKnownFolderPath.restype = ctypes.c_int32
         rc = SHGetKnownFolderPath(ctypes.byref(guid), 0, None, ctypes.byref(pp))
         if rc == 0 and pp:
-            return pp.value
+            result = pp.value
+            # FIX BUG-S02: Free the COM-allocated string to prevent memory leak
+            ctypes.windll.ole32.CoTaskMemFree(pp)
+            return result
     except Exception:
         return None
     finally:
@@ -3711,6 +3735,15 @@ def start_apply_metadata():
 
 @app.route('/api/status/<jid>')
 def status(jid):
+    # FIX BUG-L09: Periodically clean up old completed jobs (throttled to once/minute)
+    global _last_job_cleanup
+    _now = time.time()
+    if _now - _last_job_cleanup > 60:
+        _last_job_cleanup = _now
+        try:
+            cleanup_old_jobs()
+        except Exception:
+            pass
     with job_lock:
         j = jobs.get(jid)
         if not j:
@@ -4231,7 +4264,7 @@ def get_settings():
         try:
             saved = json.loads(Path(SETTINGS_FILE).read_text(encoding='utf-8'))
             defaults.update(saved)
-        except:
+        except Exception:
             pass
     # Fall back to built-in defaults if saved value is empty
     if not defaults.get('amap_api_key'):
@@ -4249,7 +4282,7 @@ def save_settings():
     if os.path.exists(SETTINGS_FILE):
         try:
             existing = json.loads(Path(SETTINGS_FILE).read_text(encoding='utf-8'))
-        except:
+        except Exception:
             pass
     merged = {**existing, **data}
     try:
@@ -4409,7 +4442,7 @@ if __name__ == '__main__':
         try:
             _urllib.urlopen(f'http://127.0.0.1:{PORT}/', timeout=1)
             break
-        except:
+        except Exception:
             time.sleep(0.3)
 
     # Try pywebview for embedded window

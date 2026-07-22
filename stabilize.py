@@ -436,6 +436,19 @@ def stabilize_panoramic(inp, out, params, ffmpeg_path=None, env=None,
     except Exception as e:
         return False, f'无法启动 ffmpeg 输出管道: {e}'
 
+    # FIX BUG-M02: Drain stderr in a separate thread to prevent pipe deadlock
+    # when ffmpeg produces large stderr output while we write frames to stdin
+    import threading as _thr
+    _stderr_chunks = []
+    def _drain_stderr():
+        try:
+            for chunk in iter(lambda: proc.stderr.read(4096), b''):
+                _stderr_chunks.append(chunk)
+        except Exception:
+            pass
+    _stderr_thread = _thr.Thread(target=_drain_stderr, daemon=True)
+    _stderr_thread.start()
+
     cap = cv2.VideoCapture(inp)
     written = 0
     for i in range(n_frames):
@@ -470,6 +483,7 @@ def stabilize_panoramic(inp, out, params, ffmpeg_path=None, env=None,
             out_frame = cv2.warpAffine(out_frame, M, (w, h),
                                        borderMode=cv2.BORDER_WRAP)
 
+        # FIX BUG-M07: write with flush + BrokenPipeError guard
         try:
             proc.stdin.write(out_frame.tobytes())
         except (BrokenPipeError, OSError):
@@ -484,9 +498,17 @@ def stabilize_panoramic(inp, out, params, ffmpeg_path=None, env=None,
         proc.stdin.close()
     except Exception:
         pass
-    _, stderr = proc.communicate(timeout=120)
+    # FIX BUG-M02: Wait with timeout instead of communicate() to avoid blocking
+    try:
+        proc.wait(timeout=120)
+    except Exception:
+        try: proc.kill()
+        except Exception: pass
+        proc.wait(timeout=5)
+    _stderr_thread.join(timeout=5)
+    stderr = b''.join(_stderr_chunks)
     if proc.returncode != 0:
-        tail = (stderr or b'').decode('utf-8', errors='replace')[-400:]
+        tail = stderr.decode('utf-8', errors='replace')[-400:]
         return False, f'ffmpeg 输出失败: {tail}'
 
     if log_fn:

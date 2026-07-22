@@ -207,10 +207,24 @@ def inject_uuid(input_path, output_path, pano_type='360', stereo_mode='mono'):
         pano_type:   '360' = 全景 360°, '180' = VR180
         stereo_mode: 'mono' = 2D, 'left-right' = 3D 左右并排, 'top-bottom' = 3D 上下排列
     """
-    with open(input_path, 'rb') as f:
-        data = bytearray(f.read())
+    import mmap
 
-    file_size = len(data)
+    # FIX BUG-M04: Use mmap with COPY access instead of loading entire file into memory.
+    # mmap.ACCESS_COPY keeps modifications in-memory only (does not write back to source file),
+    # and the OS lazy-pages file content so peak memory stays low even for multi-GB videos.
+    file_size = os.path.getsize(input_path)
+    f = open(input_path, 'rb')
+    try:
+        if file_size > 0:
+            data = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_COPY)
+        else:
+            print('ERROR: empty file')
+            return False
+    finally:
+        # mmap keeps its own reference; we can close the file handle on Windows
+        # after mmap is created. On Linux the fd must stay open, but mmap holds it.
+        pass
+
     print(f'Input: {input_path} ({file_size} bytes)')
 
     # 找到 moov 和 mdat 的位置
@@ -219,6 +233,7 @@ def inject_uuid(input_path, output_path, pano_type='360', stereo_mode='mono'):
 
     if moov_start is None:
         print('ERROR: moov box not found!')
+        f.close()
         return False
 
     moov_end = moov_start + moov_size
@@ -228,6 +243,8 @@ def inject_uuid(input_path, output_path, pano_type='360', stereo_mode='mono'):
     existing_uuid = data.find(SPHERICAL_UUID, moov_start, moov_end)
     if existing_uuid >= 0:
         print('UUID box already exists, copying as-is')
+        data.close()
+        f.close()
         shutil.copy2(input_path, output_path)
         return True
 
@@ -235,6 +252,8 @@ def inject_uuid(input_path, output_path, pano_type='360', stereo_mode='mono'):
     trak_start, trak_size, mdia_end, width, height = find_video_trak_mdia_end(data, moov_start, moov_end)
     if mdia_end is None:
         print('ERROR: Video trak not found!')
+        data.close()
+        f.close()
         return False
 
     print(f'Video trak: [{trak_start:#x} - {trak_start+trak_size:#x}]')
@@ -256,25 +275,24 @@ def inject_uuid(input_path, output_path, pano_type='360', stereo_mode='mono'):
     else:
         print('moov after mdat (no faststart), no stco/co64 updates needed')
 
-    # 在 mdia_end 之后插入 UUID box
+    # 更新 trak size 和 moov size (in-place on mmap COPY)
     insert_pos = mdia_end
-    new_data = bytearray(data[:insert_pos])
-    new_data.extend(uuid_box)
-    new_data.extend(data[insert_pos:])
-
-    # 更新 trak size
     new_trak_size = trak_size + uuid_size
-    struct.pack_into('>I', new_data, trak_start, new_trak_size)
-
-    # 更新 moov size
+    struct.pack_into('>I', data, trak_start, new_trak_size)
     new_moov_size = moov_size + uuid_size
-    struct.pack_into('>I', new_data, moov_start, new_moov_size)
+    struct.pack_into('>I', data, moov_start, new_moov_size)
 
-    # 写入输出
-    with open(output_path, 'wb') as f:
-        f.write(new_data)
+    # 写入输出 - 分块写入避免全量内存拷贝
+    with open(output_path, 'wb') as out_f:
+        out_f.write(data[:insert_pos])
+        out_f.write(uuid_box)
+        out_f.write(data[insert_pos:])
 
-    print(f'Output: {output_path} ({len(new_data)} bytes)')
+    output_size = file_size + uuid_size
+    data.close()
+    f.close()
+
+    print(f'Output: {output_path} ({output_size} bytes)')
     print('UUID box injected successfully!')
     return True
 

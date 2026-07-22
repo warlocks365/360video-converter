@@ -42,9 +42,10 @@ def get_global_sysmon(interval=2.0):
 def shutdown_global_sysmon():
     """Stop the global SysMon if running (called at app exit)."""
     global _global_sysmon
-    if _global_sysmon is not None:
-        _global_sysmon.stop()
-        _global_sysmon = None
+    with _global_lock:
+        if _global_sysmon is not None:
+            _global_sysmon.stop()
+            _global_sysmon = None
 
 
 class SysMon:
@@ -148,13 +149,17 @@ class SysMon:
         self._gpu_name_checked = True
         try:
             if platform.system() == 'Windows':
+                # FIX BUG-L03: wmic is deprecated on Win11; use PowerShell Get-CimInstance
+                ps_cmd = (
+                    'Get-CimInstance Win32_VideoController | '
+                    'Select-Object -ExpandProperty Name'
+                )
                 r = subprocess.run(
-                    ['wmic', 'path', 'win32_VideoController', 'get', 'Name'],
+                    ['powershell', '-NoProfile', '-Command', ps_cmd],
                     capture_output=True, text=True, timeout=5
                 )
                 lines = [l.strip() for l in r.stdout.splitlines() if l.strip()]
-                # First line is "Name" header
-                gpus = [l for l in lines[1:] if l and not l.lower().startswith('name')]
+                gpus = [l for l in lines if l and not l.lower().startswith('name')]
                 if gpus:
                     # Filter out virtual display adapters, prefer real GPUs
                     real = [g for g in gpus if 'virtual' not in g.lower()

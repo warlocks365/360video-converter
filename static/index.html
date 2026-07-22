@@ -1596,6 +1596,7 @@ let importCandidates = [];
 let jobId = null;
 let pollTimer = null;
 let currentParams = {};
+let lastLogCount = 0;  // FIX BUG-M08: track rendered log count for incremental append
 
 let codecInfo = {};       // codec profiles from API
 let codecAvailability = {}; // which codecs are available
@@ -3292,7 +3293,7 @@ function showToast(msg, type) {
     document.body.appendChild(toast);
   }
   toast.textContent = msg;
-  toast.style.background = type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--danger)' : 'var(--accent)';
+  toast.style.background = type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--error)' : 'var(--accent)';
   toast.style.color = '#fff';
   toast.style.opacity = '1';
   toast.style.transform = 'translateY(0)';
@@ -3540,6 +3541,7 @@ async function skipItem(idx) {
 
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
+  lastLogCount = 0;  // FIX BUG-M08: reset log counter for new job
   pollTimer = setInterval(pollStatus, 500);
 }
 
@@ -3565,10 +3567,38 @@ async function pollStatus() {
 
   // sysmon is now handled by independent poller (pollSysMon)
 
+  // FIX BUG-M08: Incremental log append — only add new entries instead of full DOM rebuild
   const logBox = document.getElementById('logBox');
-  logBox.innerHTML = data.log.slice(-100).map(l =>
-    `<div class="log-line"><span class="log-ts">${l.ts}</span><span class="log-msg ${l.level}">${esc(l.msg)}</span></div>`
-  ).join('');
+  const totalLogs = data.log.length;
+  if (totalLogs < lastLogCount) {
+    // Log was reset (new job or cleared) — full rebuild
+    logBox.innerHTML = data.log.slice(-100).map(l =>
+      `<div class="log-line"><span class="log-ts">${l.ts}</span><span class="log-msg ${l.level}">${esc(l.msg)}</span></div>`
+    ).join('');
+  } else if (totalLogs > lastLogCount) {
+    // Append only new entries
+    const newEntries = data.log.slice(lastLogCount);
+    const frag = document.createDocumentFragment();
+    for (const l of newEntries) {
+      const div = document.createElement('div');
+      div.className = 'log-line';
+      const ts = document.createElement('span');
+      ts.className = 'log-ts';
+      ts.textContent = l.ts;
+      const msg = document.createElement('span');
+      msg.className = `log-msg ${l.level}`;
+      msg.textContent = l.msg;
+      div.appendChild(ts);
+      div.appendChild(msg);
+      frag.appendChild(div);
+    }
+    logBox.appendChild(frag);
+    // Trim old entries if over 100
+    while (logBox.children.length > 100) {
+      logBox.removeChild(logBox.firstChild);
+    }
+  }
+  lastLogCount = totalLogs;
   logBox.scrollTop = logBox.scrollHeight;
 
   if (currentMode === 'batch') {
@@ -3695,7 +3725,7 @@ function updateSysMon(sm) {
 }
 
 function esc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 function escapeStr(s) {
   return String(s || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
@@ -3807,6 +3837,14 @@ document.addEventListener('DOMContentLoaded', function() {
   if (/[?&]maptest=1/.test(location.search)) {
     setTimeout(() => openMapPicker('encode'), 600);
   }
+});
+
+// FIX BUG-L07/L08: Clean up all timers on page unload to prevent leaks
+window.addEventListener('beforeunload', function() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  if (sysmonTimer) { clearInterval(sysmonTimer); sysmonTimer = null; }
+  const toast = document.getElementById('toastNotification');
+  if (toast && toast._timer) { clearTimeout(toast._timer); }
 });
 
 // Override map picker to support both targets
@@ -4141,10 +4179,38 @@ pollStatus = async function() {
 
   // sysmon is now handled by independent poller (pollSysMon)
 
+  // FIX BUG-M08: Incremental log append — only add new entries instead of full DOM rebuild
   const logBox = document.getElementById('logBox');
-  logBox.innerHTML = data.log.slice(-100).map(l =>
-    `<div class="log-line"><span class="log-ts">${l.ts}</span><span class="log-msg ${l.level}">${esc(l.msg)}</span></div>`
-  ).join('');
+  const totalLogs = data.log.length;
+  if (totalLogs < lastLogCount) {
+    // Log was reset (new job or cleared) — full rebuild
+    logBox.innerHTML = data.log.slice(-100).map(l =>
+      `<div class="log-line"><span class="log-ts">${l.ts}</span><span class="log-msg ${l.level}">${esc(l.msg)}</span></div>`
+    ).join('');
+  } else if (totalLogs > lastLogCount) {
+    // Append only new entries
+    const newEntries = data.log.slice(lastLogCount);
+    const frag = document.createDocumentFragment();
+    for (const l of newEntries) {
+      const div = document.createElement('div');
+      div.className = 'log-line';
+      const ts = document.createElement('span');
+      ts.className = 'log-ts';
+      ts.textContent = l.ts;
+      const msg = document.createElement('span');
+      msg.className = `log-msg ${l.level}`;
+      msg.textContent = l.msg;
+      div.appendChild(ts);
+      div.appendChild(msg);
+      frag.appendChild(div);
+    }
+    logBox.appendChild(frag);
+    // Trim old entries if over 100
+    while (logBox.children.length > 100) {
+      logBox.removeChild(logBox.firstChild);
+    }
+  }
+  lastLogCount = totalLogs;
   logBox.scrollTop = logBox.scrollHeight;
 
   // Handle pause state from server
@@ -4429,7 +4495,7 @@ function updateItemTimeInfo(row, item, itemIndex, data, nowSec) {
   // Completed item: show actual elapsed
   if (item.start_time && item.end_time) {
     const elapsed = item.end_time - item.start_time;
-    const color = item.ok === false ? 'var(--danger)' : 'var(--success)';
+    const color = item.ok === false ? 'var(--error)' : 'var(--success)';
     timeCell.innerHTML = `<span style="color:${color};">${fmtTime(elapsed)}</span>`;
     return;
   }
@@ -4437,7 +4503,7 @@ function updateItemTimeInfo(row, item, itemIndex, data, nowSec) {
   // Failed item without end_time: show elapsed until now
   if (item.start_time && item.ok === false) {
     const elapsed = (item.end_time || nowSec) - item.start_time;
-    timeCell.innerHTML = `<span style="color:var(--danger);">${fmtTime(elapsed)}</span>`;
+    timeCell.innerHTML = `<span style="color:var(--error);">${fmtTime(elapsed)}</span>`;
     return;
   }
 
