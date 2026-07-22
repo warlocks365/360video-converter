@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="UTF-8">
+<title>地图诊断</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  body { font-family: sans-serif; padding: 20px; background: #1a1a1a; color: #eee; }
+  .box { background:#2a2a2a; padding:14px 18px; border-radius:8px; margin-bottom:14px; }
+  .ok { color:#4ade80; font-weight:bold; }
+  .bad { color:#f87171; font-weight:bold; }
+  .warn { color:#fbbf24; }
+  .map-fix { width:100%; height:400px; border:2px solid #f87171; border-radius:8px; }
+  /* Reproduce the modal flex layout */
+  .modal-sim { max-height:80vh; display:flex; flex-direction:column; background:#222; border-radius:10px; overflow:hidden; }
+  .modal-sim .header { padding:16px 20px; border-bottom:1px solid #444; }
+  .modal-sim .search { padding:12px 20px; border-bottom:1px solid #444; }
+  .modal-sim .results { max-height:180px; overflow:auto; border-bottom:1px solid #444; }
+  .modal-sim #mapFlex { width:100%; height:400px; }
+  .modal-sim .footer { padding:12px 20px; border-top:1px solid #444; }
+  pre { white-space:pre-wrap; word-break:break-all; margin:0; }
+</style>
+</head>
+<body>
+<h1>地图诊断</h1>
+
+<div class="box" id="t1"><span class="ok">✅ Leaflet 已加载</span> — 版本: 1.9.4</div>
+<div class="box" id="t2"><strong>容器尺寸（初始化前）:</strong><br>A. mapFix (独立): clientWidth=685 clientHeight=400 offsetHeight=404<br>B. mapFlex (modal内): clientWidth=685 clientHeight=221 offsetHeight=221<br><span class="ok">mapFlex 有高度，flex 布局正常</span></div>
+<div class="box" id="t3"><strong>诊断结论:</strong> 看 A 和 B 哪个地图显示了瓦片。<br>如果 A 显示但 B 不显示 → flex 布局压缩容器，需给 #mapContainer 加 flex-shrink:0 或改 min-height</div>
+
+<h3>A. 独立容器（固定高度，不在 modal 内）</h3>
+<div id="mapFix" class="map-fix leaflet-container leaflet-touch leaflet-fade-anim leaflet-grab leaflet-touch-drag leaflet-touch-zoom" tabindex="0" style="position: relative;"><div class="leaflet-pane leaflet-map-pane" style="transform: translate3d(0px, 0px, 0px);"><div class="leaflet-pane leaflet-tile-pane"><div class="leaflet-layer " style="z-index: 1; opacity: 1;"><div class="leaflet-tile-container leaflet-zoom-animated" style="z-index: 19; transform: translate3d(0px, 0px, 0px) scale(1);"><img alt="" src="https://b.tile.openstreetmap.org/5/26/11.png" class="leaflet-tile leaflet-tile-loaded" style="width: 256px; height: 256px; transform: translate3d(254px, -88px, 0px); opacity: 1;"><img alt="" src="https://c.tile.openstreetmap.org/5/26/12.png" class="leaflet-tile leaflet-tile-loaded" style="width: 256px; height: 256px; transform: translate3d(254px, 168px, 0px); opacity: 1;"><img alt="" src="https://a.tile.openstreetmap.org/5/25/11.png" class="leaflet-tile leaflet-tile-loaded" style="width: 256px; height: 256px; transform: translate3d(-2px, -88px, 0px); opacity: 1;"><img alt="" src="https://c.tile.openstreetmap.org/5/27/11.png" class="leaflet-tile leaflet-tile-loaded" style="width: 256px; height: 256px; transform: translate3d(510px, -88px, 0px); opacity: 1;"><img alt="" src="https://b.tile.openstreetmap.org/5/25/12.png" class="leaflet-tile leaflet-tile-loaded" style="width: 256px; height: 256px; transform: translate3d(-2px, 168px, 0px); opacity: 0.005;"><img alt="" src="https://a.tile.openstreetmap.org/5/27/12.png" class="leaflet-tile leaflet-tile-loaded" style="width: 256px; height: 256px; transform: translate3d(510px, 168px, 0px); opacity: 1;"></div></div></div><div class="leaflet-pane leaflet-overlay-pane"></div><div class="leaflet-pane leaflet-shadow-pane"></div><div class="leaflet-pane leaflet-marker-pane"></div><div class="leaflet-pane leaflet-tooltip-pane"></div><div class="leaflet-pane leaflet-popup-pane"></div><div class="leaflet-proxy leaflet-zoom-animated"></div></div><div class="leaflet-control-container"><div class="leaflet-top leaflet-left"><div class="leaflet-control-zoom leaflet-bar leaflet-control"><a class="leaflet-control-zoom-in" href="#" title="Zoom in" role="button" aria-label="Zoom in" aria-disabled="false"><span aria-hidden="true">+</span></a><a class="leaflet-control-zoom-out" href="#" title="Zoom out" role="button" aria-label="Zoom out" aria-disabled="false"><span aria-hidden="true">−</span></a></div></div><div class="leaflet-top leaflet-right"></div><div class="leaflet-bottom leaflet-left"></div><div class="leaflet-bottom leaflet-right"><div class="leaflet-control-attribution leaflet-control"><a href="https://leafletjs.com" title="A JavaScript library for interactive maps"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="12" height="8" viewBox="0 0 12 8" class="leaflet-attribution-flag"><path fill="#4C7BE1" d="M0 0h12v4H0z"></path><path fill="#FFD500" d="M0 4h12v3H0z"></path><path fill="#E0BC00" d="M0 7h12v1H0z"></path></svg> Leaflet</a></div></div></div></div>
+<div class="box" id="t4"><span class="ok">✅ 独立地图已创建</span> — _size={"x":685,"y":400} hasLayer(基础瓦片)=true</div>
+
+<h3>B. 模拟 modal flex 布局（max-height:80vh + flex-column）</h3>
+<div class="modal-sim">
+  <div class="header">header</div>
+  <div class="search">search bar</div>
+  <div class="results">search results (max-height 180px)</div>
+  <div id="mapFlex" class="leaflet-container leaflet-touch leaflet-fade-anim leaflet-grab leaflet-touch-drag leaflet-touch-zoom" tabindex="0" style="position: relative;"><div class="leaflet-pane leaflet-map-pane" style="transform: translate3d(0px, 0px, 0px);"><div class="leaflet-pane leaflet-tile-pane"><div class="leaflet-layer " style="z-index: 1; opacity: 1;"><div class="leaflet-tile-container leaflet-zoom-animated" style="z-index: 19; transform: translate3d(0px, 0px, 0px) scale(1);"><img alt="" src="https://b.tile.openstreetmap.org/5/26/11.png" class="leaflet-tile leaflet-tile-loaded" style="width: 256px; height: 256px; transform: translate3d(254px, -178px, 0px); opacity: 1;"><img alt="" src="https://c.tile.openstreetmap.org/5/26/12.png" class="leaflet-tile leaflet-tile-loaded" style="width: 256px; height: 256px; transform: translate3d(254px, 78px, 0px); opacity: 1;"><img alt="" src="https://a.tile.openstreetmap.org/5/25/11.png" class="leaflet-tile leaflet-tile-loaded" style="width: 256px; height: 256px; transform: translate3d(-2px, -178px, 0px); opacity: 1;"><img alt="" src="https://c.tile.openstreetmap.org/5/27/11.png" class="leaflet-tile leaflet-tile-loaded" style="width: 256px; height: 256px; transform: translate3d(510px, -178px, 0px); opacity: 1;"><img alt="" src="https://b.tile.openstreetmap.org/5/25/12.png" class="leaflet-tile leaflet-tile-loaded" style="width: 256px; height: 256px; transform: translate3d(-2px, 78px, 0px); opacity: 0.005;"><img alt="" src="https://a.tile.openstreetmap.org/5/27/12.png" class="leaflet-tile leaflet-tile-loaded" style="width: 256px; height: 256px; transform: translate3d(510px, 78px, 0px); opacity: 1;"></div></div></div><div class="leaflet-pane leaflet-overlay-pane"></div><div class="leaflet-pane leaflet-shadow-pane"></div><div class="leaflet-pane leaflet-marker-pane"></div><div class="leaflet-pane leaflet-tooltip-pane"></div><div class="leaflet-pane leaflet-popup-pane"></div><div class="leaflet-proxy leaflet-zoom-animated"></div></div><div class="leaflet-control-container"><div class="leaflet-top leaflet-left"><div class="leaflet-control-zoom leaflet-bar leaflet-control"><a class="leaflet-control-zoom-in" href="#" title="Zoom in" role="button" aria-label="Zoom in" aria-disabled="false"><span aria-hidden="true">+</span></a><a class="leaflet-control-zoom-out" href="#" title="Zoom out" role="button" aria-label="Zoom out" aria-disabled="false"><span aria-hidden="true">−</span></a></div></div><div class="leaflet-top leaflet-right"></div><div class="leaflet-bottom leaflet-left"></div><div class="leaflet-bottom leaflet-right"><div class="leaflet-control-attribution leaflet-control"><a href="https://leafletjs.com" title="A JavaScript library for interactive maps"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" width="12" height="8" viewBox="0 0 12 8" class="leaflet-attribution-flag"><path fill="#4C7BE1" d="M0 0h12v4H0z"></path><path fill="#FFD500" d="M0 4h12v3H0z"></path><path fill="#E0BC00" d="M0 7h12v1H0z"></path></svg> Leaflet</a></div></div></div></div>
+  <div class="footer">footer</div>
+</div>
+<div class="box" id="t5"><span class="ok">✅ flex内地图已创建</span> — _size={"x":685,"y":221}</div>
+
+<script>
+(function(){
+  const log = [];
+  function out(id, html){ document.getElementById(id).innerHTML = html; }
+  function add(msg){ log.push(msg); }
+
+  // Test 1: Leaflet loaded?
+  try {
+    if (typeof L === 'undefined') {
+      out('t1', '<span class="bad">❌ Leaflet (L) 未定义</span> — unpkg.com 可能被阻断，或 JS 加载失败');
+    } else {
+      out('t1', '<span class="ok">✅ Leaflet 已加载</span> — 版本: ' + L.version);
+    }
+  } catch(e){ out('t1', '<span class="bad">检查 L 时异常: '+e+'</span>'); }
+
+  // Test 2: container sizes BEFORE map init
+  const fixEl = document.getElementById('mapFix');
+  const flexEl = document.getElementById('mapFlex');
+  out('t2', '<strong>容器尺寸（初始化前）:</strong><br>' +
+    'A. mapFix (独立): clientWidth=' + fixEl.clientWidth + ' clientHeight=' + fixEl.clientHeight +
+    ' offsetHeight=' + fixEl.offsetHeight + '<br>' +
+    'B. mapFlex (modal内): clientWidth=' + flexEl.clientWidth + ' clientHeight=' + flexEl.clientHeight +
+    ' offsetHeight=' + flexEl.offsetHeight + '<br>' +
+    '<span class="' + (flexEl.clientHeight === 0 ? 'bad' : 'ok') + '">' +
+    (flexEl.clientHeight === 0 ? '⚠️ mapFlex 高度为 0 — flex 布局压缩了容器！这就是地图不显示的根因' :
+     'mapFlex 有高度，flex 布局正常') + '</span>');
+
+  // Test 3: init fixed map
+  try {
+    const m1 = L.map('mapFix', { zoom: 5, center: [39.909, 116.397] });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(m1);
+    setTimeout(function(){ m1.invalidateSize(false); }, 100);
+    out('t4', '<span class="ok">✅ 独立地图已创建</span> — _size=' + JSON.stringify(m1.getSize()) +
+      ' hasLayer(基础瓦片)=' + (function(){ var t=false; m1.eachLayer(function(l){ if(l._url) t=true; }); return t; })());
+  } catch(e){ out('t4', '<span class="bad">❌ 独立地图创建失败: '+e+'</span>'); }
+
+  // Test 4: init flex map
+  try {
+    const m2 = L.map('mapFlex', { zoom: 5, center: [39.909, 116.397] });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(m2);
+    setTimeout(function(){ m2.invalidateSize(false); }, 100);
+    out('t5', '<span class="ok">✅ flex内地图已创建</span> — _size=' + JSON.stringify(m2.getSize()));
+  } catch(e){ out('t5', '<span class="bad">❌ flex内地图创建失败: '+e+'</span>'); }
+
+  out('t3', '<strong>诊断结论:</strong> 看 A 和 B 哪个地图显示了瓦片。<br>' +
+    '如果 A 显示但 B 不显示 → flex 布局压缩容器，需给 #mapContainer 加 flex-shrink:0 或改 min-height');
+})();
+</script>
+
+
+</body></html>
