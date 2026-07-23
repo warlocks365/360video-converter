@@ -39,3 +39,4 @@ build_exe_v*.log
 build_installer_v*.log
 _extract.py
 _test_*.py
+.edge_tmp_profile/

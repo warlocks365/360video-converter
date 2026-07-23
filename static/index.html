@@ -566,8 +566,8 @@ tr:hover td { background: var(--surface-hover); }
 .report-row .value.warn { color: var(--warning); }
 @media (max-width: 768px) { .report-grid { grid-template-columns: 1fr; } }
 </style>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="/leaflet/leaflet.css">
+<script src="/leaflet/leaflet.js"></script>
 </head>
 <body>
 <div class="app">
@@ -1586,6 +1586,20 @@ tr:hover td { background: var(--surface-hover); }
 </div>
 
 <script>
+// FIX: Global error handler — captures uncaught errors and displays them
+// as a visible toast so the user (and developer) can see what went wrong
+// instead of silent failures in WebView2.
+window.addEventListener('error', function(e) {
+  const msg = e.message || 'Unknown error';
+  const src = e.filename ? e.filename.split('/').pop() : '';
+  const line = e.lineno || '';
+  console.error('[Global Error]', msg, src, line);
+  const toast = document.createElement('div');
+  toast.style.cssText = 'position:fixed;top:10px;right:10px;background:var(--error);color:#fff;padding:10px 16px;border-radius:6px;font-size:0.82rem;z-index:99999;box-shadow:0 2px 12px rgba(0,0,0,0.3);max-width:400px;word-break:break-word;';
+  toast.textContent = 'JS错误: ' + msg + (src ? ' (' + src + ':' + line + ')' : '');
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 8000);
+});
 // ── State ──────────────────────────────────────────
 let currentMode = 'single';
 // Batch is now task-list-centric: each entry carries its own export params + output.
@@ -1608,6 +1622,18 @@ let codecFixHints = {};       // fix hints per codec
 let mapInstance = null;
 let mapMarker = null;
 let mapSelectedLocation = null;  // {name, lat, lon, address}
+
+// FIX: Configure Leaflet default marker icon paths to use local files.
+// When Leaflet is loaded from a CDN or local path, the default icon URLs
+// may not resolve correctly in WebView2, causing invisible markers.
+if (typeof L !== 'undefined') {
+  delete L.Icon.Default.prototype._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: '/leaflet/images/marker-icon-2x.png',
+    iconUrl: '/leaflet/images/marker-icon.png',
+    shadowUrl: '/leaflet/images/marker-shadow.png',
+  });
+}
 
 const DEFAULT_PARAMS = {
   codec:'libx264', resolution:'4096x2048', profile:'high', level:'5.1', pix_fmt:'yuv420p',
@@ -1911,6 +1937,16 @@ function initMap() {
 }
 
 function createMapInstance() {
+  // FIX: Check if Leaflet loaded — if L is undefined, show a visible error
+  // instead of silently failing with a ReferenceError.
+  if (typeof L === 'undefined') {
+    const container = document.getElementById('mapContainer');
+    if (container) {
+      container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--error);font-size:0.9rem;padding:20px;text-align:center;">' +
+        '地图引擎加载失败 — Leaflet 库未加载。<br>请检查网络连接或联系技术支持。</div>';
+    }
+    return;
+  }
   // Destroy previous Leaflet instance if any (avoids "already initialized" error)
   if (mapInstance) {
     try { mapInstance.remove(); } catch(e) {}
@@ -1923,37 +1959,51 @@ function createMapInstance() {
   const container = document.getElementById('mapContainer');
   const w = container ? container.clientWidth : 0;
   const h = container ? container.clientHeight : 0;
+  // FIX: initialize _tries to 0 before comparison — undefined < 8 is false
+  // in JS (NaN comparison), which silently skipped the retry logic on the
+  // very first call when the container might still be 0×0.
+  createMapInstance._tries = (createMapInstance._tries || 0);
   if ((w === 0 || h === 0) && createMapInstance._tries < 8) {
-    createMapInstance._tries = (createMapInstance._tries || 0) + 1;
+    createMapInstance._tries++;
     setTimeout(() => createMapInstance(), 60);
     return;
   }
   createMapInstance._tries = 0;
-  // Leaflet uses [lat, lng] order (unlike AMap which uses [lng, lat])
-  mapInstance = L.map('mapContainer', {
-    zoom: 5,
-    center: [39.90923, 116.397428],  // Default: Beijing
-    zoomControl: true,
-  });
-  // OSM tiles — global coverage, WGS-84 coordinate system
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors',
-    maxZoom: 19,
-  }).addTo(mapInstance);
+  try {
+    // Leaflet uses [lat, lng] order (unlike AMap which uses [lng, lat])
+    mapInstance = L.map('mapContainer', {
+      zoom: 5,
+      center: [39.90923, 116.397428],  // Default: Beijing
+      zoomControl: true,
+    });
+    // OSM tiles — global coverage, WGS-84 coordinate system
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(mapInstance);
 
-  // Click to select location
-  mapInstance.on('click', (e) => {
-    const lat = e.latlng.lat;
-    const lng = e.latlng.lng;
-    reverseGeocode(lat, lng);
-  });
+    // Click to select location
+    mapInstance.on('click', (e) => {
+      const lat = e.latlng.lat;
+      const lng = e.latlng.lng;
+      reverseGeocode(lat, lng);
+    });
 
-  // Force Leaflet to recalculate tile layout after modal becomes visible.
-  // Pass animate=false so the size update applies synchronously. Repeat at
-  // 200/600/1200ms — some WebViews paint the modal lazily.
-  [200, 600, 1200].forEach((ms) => {
-    setTimeout(() => { if (mapInstance) mapInstance.invalidateSize(false); }, ms);
-  });
+    // Force Leaflet to recalculate tile layout after modal becomes visible.
+    // Pass animate=false so the size update applies synchronously. Repeat at
+    // 200/600/1200ms — some WebViews paint the modal lazily.
+    [200, 600, 1200].forEach((ms) => {
+      setTimeout(() => { if (mapInstance) mapInstance.invalidateSize(false); }, ms);
+    });
+  } catch(e) {
+    // FIX: Surface map creation errors visibly instead of silently failing
+    const c = document.getElementById('mapContainer');
+    if (c) {
+      c.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--error);font-size:0.85rem;padding:20px;text-align:center;">' +
+        '地图初始化错误: ' + escapeHtml(e.message || String(e)) + '</div>';
+    }
+    mapInstance = null;
+  }
 }
 
 // Cached search results — onclick passes index, avoiding special-char injection
@@ -2078,6 +2128,12 @@ function selectSearchResultByIndex(i) {
 }
 
 function selectSearchResult(lat, lon, name, address) {
+  // FIX: Guard against null mapInstance — if map failed to initialize,
+  // show an alert instead of throwing an uncaught TypeError.
+  if (!mapInstance) {
+    alert('地图尚未初始化，无法选择位置。请关闭地图窗口后重新打开。');
+    return;
+  }
   // Leaflet uses [lat, lng] order
   if (mapMarker) mapInstance.removeLayer(mapMarker);
   mapMarker = L.marker([lat, lon]).addTo(mapInstance);
@@ -2094,6 +2150,8 @@ function selectSearchResult(lat, lon, name, address) {
 }
 
 async function reverseGeocode(lat, lon, fallbackName) {
+  // FIX: Guard against null mapInstance — called from map click handler
+  if (!mapInstance) return;
   if (mapMarker) mapInstance.removeLayer(mapMarker);
   mapMarker = L.marker([lat, lon]).addTo(mapInstance);
   mapInstance.setView([lat, lon], 15);
@@ -2171,7 +2229,7 @@ async function reverseGeocode(lat, lon, fallbackName) {
 }
 
 function clearMapSelection() {
-  if (mapMarker) { mapInstance.removeLayer(mapMarker); mapMarker = null; }
+  if (mapMarker && mapInstance) { mapInstance.removeLayer(mapMarker); mapMarker = null; }
   mapSelectedLocation = null;
   document.getElementById('mapSelectedName').textContent = '未选择位置';
   document.getElementById('mapSelectedCoords').textContent = '';
