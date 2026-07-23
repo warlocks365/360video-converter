@@ -1027,15 +1027,17 @@ def build_cmd(inp, out, params, pass_num=0, passlogfile=None):
         cmd += ['-metadata', f'creation_time={creation_time}']
 
     # Metadata: location (ISO 6709 format: +lat-lon/) + location.name + comment (address)
+    # FIX BUG: MP4 muxer stores location (©xyz atom) at FORMAT level only.
+    # Using -metadata:s:v:0 silently drops the location tag. Must use -metadata.
     loc_lat = params.get('location_lat', '')
     loc_lon = params.get('location_lon', '')
     if params.get('set_location') and loc_lat and loc_lon:
         iso6709 = format_location_iso6709(loc_lat, loc_lon)
         if iso6709:
-            cmd += ['-metadata:s:v:0', f'location={iso6709}']
+            cmd += ['-metadata', f'location={iso6709}']
         loc_name = params.get('location_name', '')
         if loc_name:
-            cmd += ['-metadata:s:v:0', f'location.name={loc_name}']
+            cmd += ['-metadata', f'location.name={loc_name}']
         loc_addr = params.get('location_address', '')
         if loc_addr:
             cmd += ['-metadata', f'comment={loc_addr}']
@@ -1978,13 +1980,15 @@ def apply_metadata_one(jid, inp, out, params):
             log_line(jid, f'  creation_time={effective_ct}')
 
         # Metadata: location (ISO 6709) + location.name + comment (address)
+        # FIX BUG: MP4 muxer stores location (©xyz atom) at FORMAT level only.
+        # Using -metadata:s:v:0 silently drops the location tag. Must use -metadata.
         if apply_location and params.get('location_lat') and params.get('location_lon'):
             iso6709 = format_location_iso6709(params['location_lat'], params['location_lon'])
             if iso6709:
-                cmd += ['-metadata:s:v:0', f'location={iso6709}']
+                cmd += ['-metadata', f'location={iso6709}']
             loc_name = params.get('location_name', '')
             if loc_name:
-                cmd += ['-metadata:s:v:0', f'location.name={loc_name}']
+                cmd += ['-metadata', f'location.name={loc_name}']
             loc_addr = params.get('location_address', '')
             if loc_addr:
                 cmd += ['-metadata', f'comment={loc_addr}']
