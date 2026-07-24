@@ -1178,77 +1178,59 @@ tr:hover td { background: var(--surface-hover); }
         直接为视频文件添加元数据，不重新编码（使用 ffmpeg <code>-c copy</code> 流复制）。可独立使用以下功能，也可组合使用。
       </div>
 
-      <!-- File Mode -->
+      <!-- Single File Input -->
       <div class="field">
-        <label class="check">
-          <input type="radio" name="metaFileMode" value="single" checked onchange="toggleMetaFileMode()">
-          单个文件
-        </label>
-        <label class="check">
-          <input type="radio" name="metaFileMode" value="batch" onchange="toggleMetaFileMode()">
-          批量（递归扫描）
-        </label>
-      </div>
-
-      <div id="metaSingleFile" class="field">
         <label class="field-label">视频文件</label>
         <div class="input-group">
           <input class="input" id="metaInput" placeholder="选择或输入视频文件路径..." onchange="probeSourceVideo(this.value, 'm')">
           <button class="btn" onclick="openFileBrowser('metaInput', false, 'video')">浏览...</button>
+          <button class="btn btn-primary" onclick="addToMetaBatchList()">&#128203; 加入批量列表</button>
         </div>
         <div id="metaSourceInfo" class="source-info hidden"></div>
-        <label class="check" style="margin-top:8px;">
-          <input type="checkbox" id="metaInPlace" checked>
-          原地修改（覆盖原文件）
-        </label>
-        <div id="metaOutputField" class="field hidden" style="margin-top:8px;">
-          <label class="field-label">输出文件</label>
-          <div class="input-group">
-            <input class="input" id="metaOutput" placeholder="选择或输入输出文件路径...">
-            <button class="btn" onclick="openMetaOutputDialog()">浏览...</button>
-          </div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">选择文件后点击「加入批量列表」添加到下方队列；若列表为空，直接点击「应用元数据」处理当前文件</div>
+      </div>
+
+      <!-- Scan Directory (batch import) -->
+      <div class="field" style="margin-top:8px;">
+        <label class="field-label">扫描目录（批量导入）</label>
+        <div class="input-group">
+          <input class="input" id="metaBatchDir" placeholder="选择或输入源路径（支持网络映射盘符）..." onkeydown="if(event.key==='Enter')scanMetaDirectory()">
+          <button class="btn" onclick="openFileBrowser('metaBatchDir', true)">浏览...</button>
+          <button class="btn btn-primary" onclick="scanMetaDirectory()">扫描视频</button>
         </div>
       </div>
 
-      <div id="metaBatchFile" class="hidden">
-        <div class="field">
-          <label class="field-label">扫描</label>
-          <div class="input-group">
-            <input class="input" id="metaBatchDir" placeholder="选择或输入源路径（支持网络映射盘符）..." onkeydown="if(event.key==='Enter')scanMetaDirectory()">
-            <button class="btn" onclick="openFileBrowser('metaBatchDir', true)">浏览...</button>
-            <button class="btn btn-primary" onclick="scanMetaDirectory()">扫描视频</button>
-          </div>
-          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">扫描结果会追加到下方列表，可勾选/移除/手动添加文件，仅处理勾选的文件</div>
+      <!-- Output Directory -->
+      <div class="field" style="margin-top:8px;">
+        <label class="field-label">输出目录（留空 = 原地修改）</label>
+        <div class="input-group">
+          <input class="input" id="metaBatchOutDir" placeholder="留空则原地修改文件...">
+          <button class="btn" onclick="openFileBrowser('metaBatchOutDir', true)">浏览...</button>
         </div>
-        <div class="field">
-          <label class="field-label">输出（留空 = 原地修改）</label>
-          <div class="input-group">
-            <input class="input" id="metaBatchOutDir" placeholder="输出 (留空则原地修改)...">
-            <button class="btn" onclick="openFileBrowser('metaBatchOutDir', true)">浏览...</button>
-          </div>
+      </div>
+
+      <!-- Batch Execution List (always visible) -->
+      <div style="margin-top:12px;">
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+          <strong style="font-size:0.85rem;">批量执行列表</strong>
+          <button class="btn btn-sm" onclick="selectAllMetaFiles(true)">全选</button>
+          <button class="btn btn-sm" onclick="selectAllMetaFiles(false)">全不选</button>
+          <button class="btn btn-sm" onclick="removeSelectedMetaFiles()">移除选中</button>
+          <button class="btn btn-sm btn-danger" onclick="clearMetaFiles()">清空列表</button>
+          <span id="metaQueueCount" class="badge"></span>
         </div>
-        <div id="metaFileList" class="hidden" style="margin-top:8px;">
-          <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
-            <button class="btn btn-sm" onclick="addMetaFileManual()">&#10133; 添加文件</button>
-            <button class="btn btn-sm" onclick="selectAllMetaFiles(true)">全选</button>
-            <button class="btn btn-sm" onclick="selectAllMetaFiles(false)">全不选</button>
-            <button class="btn btn-sm" onclick="removeSelectedMetaFiles()">移除选中</button>
-            <button class="btn btn-sm btn-danger" onclick="clearMetaFiles()">清空列表</button>
-            <span id="metaQueueCount" class="badge"></span>
-          </div>
-          <div class="table-wrap" style="max-height:400px;overflow-y:auto;">
-            <table>
-              <thead>
-                <tr>
-                  <th style="width:36px;"><input type="checkbox" id="metaSelectAll" onchange="selectAllMetaFiles(this.checked)"></th>
-                  <th>#</th><th>源文件</th><th>大小</th><th>文件名日期</th><th>状态</th><th style="width:60px;">操作</th>
-                </tr>
-              </thead>
-              <tbody id="metaBatchTableBody">
-                <tr><td colspan="7" style="text-align:center;color:var(--text-muted)">扫描目录或添加文件后显示列表</td></tr>
-              </tbody>
-            </table>
-          </div>
+        <div class="table-wrap" style="max-height:400px;overflow-y:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:36px;"><input type="checkbox" id="metaSelectAll" onchange="selectAllMetaFiles(this.checked)"></th>
+                <th>#</th><th>源文件</th><th>大小</th><th>文件名日期</th><th>状态</th><th style="width:60px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="metaBatchTableBody">
+              <tr><td colspan="7" style="text-align:center;color:var(--text-muted)">选择文件后点击「加入批量列表」，或扫描目录批量导入</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -2956,9 +2938,7 @@ async function openFileBrowser(targetId, isDir, fileFilter) {
         if (outEl) outEl.value = '';
       }
       if (targetId === 'metaInput') {
-        // Clear output path when input changes
-        const outEl = document.getElementById('metaOutput');
-        if (outEl) outEl.value = '';
+        // Input changed, no separate output field to clear
       }
     }
   } catch(e) {
@@ -3001,22 +2981,6 @@ async function openSingleOutputDialog(targetId) {
   }
   await openSaveDialog(defaultName, function(path) {
     const el = document.getElementById(tid);
-    if (el) {
-      el.value = path;
-      el.dispatchEvent(new Event('change', {bubbles: true}));
-    }
-  }, 'video');
-}
-
-// ── Meta Output Save Dialog ────────────────────────
-async function openMetaOutputDialog() {
-  const inp = document.getElementById('metaInput').value;
-  let defaultName = '';
-  if (inp) {
-    defaultName = inp.split(/[\\/]/).pop();
-  }
-  await openSaveDialog(defaultName, function(path) {
-    const el = document.getElementById('metaOutput');
     if (el) {
       el.value = path;
       el.dispatchEvent(new Event('change', {bubbles: true}));
@@ -3847,10 +3811,26 @@ let metaBatchItems = [];  // {path, name, size_mb, date_in_name, selected, statu
 let _metaProcessingIndices = [];  // maps backend item index → metaBatchItems index
 let mapPickerTarget = 'encode'; // 'encode' or 'meta'
 
-function toggleMetaFileMode() {
-  const mode = document.querySelector('input[name="metaFileMode"]:checked').value;
-  document.getElementById('metaSingleFile').classList.toggle('hidden', mode !== 'single');
-  document.getElementById('metaBatchFile').classList.toggle('hidden', mode !== 'batch');
+function addToMetaBatchList() {
+  const inp = document.getElementById('metaInput').value.trim();
+  if (!inp) { alert('请先选择视频文件'); return; }
+  if (metaBatchItems.some(f => f.path === inp)) {
+    showToast('文件已在列表中', 'warning');
+    return;
+  }
+  const name = inp.split(/[\/\\]/).pop();
+  metaBatchItems.push({
+    path: inp,
+    name: name,
+    size_mb: '',
+    date_in_name: '',
+    selected: true,
+    status: 'pending',
+    statusMsg: '',
+    duration: ''
+  });
+  renderMetaBatchTable();
+  showToast(`已添加到批量列表（共 ${metaBatchItems.length} 项）`, 'success');
 }
 
 function toggleMetaDate() {
@@ -3869,25 +3849,21 @@ async function updateMetaDatePreview() {
     document.getElementById('metaDatePreview').innerHTML = '';
     return;
   }
-  // For single file mode, extract date from filename
-  const fileMode = document.querySelector('input[name="metaFileMode"]:checked').value;
-  if (fileMode === 'single') {
-    const filename = document.getElementById('metaInput').value;
-    if (!filename) {
-      document.getElementById('metaDatePreview').innerHTML = '';
-      return;
-    }
-    const r = await fetch('/api/extract_date', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({filename: filename.split(/[\/\\]/).pop()})
-    });
-    const data = await r.json();
-    const container = document.getElementById('metaDatePreview');
-    if (data.date_str) {
-      container.innerHTML = `<div class="date-preview">&#128197; 从文件名提取: <strong>${data.date_str}</strong></div>`;
-    } else {
-      container.innerHTML = `<div class="date-preview no-date">&#9888; 文件名中未找到日期</div>`;
-    }
+  const filename = document.getElementById('metaInput').value;
+  if (!filename) {
+    document.getElementById('metaDatePreview').innerHTML = '';
+    return;
+  }
+  const r = await fetch('/api/extract_date', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({filename: filename.split(/[\/\\]/).pop()})
+  });
+  const data = await r.json();
+  const container = document.getElementById('metaDatePreview');
+  if (data.date_str) {
+    container.innerHTML = `<div class="date-preview">&#128197; 从文件名提取: <strong>${data.date_str}</strong></div>`;
+  } else {
+    container.innerHTML = `<div class="date-preview no-date">&#9888; 文件名中未找到日期</div>`;
   }
 }
 
@@ -3973,17 +3949,14 @@ async function addMetaFileManual() {
 
 function renderMetaBatchTable() {
   const tbody = document.getElementById('metaBatchTableBody');
-  const listEl = document.getElementById('metaFileList');
   const countEl = document.getElementById('metaQueueCount');
   if (!tbody) return;
 
   if (metaBatchItems.length === 0) {
-    listEl.classList.add('hidden');
     if (countEl) countEl.textContent = '';
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">扫描目录或添加文件后显示列表</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">选择文件后点击「加入批量列表」，或扫描目录批量导入</td></tr>';
     return;
   }
-  listEl.classList.remove('hidden');
   const selectedCount = metaBatchItems.filter(f => f.selected).length;
   if (countEl) countEl.textContent = `${metaBatchItems.length} 个文件 (${selectedCount} 选中)`;
 
@@ -4055,14 +4028,8 @@ function removeMetaFile(idx) {
 }
 
 
-// Metadata in-place toggle
+// Metadata DOMContentLoaded
 document.addEventListener('DOMContentLoaded', function() {
-  const inPlace = document.getElementById('metaInPlace');
-  if (inPlace) {
-    inPlace.addEventListener('change', function() {
-      document.getElementById('metaOutputField').classList.toggle('hidden', this.checked);
-    });
-  }
   // Test entry: auto-open map picker for automated regression screenshot.
   // Only triggers when URL contains ?maptest=1.
   if (/[?&]maptest=1/.test(location.search)) {
@@ -4255,25 +4222,11 @@ async function startMetadataApply() {
   }
 
   let items = [];
-  const fileMode = document.querySelector('input[name="metaFileMode"]:checked').value;
+  const selectedFiles = metaBatchItems.filter(f => f.selected);
 
-  if (fileMode === 'single') {
-    const inp = document.getElementById('metaInput').value;
-    if (!inp) { alert('请选择视频文件'); return; }
-    const inPlace = document.getElementById('metaInPlace').checked;
-    let out;
-    if (inPlace) {
-      out = inp;
-    } else {
-      out = document.getElementById('metaOutput').value;
-      if (!out) { alert('请选择输出文件或勾选原地修改'); return; }
-    }
-    items = [{input: inp, output: out}];
-  } else {
-    const selectedFiles = metaBatchItems.filter(f => f.selected);
-    if (selectedFiles.length === 0) { alert('请先添加并勾选文件'); return; }
+  if (selectedFiles.length > 0) {
+    // Batch mode: process all selected files in the batch list
     const outDir = document.getElementById('metaBatchOutDir').value.trim();
-    // Build items list and record mapping from backend index → metaBatchItems index
     _metaProcessingIndices = [];
     items = [];
     metaBatchItems.forEach((f, i) => {
@@ -4289,6 +4242,13 @@ async function startMetadataApply() {
       }
     });
     renderMetaBatchTable();
+  } else {
+    // Single file mode: process the file in the input field
+    const inp = document.getElementById('metaInput').value.trim();
+    if (!inp) { alert('请选择视频文件，或将文件加入批量列表'); return; }
+    const outDir = document.getElementById('metaBatchOutDir').value.trim();
+    const name = inp.split(/[\/\\]/).pop();
+    items = [{input: inp, output: outDir ? `${outDir}\\${name}` : inp}];
   }
 
   const r = await fetch('/api/apply_metadata', {
