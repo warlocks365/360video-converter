@@ -1218,6 +1218,7 @@ tr:hover td { background: var(--surface-hover); }
             <button class="btn" onclick="openFileBrowser('metaBatchDir', true)">浏览...</button>
             <button class="btn btn-primary" onclick="scanMetaDirectory()">扫描视频</button>
           </div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">扫描结果会追加到下方列表，可勾选/移除/手动添加文件，仅处理勾选的文件</div>
         </div>
         <div class="field">
           <label class="field-label">输出（留空 = 原地修改）</label>
@@ -1226,7 +1227,29 @@ tr:hover td { background: var(--surface-hover); }
             <button class="btn" onclick="openFileBrowser('metaBatchOutDir', true)">浏览...</button>
           </div>
         </div>
-        <div id="metaFileList" class="meta-file-list hidden"></div>
+        <div id="metaFileList" class="hidden" style="margin-top:8px;">
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+            <button class="btn btn-sm" onclick="addMetaFileManual()">&#10133; 添加文件</button>
+            <button class="btn btn-sm" onclick="selectAllMetaFiles(true)">全选</button>
+            <button class="btn btn-sm" onclick="selectAllMetaFiles(false)">全不选</button>
+            <button class="btn btn-sm" onclick="removeSelectedMetaFiles()">移除选中</button>
+            <button class="btn btn-sm btn-danger" onclick="clearMetaFiles()">清空列表</button>
+            <span id="metaQueueCount" class="badge"></span>
+          </div>
+          <div class="table-wrap" style="max-height:400px;overflow-y:auto;">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:36px;"><input type="checkbox" id="metaSelectAll" onchange="selectAllMetaFiles(this.checked)"></th>
+                  <th>#</th><th>源文件</th><th>大小</th><th>文件名日期</th><th>状态</th><th style="width:60px;">操作</th>
+                </tr>
+              </thead>
+              <tbody id="metaBatchTableBody">
+                <tr><td colspan="7" style="text-align:center;color:var(--text-muted)">扫描目录或添加文件后显示列表</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1986,7 +2009,22 @@ function createMapInstance() {
     mapInstance.on('click', (e) => {
       const lat = e.latlng.lat;
       const lng = e.latlng.lng;
-      reverseGeocode(lat, lng);
+      // FIX: Set mapSelectedLocation IMMEDIATELY so the user can click
+      // "确认位置" before reverseGeocode (async API call) finishes.
+      // Previously mapSelectedLocation was only set at the END of
+      // reverseGeocode — if the user confirmed during the API wait,
+      // confirmMapSelection() found null and showed an alert, leaving
+      // the "拍摄地点" input field permanently blank.
+      const coordName = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+      if (mapMarker) mapInstance.removeLayer(mapMarker);
+      mapMarker = L.marker([lat, lng]).addTo(mapInstance);
+      mapInstance.setView([lat, lng], 15);
+      mapSelectedLocation = { name: coordName, lat, lon, address: '' };
+      document.getElementById('mapSelectedName').textContent = coordName;
+      document.getElementById('mapSelectedCoords').textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+      document.getElementById('mapSelectedAddress').textContent = '获取地址中...';
+      // Asynchronously update name + address (will overwrite mapSelectedLocation)
+      reverseGeocode(lat, lng, coordName);
     });
 
     // Force Leaflet to recalculate tile layout after modal becomes visible.
@@ -3805,7 +3843,8 @@ function escapeHtml(s) {
 }
 
 // ── Metadata Tool ──────────────────────────────────
-let metaScannedFiles = [];
+let metaBatchItems = [];  // {path, name, size_mb, date_in_name, selected, status, statusMsg, duration}
+let _metaProcessingIndices = [];  // maps backend item index → metaBatchItems index
 let mapPickerTarget = 'encode'; // 'encode' or 'meta'
 
 function toggleMetaFileMode() {
@@ -3863,33 +3902,158 @@ async function scanMetaDirectory() {
     const data = await r.json();
     if (!data.files || data.files.length === 0) {
       alert(data.message || '未找到视频文件');
-      metaScannedFiles = [];
-      renderMetaFileList();
       return;
     }
-    metaScannedFiles = data.files || [];
-    renderMetaFileList();
+    // Append to list (don't replace), skip duplicates
+    let added = 0;
+    for (const f of data.files) {
+      if (!metaBatchItems.some(existing => existing.path === f.path)) {
+        metaBatchItems.push({
+          path: f.path,
+          name: f.name,
+          size_mb: f.size_mb || '',
+          date_in_name: f.date_in_name || '',
+          selected: true,
+          status: 'pending',
+          statusMsg: '',
+          duration: ''
+        });
+        added++;
+      }
+    }
+    renderMetaBatchTable();
+    if (added > 0) {
+      showToast(`已添加 ${added} 个文件到列表`, 'success');
+    } else {
+      showToast('所有文件已在列表中', 'warning');
+    }
   } catch(e) {
     alert('扫描失败: ' + e.message);
   }
 }
 
-function renderMetaFileList() {
+async function addMetaFileManual() {
+  try {
+    const r = await fetch('/api/native_dialog', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        type: 'open_file',
+        title: '选择视频文件',
+        file_filter: 'video',
+        path_type: 'open',
+        initial_dir: ''
+      })
+    });
+    const data = await r.json();
+    if (data.error) { alert(data.error); return; }
+    if (!data.path) return;
+    // Check for duplicates
+    if (metaBatchItems.some(f => f.path === data.path)) {
+      showToast('文件已在列表中', 'warning');
+      return;
+    }
+    const name = data.path.split(/[\/\\]/).pop();
+    metaBatchItems.push({
+      path: data.path,
+      name: name,
+      size_mb: '',
+      date_in_name: '',
+      selected: true,
+      status: 'pending',
+      statusMsg: '',
+      duration: ''
+    });
+    renderMetaBatchTable();
+    showToast('已添加文件', 'success');
+  } catch(e) {
+    alert('打开文件对话框失败: ' + e.message);
+  }
+}
+
+function renderMetaBatchTable() {
+  const tbody = document.getElementById('metaBatchTableBody');
   const listEl = document.getElementById('metaFileList');
-  if (metaScannedFiles.length === 0) {
+  const countEl = document.getElementById('metaQueueCount');
+  if (!tbody) return;
+
+  if (metaBatchItems.length === 0) {
     listEl.classList.add('hidden');
+    if (countEl) countEl.textContent = '';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">扫描目录或添加文件后显示列表</td></tr>';
     return;
   }
   listEl.classList.remove('hidden');
-  listEl.innerHTML = metaScannedFiles.map(f => {
-    const dateStr = f.date_in_name ? `<span class="fdate">&#128197; ${f.date_in_name.split('T')[0]}</span>` : '';
-    return `<div class="meta-file-item">
-      <span class="fname" title="${f.path}">${f.name}</span>
-      ${dateStr}
-      <span class="fsize">${f.size_mb} MB</span>
-    </div>`;
+  const selectedCount = metaBatchItems.filter(f => f.selected).length;
+  if (countEl) countEl.textContent = `${metaBatchItems.length} 个文件 (${selectedCount} 选中)`;
+
+  // Update select-all checkbox
+  const selectAllEl = document.getElementById('metaSelectAll');
+  if (selectAllEl) selectAllEl.checked = (selectedCount === metaBatchItems.length);
+
+  tbody.innerHTML = metaBatchItems.map((f, i) => {
+    const checked = f.selected ? 'checked' : '';
+    const dateStr = f.date_in_name ? f.date_in_name.split('T')[0] : '';
+    let statusHtml = '<span style="color:var(--text-muted)">等待中</span>';
+    if (f.status === 'processing') {
+      statusHtml = '<span style="color:var(--accent)"><span class="spinner" style="display:inline-block;width:12px;height:12px;border-width:2px;vertical-align:middle;margin-right:4px;"></span>处理中...</span>';
+    } else if (f.status === 'done') {
+      statusHtml = `<span style="color:var(--success)">&#10003; 完成${f.duration ? ` (${f.duration})` : ''}</span>`;
+    } else if (f.status === 'error') {
+      statusHtml = `<span style="color:var(--error)" title="${escapeHtml(f.statusMsg || '')}">&#10007; ${escapeHtml(f.statusMsg || '失败')}</span>`;
+    }
+    return `<tr>
+      <td><input type="checkbox" ${checked} onchange="toggleMetaFileSelection(${i}, this.checked)"></td>
+      <td>${i + 1}</td>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(f.path)}">${escapeHtml(f.name)}</td>
+      <td>${f.size_mb ? f.size_mb + ' MB' : '-'}</td>
+      <td>${dateStr || '-'}</td>
+      <td>${statusHtml}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="removeMetaFile(${i})" title="移除">&#10005;</button></td>
+    </tr>`;
   }).join('');
 }
+
+function toggleMetaFileSelection(idx, checked) {
+  if (metaBatchItems[idx]) {
+    metaBatchItems[idx].selected = checked;
+    // Update count badge without full re-render
+    const countEl = document.getElementById('metaQueueCount');
+    if (countEl) {
+      const selectedCount = metaBatchItems.filter(f => f.selected).length;
+      countEl.textContent = `${metaBatchItems.length} 个文件 (${selectedCount} 选中)`;
+    }
+    const selectAllEl = document.getElementById('metaSelectAll');
+    if (selectAllEl) selectAllEl.checked = (selectedCount === metaBatchItems.length);
+  }
+}
+
+function selectAllMetaFiles(checked) {
+  metaBatchItems.forEach(f => f.selected = checked);
+  renderMetaBatchTable();
+}
+
+function removeSelectedMetaFiles() {
+  const before = metaBatchItems.length;
+  metaBatchItems = metaBatchItems.filter(f => !f.selected);
+  if (before > metaBatchItems.length) {
+    showToast(`已移除 ${before - metaBatchItems.length} 个文件`, 'info');
+  }
+  renderMetaBatchTable();
+}
+
+function clearMetaFiles() {
+  if (metaBatchItems.length === 0) return;
+  if (!confirm('确定清空列表中的所有文件？')) return;
+  metaBatchItems = [];
+  renderMetaBatchTable();
+}
+
+function removeMetaFile(idx) {
+  metaBatchItems.splice(idx, 1);
+  renderMetaBatchTable();
+}
+
 
 // Metadata in-place toggle
 document.addEventListener('DOMContentLoaded', function() {
@@ -4106,12 +4270,25 @@ async function startMetadataApply() {
     }
     items = [{input: inp, output: out}];
   } else {
-    if (metaScannedFiles.length === 0) { alert('请先扫描'); return; }
+    const selectedFiles = metaBatchItems.filter(f => f.selected);
+    if (selectedFiles.length === 0) { alert('请先添加并勾选文件'); return; }
     const outDir = document.getElementById('metaBatchOutDir').value.trim();
-    items = metaScannedFiles.map(f => ({
-      input: f.path,
-      output: outDir ? `${outDir}\\${f.name}` : f.path
-    }));
+    // Build items list and record mapping from backend index → metaBatchItems index
+    _metaProcessingIndices = [];
+    items = [];
+    metaBatchItems.forEach((f, i) => {
+      if (f.selected) {
+        _metaProcessingIndices.push(i);
+        items.push({
+          input: f.path,
+          output: outDir ? `${outDir}\\${f.name}` : f.path
+        });
+        f.status = 'pending';
+        f.statusMsg = '';
+        f.duration = '';
+      }
+    });
+    renderMetaBatchTable();
   }
 
   const r = await fetch('/api/apply_metadata', {
@@ -4185,6 +4362,32 @@ pollStatus = async function() {
   if (metaFileProg) metaFileProg.style.width = `${data.file_progress}%`;
   const metaFilePct = document.getElementById('metaFileProgressPercent');
   if (metaFilePct) metaFilePct.textContent = `${Math.round(data.file_progress)}%`;
+
+  // ── Update metadata batch table status ──
+  // Map backend item indices back to metaBatchItems via _metaProcessingIndices
+  if (_metaProcessingIndices.length > 0 && data.items) {
+    let tableChanged = false;
+    _metaProcessingIndices.forEach((origIdx, i) => {
+      const item = data.items[i];
+      if (!item || !metaBatchItems[origIdx]) return;
+      const f = metaBatchItems[origIdx];
+      const oldStatus = f.status;
+      if (i === data.current_index && data.status === 'running') {
+        f.status = 'processing';
+      } else if (item.ok === true) {
+        f.status = 'done';
+        if (item.start_time && item.end_time) {
+          f.duration = fmtTime(item.end_time - item.start_time);
+        }
+      } else if (item.ok === false) {
+        f.status = 'error';
+        f.statusMsg = item.error || '失败';
+      }
+      if (f.status !== oldStatus) tableChanged = true;
+    });
+    // Only re-render if a status actually changed (avoids spinner flicker)
+    if (tableChanged) renderMetaBatchTable();
+  }
 
   // ── Merge status display ──
   // When merging files, show "🔗 合并中: 第2/5个文件, 已用42s/120s" instead of normal encoding label
@@ -4330,6 +4533,29 @@ pollStatus = async function() {
     if (metaProgLabel) metaProgLabel.innerHTML = completedLabel;
     if (encodeProg) encodeProg.classList.add('success');
     if (metaProg) metaProg.classList.add('success');
+
+    // Final render of metadata batch table to catch any missed status updates
+    if (_metaProcessingIndices.length > 0 && data.items) {
+      _metaProcessingIndices.forEach((origIdx, i) => {
+        const item = data.items[i];
+        if (!item || !metaBatchItems[origIdx]) return;
+        const f = metaBatchItems[origIdx];
+        if (item.ok === true) {
+          f.status = 'done';
+          if (item.start_time && item.end_time) {
+            f.duration = fmtTime(item.end_time - item.start_time);
+          }
+        } else if (item.ok === false) {
+          f.status = 'error';
+          f.statusMsg = item.error || '失败';
+        } else if (item.skipped) {
+          f.status = 'error';
+          f.statusMsg = '已跳过';
+        }
+      });
+      renderMetaBatchTable();
+      _metaProcessingIndices = [];
+    }
     if (data.file_progress >= 100 && fileProg) {
       fileProg.style.width = '100%';
     }
