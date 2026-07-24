@@ -1432,10 +1432,10 @@ def merge_files(jid, input_files, output_path):
             if not _j or _j['status'] == 'cancelled':
                 try: os.remove(merge_output)
                 except Exception: pass
-                with job_lock:
-                    j = jobs.get(jid)
-                    if j:
-                        j['merge_status'] = None
+                # Already inside job_lock — no need for nested acquisition
+                j = jobs.get(jid)
+                if j:
+                    j['merge_status'] = None
                 return False, 'Cancelled by user'
 
         if rc != 0:
@@ -3947,7 +3947,9 @@ def skip_item(jid, idx):
             return jsonify({'error': 'Invalid item index'}), 400
         j['items'][idx]['skipped'] = True
     # NOTE: log_line() re-acquires job_lock, so it MUST run OUTSIDE the lock block
-    # to avoid a re-entrant deadlock (job_lock is a non-reentrant threading.Lock).
+    # to avoid unnecessary re-entrant acquisition (job_lock is an RLock, so re-entrant
+    # acquisition won't deadlock, but keeping log_line outside the lock reduces
+    # lock hold time and follows best practice).
     log_line(jid, f'Item {idx+1} skipped by user', 'warn')
     return jsonify({'ok': True})
 
@@ -4052,6 +4054,120 @@ def probe_source():
             'creation_time': creation_time,
             'has_location_name': bool(location_name),
             'location_name': location_name,
+            'filename': os.path.basename(path),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/probe_metadata')
+def probe_metadata():
+    """Probe a video file for ALL existing metadata: spherical, date, GPS.
+
+    Combines ffprobe (GPS, creation_time, location) with read_gspherical
+    (GSpherical UUID box) to return a complete picture of what metadata the
+    file already has. Used by the batch list to auto-enable toggles and
+    pre-fill values per file.
+
+    Returns::
+        {
+          has_spherical, spherical{pano_type, stereo_mode, projection},
+          has_date, creation_time,
+          has_gps, gps{lat, lon, raw},
+          location_name, location_address,
+          file_size_mb, date_in_name
+        }
+    """
+    path = resolve_real_path(request.args.get('path', ''))
+    if not path or not os.path.isfile(path):
+        return jsonify({'error': 'File not found'}), 404
+    try:
+        # 1) ffprobe for format/stream tags
+        r = subprocess.run(
+            [FFPROBE_PATH, '-v', 'quiet', '-print_format', 'json',
+             '-show_format', '-show_streams', path],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding='utf-8', errors='replace', timeout=30,
+            env=_ffmpeg_env(), creationflags=NO_WINDOW,
+        )
+        out = r.stdout or ''
+        creation_time = ''
+        location_raw = ''
+        location_name = ''
+        location_address = ''
+        file_size_mb = 0.0
+        if r.returncode == 0 and out.strip():
+            data = json.loads(out)
+            fmt_tags = (data.get('format') or {}).get('tags') or {}
+            streams = data.get('streams') or []
+            creation_time = fmt_tags.get('creation_time', '')
+            location_raw = fmt_tags.get('location', '')
+            location_name = fmt_tags.get('location.name', '') or fmt_tags.get('location_name', '')
+            # comment field sometimes holds the address
+            location_address = fmt_tags.get('comment', '')
+            for s in streams:
+                if not isinstance(s, dict):
+                    continue
+                st_tags = s.get('tags') or {}
+                if not creation_time and st_tags.get('creation_time'):
+                    creation_time = st_tags['creation_time']
+                if not location_raw and st_tags.get('location'):
+                    location_raw = st_tags['location']
+                if not location_name and (st_tags.get('location.name') or st_tags.get('location_name')):
+                    location_name = st_tags.get('location.name') or st_tags.get('location_name')
+            # file size
+            try:
+                file_size_mb = round(os.path.getsize(path) / (1024 * 1024), 1)
+            except Exception:
+                pass
+        else:
+            location_address = ''
+
+        # 2) Parse ISO 6709 location
+        gps = None
+        if location_raw:
+            import re as _re
+            m = _re.match(r'^([+-]\d+\.?\d*)\s*([+-]\d+\.?\d*)', location_raw.strip())
+            if m:
+                try:
+                    lat = float(m.group(1))
+                    lon = float(m.group(2))
+                    gps = {'lat': lat, 'lon': lon, 'raw': location_raw.strip()}
+                except ValueError:
+                    pass
+
+        # 3) read_gspherical for spherical metadata
+        spherical = {'has': False, 'pano_type': None, 'stereo_mode': None, 'projection': None}
+        if read_gspherical:
+            try:
+                gsph = read_gspherical(path)
+                if gsph and gsph.get('spherical'):
+                    spherical = {
+                        'has': True,
+                        'pano_type': gsph.get('pano_type'),
+                        'stereo_mode': gsph.get('stereo_mode'),
+                        'projection': gsph.get('projection'),
+                    }
+            except Exception:
+                pass
+
+        # 4) Extract date from filename
+        date_in_name = ''
+        ct_from_name, _ = extract_date_from_filename(os.path.basename(path))
+        if ct_from_name:
+            date_in_name = ct_from_name.split('T')[0] if 'T' in ct_from_name else ct_from_name
+
+        return jsonify({
+            'has_spherical': spherical['has'],
+            'spherical': spherical,
+            'has_date': bool(creation_time),
+            'creation_time': creation_time,
+            'has_gps': gps is not None,
+            'gps': gps,
+            'location_name': location_name,
+            'location_address': location_address,
+            'file_size_mb': file_size_mb,
+            'date_in_name': date_in_name,
             'filename': os.path.basename(path),
         })
     except Exception as e:
@@ -4173,7 +4289,9 @@ def report_worker(jid):
             if j:
                 j['overall_progress'] = (idx + 1) / total * 100
     # NOTE: log_line() re-acquires job_lock, so it MUST run OUTSIDE the lock block
-    # to avoid a re-entrant deadlock (job_lock is a non-reentrant threading.Lock).
+    # to avoid unnecessary re-entrant acquisition (job_lock is an RLock, so re-entrant
+    # acquisition won't deadlock, but keeping log_line outside the lock reduces
+    # lock hold time and follows best practice).
     with job_lock:
         j = jobs.get(jid)
         if j:
