@@ -1187,17 +1187,7 @@ tr:hover td { background: var(--surface-hover); }
           <button class="btn btn-primary" onclick="addToMetaBatchList()">&#128203; 加入批量列表</button>
         </div>
         <div id="metaSourceInfo" class="source-info hidden"></div>
-        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">选择文件后点击「加入批量列表」添加到下方队列；若列表为空，直接点击「应用元数据」处理当前文件</div>
-      </div>
-
-      <!-- Scan Directory (batch import) -->
-      <div class="field" style="margin-top:8px;">
-        <label class="field-label">扫描目录（批量导入）</label>
-        <div class="input-group">
-          <input class="input" id="metaBatchDir" placeholder="选择或输入源路径（支持网络映射盘符）..." onkeydown="if(event.key==='Enter')scanMetaDirectory()">
-          <button class="btn" onclick="openFileBrowser('metaBatchDir', true)">浏览...</button>
-          <button class="btn btn-primary" onclick="scanMetaDirectory()">扫描视频</button>
-        </div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">选择文件 → 设置下方元数据选项 → 点击「加入批量列表」→ 重复添加多个文件 → 点击「应用元数据」批量处理</div>
       </div>
 
       <!-- Output Directory -->
@@ -1213,6 +1203,7 @@ tr:hover td { background: var(--surface-hover); }
       <div style="margin-top:12px;">
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
           <strong style="font-size:0.85rem;">批量执行列表</strong>
+          <button class="btn btn-sm" onclick="addMetaFileManual()">&#10133; 添加文件</button>
           <button class="btn btn-sm" onclick="selectAllMetaFiles(true)">全选</button>
           <button class="btn btn-sm" onclick="selectAllMetaFiles(false)">全不选</button>
           <button class="btn btn-sm" onclick="removeSelectedMetaFiles()">移除选中</button>
@@ -1228,7 +1219,7 @@ tr:hover td { background: var(--surface-hover); }
               </tr>
             </thead>
             <tbody id="metaBatchTableBody">
-              <tr><td colspan="7" style="text-align:center;color:var(--text-muted)">选择文件后点击「加入批量列表」，或扫描目录批量导入</td></tr>
+              <tr><td colspan="7" style="text-align:center;color:var(--text-muted)">选择文件后点击「加入批量列表」或「添加文件」按钮添加到队列</td></tr>
             </tbody>
           </table>
         </div>
@@ -3867,47 +3858,6 @@ async function updateMetaDatePreview() {
   }
 }
 
-async function scanMetaDirectory() {
-  const dir = document.getElementById('metaBatchDir').value.trim();
-  if (!dir) { alert('请先选择扫描路径'); return; }
-  try {
-    const r = await fetch('/api/scan', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({directory: dir, recursive: true})
-    });
-    const data = await r.json();
-    if (!data.files || data.files.length === 0) {
-      alert(data.message || '未找到视频文件');
-      return;
-    }
-    // Append to list (don't replace), skip duplicates
-    let added = 0;
-    for (const f of data.files) {
-      if (!metaBatchItems.some(existing => existing.path === f.path)) {
-        metaBatchItems.push({
-          path: f.path,
-          name: f.name,
-          size_mb: f.size_mb || '',
-          date_in_name: f.date_in_name || '',
-          selected: true,
-          status: 'pending',
-          statusMsg: '',
-          duration: ''
-        });
-        added++;
-      }
-    }
-    renderMetaBatchTable();
-    if (added > 0) {
-      showToast(`已添加 ${added} 个文件到列表`, 'success');
-    } else {
-      showToast('所有文件已在列表中', 'warning');
-    }
-  } catch(e) {
-    alert('扫描失败: ' + e.message);
-  }
-}
-
 async function addMetaFileManual() {
   try {
     const r = await fetch('/api/native_dialog', {
@@ -3954,7 +3904,7 @@ function renderMetaBatchTable() {
 
   if (metaBatchItems.length === 0) {
     if (countEl) countEl.textContent = '';
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">选择文件后点击「加入批量列表」，或扫描目录批量导入</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">选择文件后点击「加入批量列表」或「添加文件」按钮添加到队列</td></tr>';
     return;
   }
   const selectedCount = metaBatchItems.filter(f => f.selected).length;
