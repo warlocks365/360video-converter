@@ -614,6 +614,7 @@ tr:hover td { background: var(--surface-hover); }
     <div class="mode-tab" data-mode="batch" onclick="switchMode('batch')">&#128194; 批量转换</div>
     <div class="mode-tab" data-mode="metadata" onclick="switchMode('metadata')">&#128295; 元数据工具</div>
     <div class="mode-tab" data-mode="report" onclick="switchMode('report')">&#128202; 元数据报告</div>
+    <div class="mode-tab" data-mode="vr3d" onclick="switchMode('vr3d')">&#127957; VR 3D合成</div>
   </div>
 
   <!-- 目录批量导入（仅列出媒体候选，不直接成为任务） -->
@@ -1030,6 +1031,47 @@ tr:hover td { background: var(--surface-hover); }
         </div>
       </div>
 
+      <!-- Insta360 Native Processing (v3.9.0) -->
+      <div class="section-divider">Insta360 原生文件处理 <span class="tip-icon" data-tip="直接处理 Insta360 相机拍摄的 .insv / .insp / .lrv 文件。.insv 是带双鱼眼的 MP4，需用 v360 滤镜转换为等距柱状全景。防抖用 vidstab 替代 FlowState，方向锁定通过地平线校正实现。">?</span></div>
+      <div class="check-group">
+        <label class="check">
+          <input type="checkbox" id="p_insv_stitch" checked onchange="toggleInsta360()">
+          <span>双鱼眼→全景拼接 <span class="tip-icon" data-tip="使用 ffmpeg v360 滤镜将 Insta360 双鱼眼（dual-fisheye）视频转换为等距柱状（equirectangular）360° 全景。.insv 文件自动检测并启用。">?</span></span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="p_insv_stabilize" onchange="toggleInsta360()">
+          <span>防抖 (FlowState 替代) <span class="tip-icon" data-tip="使用 vidstab 滤镜进行画面防抖处理，作为 Insta360 FlowState 防抖的开源替代方案。">?</span></span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="p_insv_direction_lock" onchange="toggleInsta360()">
+          <span>方向锁定 <span class="tip-icon" data-tip="通过 vidstab 防抖+地平线校正实现方向锁定效果，保持画面水平。">?</span></span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="p_insv_denoise" onchange="toggleInsta360()">
+          <span>降噪 <span class="tip-icon" data-tip="使用 hqdn3d 滤镜进行降噪处理，减少暗光环境下的噪点。">?</span></span>
+        </label>
+      </div>
+      <div id="insta360Advanced" class="hidden" style="margin-left:16px;padding:8px;background:var(--surface-2);border-radius:6px;font-size:0.8rem;">
+        <div class="field" style="display:flex;gap:12px;flex-wrap:wrap;">
+          <div>
+            <label class="field-label">镜头 FOV (°)</label>
+            <input class="input" type="number" id="p_insv_fov" value="200" min="180" max="220" style="width:80px;">
+          </div>
+          <div>
+            <label class="field-label">Yaw</label>
+            <input class="input" type="number" id="p_insv_yaw" value="0" style="width:70px;">
+          </div>
+          <div>
+            <label class="field-label">Pitch</label>
+            <input class="input" type="number" id="p_insv_pitch" value="0" style="width:70px;">
+          </div>
+          <div>
+            <label class="field-label">Roll</label>
+            <input class="input" type="number" id="p_insv_roll" value="0" style="width:70px;">
+          </div>
+        </div>
+      </div>
+
       <!-- Date Metadata -->
       <div class="section-divider">日期元数据 (从文件名提取)<span class="tip-icon" data-tip="从视频文件名中自动提取拍摄日期（支持 YYYYMMDD、YYYY-MM-DD 等格式），并将该日期写入视频元数据和文件系统属性。适用于修复拍摄设备未正确记录日期的视频。">?</span></div>
       <div class="check-group">
@@ -1103,7 +1145,7 @@ tr:hover td { background: var(--surface-hover); }
       <div class="field">
         <label class="field-label">原片文件</label>
         <div class="input-group">
-          <input class="input" id="singleInput" placeholder="选择或输入视频文件路径..." onchange="probeSourceVideo(this.value, 'p')">
+          <input class="input" id="singleInput" placeholder="选择或输入视频文件路径..." onchange="probeSourceVideo(this.value, 'p'); detectInsvPair('singleInput')">
           <button class="btn" onclick="openFileBrowser('singleInput', false, 'video')">浏览...</button>
         </div>
         <div id="sourceInfo" class="source-info hidden"></div>
@@ -1149,6 +1191,57 @@ tr:hover td { background: var(--surface-hover); }
           <button class="btn" onclick="openSingleOutputDialog('mergeOutput')">浏览...</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- VR 3D Synthesis Mode (v3.9.0) -->
+  <div id="vr3dMode" class="hidden">
+    <div class="card">
+      <div class="card-title">
+        &#127957; VR 3D 360° 合成 &mdash; 左右眼视频合成为3D全景
+      </div>
+      <div class="info-box" style="margin-bottom:12px;padding:10px;background:var(--surface-2);border-radius:8px;font-size:0.82rem;color:var(--text-muted);">
+        选择左眼和右眼两个360°全景视频，合成为一个带3D视差的VR 360°视频。输出为Top-Bottom格式，适合VR头显播放。
+      </div>
+      <div class="grid-2">
+        <div class="field">
+          <label class="field-label">左眼视频 (Left Eye)</label>
+          <div class="input-group">
+            <input class="input" id="vr3dLeftInput" placeholder="选择左眼360°全景视频...">
+            <button class="btn" onclick="openFileBrowser('vr3dLeftInput', false, 'video')">浏览...</button>
+          </div>
+          <div id="vr3dLeftInfo" style="font-size:0.78rem;color:var(--text-muted);margin-top:4px;"></div>
+        </div>
+        <div class="field">
+          <label class="field-label">右眼视频 (Right Eye)</label>
+          <div class="input-group">
+            <input class="input" id="vr3dRightInput" placeholder="选择右眼360°全景视频...">
+            <button class="btn" onclick="openFileBrowser('vr3dRightInput', false, 'video')">浏览...</button>
+          </div>
+          <div id="vr3dRightInfo" style="font-size:0.78rem;color:var(--text-muted);margin-top:4px;"></div>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">输出文件</label>
+        <div class="input-group">
+          <input class="input" id="vr3dOutput" placeholder="选择或输入输出文件路径...">
+          <button class="btn" onclick="openSingleOutputDialog('vr3dOutput')">浏览...</button>
+        </div>
+      </div>
+      <div class="field">
+        <label class="field-label">3D 排列格式</label>
+        <select class="select" id="vr3dLayout" onchange="collectVR3DParams()">
+          <option value="top-bottom" selected>上下排列 (Top-Bottom) — 推荐，VR头显标准</option>
+          <option value="side-by-side">左右排列 (Side-by-Side)</option>
+        </select>
+      </div>
+      <div class="check-group" style="margin-top:8px;">
+        <label class="check">
+          <input type="checkbox" id="vr3dCheckAlignment" checked>
+          <span>视角一致性检测与修正 <span class="tip-icon" data-tip="自动检测左右眼视频的分辨率和时长是否一致。若不一致，将自动缩放对齐。">?</span></span>
+        </label>
+      </div>
+      <div id="vr3dAlignmentResult" style="font-size:0.8rem;margin-top:8px;"></div>
     </div>
   </div>
 
@@ -1767,6 +1860,9 @@ const DEFAULT_PARAMS = {
       okaa_correction:false, okaa_fov:200, okaa_yaw_l:0, okaa_yaw_r:0,
       okaa_pitch_l:0, okaa_pitch_r:0, okaa_roll_l:0, okaa_roll_r:0,
       okaa_blend:'seam', okaa_layout:'sbs', okaa_out_resolution:'3840x1920',
+      // Insta360 native processing
+      insv_stitch:true, insv_stabilize:false, insv_direction_lock:false, insv_denoise:false,
+      insv_fov:200, insv_yaw:0, insv_pitch:0, insv_roll:0,
     };
 
 // ── Theme ──────────────────────────────────────────
@@ -1795,8 +1891,10 @@ function switchMode(mode) {
   document.getElementById('batchMode').classList.toggle('hidden', mode !== 'batch');
   document.getElementById('metadataMode').classList.toggle('hidden', mode !== 'metadata');
   document.getElementById('reportMode').classList.toggle('hidden', mode !== 'report');
+  const vr3dMode = document.getElementById('vr3dMode');
+  if (vr3dMode) vr3dMode.classList.toggle('hidden', mode !== 'vr3d');
   // Show/hide encoding params and main action bar based on mode
-  const showEncode = mode === 'single' || mode === 'merge' || mode === 'batch';
+  const showEncode = mode === 'single' || mode === 'merge' || mode === 'batch' || mode === 'vr3d';
   const encodePanel = document.getElementById('encodePanel');
   if (encodePanel) encodePanel.style.display = showEncode ? '' : 'none';
   // Directory batch import panel is batch-only, sits above the encoding panel
@@ -1806,6 +1904,12 @@ function switchMode(mode) {
   // Show "加入批量队列" button only in single and merge modes
   const addToBatchBtn = document.getElementById('addToBatchBtn');
   if (addToBatchBtn) addToBatchBtn.style.display = (mode === 'single' || mode === 'merge') ? '' : 'none';
+  // VR 3D mode: update start button label
+  const startBtn = document.getElementById('startBtn');
+  if (startBtn) {
+    if (mode === 'vr3d') startBtn.textContent = '🎬 开始合成';
+    else startBtn.textContent = '🚀 开始转换';
+  }
   if (mode === 'single') updateSingleDatePreview();
 }
 
@@ -2825,6 +2929,15 @@ function collectParams() {
     okaa_blend: val('p_okaa_blend') || 'seam',
     okaa_layout: val('p_okaa_layout') || 'sbs',
     okaa_out_resolution: val('p_okaa_out_resolution') || '3840x1920',
+    // Insta360 native processing (v3.9.0)
+    insv_stitch: document.getElementById('p_insv_stitch')?.checked ?? true,
+    insv_stabilize: document.getElementById('p_insv_stabilize')?.checked ?? false,
+    insv_direction_lock: document.getElementById('p_insv_direction_lock')?.checked ?? false,
+    insv_denoise: document.getElementById('p_insv_denoise')?.checked ?? false,
+    insv_fov: parseInt(val('p_insv_fov')) || 200,
+    insv_yaw: parseInt(val('p_insv_yaw')) || 0,
+    insv_pitch: parseInt(val('p_insv_pitch')) || 0,
+    insv_roll: parseInt(val('p_insv_roll')) || 0,
     // Date metadata
     date_from_filename: document.getElementById('p_date_from_filename').checked,
     set_creation_time: document.getElementById('p_set_creation_time').checked,
@@ -2887,6 +3000,23 @@ function toggleOkaaCorrection() {
   }
 }
 
+// Insta360 options toggle (v3.9.0)
+function toggleInsta360() {
+  const stitch = document.getElementById('p_insv_stitch');
+  const stab = document.getElementById('p_insv_stabilize');
+  const dirlock = document.getElementById('p_insv_direction_lock');
+  const denoise = document.getElementById('p_insv_denoise');
+  const adv = document.getElementById('insta360Advanced');
+  if (!stitch) return;
+  // Show advanced options if any Insta360 feature is enabled
+  const anyEnabled = stitch.checked || (stab && stab.checked) || (dirlock && dirlock.checked) || (denoise && denoise.checked);
+  if (adv) adv.classList.toggle('hidden', !anyEnabled);
+  // Direction lock implies stabilization
+  if (dirlock && dirlock.checked && stab) {
+    stab.checked = true;
+  }
+}
+
 // ── Apply Params to UI ─────────────────────────────
 function applyParams(p) {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
@@ -2927,6 +3057,16 @@ function applyParams(p) {
   set('p_okaa_layout', p.okaa_layout || 'sbs');
   set('p_okaa_out_resolution', p.okaa_out_resolution || '3840x1920');
   toggleOkaaCorrection();
+  // Insta360 native processing
+  const ck = (id, v) => { const el = document.getElementById(id); if (el) el.checked = v; };
+  ck('p_insv_stitch', p.insv_stitch !== false);
+  ck('p_insv_stabilize', p.insv_stabilize || false);
+  ck('p_insv_direction_lock', p.insv_direction_lock || false);
+  ck('p_insv_denoise', p.insv_denoise || false);
+  set('p_insv_fov', p.insv_fov || 200);
+  set('p_insv_yaw', p.insv_yaw || 0);
+  set('p_insv_pitch', p.insv_pitch || 0);
+  set('p_insv_roll', p.insv_roll || 0);
   // Date
   document.getElementById('p_date_from_filename').checked = p.date_from_filename || false;
   document.getElementById('p_set_creation_time').checked = p.set_creation_time !== false;
@@ -3274,8 +3414,9 @@ function summarizeParams(t) {
   }
   const test = p.test_duration ? ' · 测试' : '';
   const stab = p.stabilize ? ' · 防抖' : '';
+  const insv = p.insv_stitch ? ' · INS' : '';
   const outMode = t.custom_output ? '固定' : (t.out_mode === 'formula' ? '公式' : '统一');
-  return `${codec} · ${res} · ${outMode}${pano}${stab}${test}`;
+  return `${codec} · ${res} · ${outMode}${pano}${stab}${insv}${test}`;
 }
 
 function updateQueueCount() {
@@ -3558,10 +3699,130 @@ function clearMergeList() {
   renderMergeTable();
 }
 
+// ── VR 3D 360° Synthesis (v3.9.0) ────────────────────
+function collectVR3DParams() {
+  const params = collectParams();
+  params['vr3d_layout'] = document.getElementById('vr3dLayout')?.value || 'top-bottom';
+  params['vr3d_check_alignment'] = document.getElementById('vr3dCheckAlignment')?.checked ?? true;
+  // VR 3D always injects spherical metadata with stereo mode
+  params['inject_spherical'] = true;
+  if (params['vr3d_layout'] === 'top-bottom') {
+    params['pano_type'] = '360';
+    params['stereo_mode'] = 'top-bottom';
+  } else {
+    params['pano_type'] = '360';
+    params['stereo_mode'] = 'left-right';
+  }
+  return params;
+}
+
+async function checkVR3DAlignment() {
+  const left = document.getElementById('vr3dLeftInput')?.value || '';
+  const right = document.getElementById('vr3dRightInput')?.value || '';
+  const resultDiv = document.getElementById('vr3dAlignmentResult');
+  if (!left || !right) {
+    if (resultDiv) resultDiv.innerHTML = '';
+    return;
+  }
+  try {
+    const r = await fetch('/api/vr3d/check_alignment', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({left, right})
+    });
+    const data = await r.json();
+    if (data.error) {
+      if (resultDiv) resultDiv.innerHTML = `<span style="color:var(--danger)">⚠ ${esc(data.error)}</span>`;
+      return;
+    }
+    const info = data.info || {};
+    let html = `<div style="padding:8px;background:var(--surface-2);border-radius:6px;">`;
+    html += `<div>左眼: ${esc(info.left_resolution || '?')} / ${(info.left_duration || 0).toFixed(1)}s</div>`;
+    html += `<div>右眼: ${esc(info.right_resolution || '?')} / ${(info.right_duration || 0).toFixed(1)}s</div>`;
+    if (data.aligned) {
+      html += `<div style="color:var(--success);margin-top:4px;">✅ 左右眼视频对齐良好</div>`;
+    } else {
+      html += `<div style="color:var(--warning);margin-top:4px;">⚠ ${esc((data.warnings || []).join('; '))}</div>`;
+      html += `<div style="color:var(--text-muted);font-size:0.75rem;margin-top:2px;">将自动缩放对齐</div>`;
+    }
+    html += `</div>`;
+    if (resultDiv) resultDiv.innerHTML = html;
+
+    // Update info labels
+    const leftInfo = document.getElementById('vr3dLeftInfo');
+    const rightInfo = document.getElementById('vr3dRightInfo');
+    if (leftInfo) leftInfo.textContent = `${info.left_resolution || '?'} / ${(info.left_duration || 0).toFixed(1)}s`;
+    if (rightInfo) rightInfo.textContent = `${info.right_resolution || '?'} / ${(info.right_duration || 0).toFixed(1)}s`;
+  } catch (e) {
+    // Silently fail — alignment check is optional
+  }
+}
+
+async function startVR3D(params) {
+  const left = document.getElementById('vr3dLeftInput').value;
+  const right = document.getElementById('vr3dRightInput').value;
+  const out = document.getElementById('vr3dOutput').value;
+  if (!left || !right || !out) {
+    alert('请选择左眼视频、右眼视频和输出文件');
+    return;
+  }
+
+  const items = [{left_input: left, right_input: right, output: out}];
+
+  const r = await fetch('/api/start_vr3d', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({params, items})
+  });
+  const data = await r.json();
+  if (data.error) { alert(data.error); return; }
+
+  jobId = data.job_id;
+  isPaused = false;
+  startPolling();
+}
+
+// Auto-check alignment when either file changes
+document.addEventListener('DOMContentLoaded', function() {
+  const leftInput = document.getElementById('vr3dLeftInput');
+  const rightInput = document.getElementById('vr3dRightInput');
+  if (leftInput) leftInput.addEventListener('change', () => setTimeout(checkVR3DAlignment, 100));
+  if (rightInput) rightInput.addEventListener('change', () => setTimeout(checkVR3DAlignment, 100));
+});
+
+// ── Insta360 file support (v3.9.0) ────────────────────
+async function detectInsvPair(inputId) {
+  const input = document.getElementById(inputId);
+  if (!input || !input.value) return;
+  const path = input.value;
+  if (!path.toLowerCase().endsWith('.insv')) return;
+
+  try {
+    const r = await fetch('/api/insta360/detect_pair', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({path})
+    });
+    const data = await r.json();
+    if (data.is_insv && data.paired) {
+      // Show a suggestion to use merge mode with both files
+      const infoId = inputId.replace('Input', 'Info');
+      const infoEl = document.getElementById(infoId);
+      if (infoEl) {
+        infoEl.innerHTML = `<span style="color:var(--accent);">📦 检测到配对文件: ${esc(data.paired.split(/[\\/]/).pop())}</span>
+        <br><span style="font-size:0.75rem;">建议使用「合并转换」模式同时添加两个文件</span>`;
+      }
+    }
+  } catch (e) {
+    // Silently fail
+  }
+}
+
 // ── Start Conversion ────────────────────────────────
 async function startConversion() {
   const params = collectParams();
   let items = [];
+
+  if (currentMode === 'vr3d') {
+    return startVR3D(params);
+  }
 
   if (currentMode === 'single') {
     const inp = document.getElementById('singleInput').value;
@@ -5034,13 +5295,21 @@ function renderItemStatus(cell, actionCell, item, i, data, isPaused) {
   if (item.skipped && !item.start_time) {
     html = '<span class="status-dot" style="background:var(--text-muted);"></span> 跳过';
   } else if (terminal) {
-    html = item.ok === false
-      ? '<span class="status-dot status-fail"></span> 失败'
-      : '<span class="status-dot status-done"></span> &#10003;';
+    if (item.ok === false) {
+      const errMsg = esc(item.error || '失败');
+      const shortErr = errMsg.length > 20 ? errMsg.substring(0, 20) + '...' : errMsg;
+      html = `<span class="status-dot status-fail"></span> <span style="color:var(--error);cursor:help;" title="${errMsg}">${shortErr}</span>`;
+    } else {
+      html = '<span class="status-dot status-done"></span> &#10003;';
+    }
   } else if (i < data.current_index) {
-    html = item.ok === false
-      ? '<span class="status-dot status-fail"></span> 失败'
-      : '<span class="status-dot status-done"></span> &#10003;';
+    if (item.ok === false) {
+      const errMsg = esc(item.error || '失败');
+      const shortErr = errMsg.length > 20 ? errMsg.substring(0, 20) + '...' : errMsg;
+      html = `<span class="status-dot status-fail"></span> <span style="color:var(--error);cursor:help;" title="${errMsg}">${shortErr}</span>`;
+    } else {
+      html = '<span class="status-dot status-done"></span> &#10003;';
+    }
   } else if (i === data.current_index && data.status === 'running') {
     html = `<span class="status-dot status-running"></span> ${Math.round(data.file_progress)}%`;
     showSkip = !isPaused;

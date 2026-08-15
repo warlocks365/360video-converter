@@ -252,7 +252,9 @@ def _read_app_version():
 
 APP_VERSION = _read_app_version()
 
-VIDEO_EXTS = {'.mp4', '.mov', '.mkv', '.avi', '.insv', '.ts', '.m2ts', '.flv', '.wmv'}
+VIDEO_EXTS = {'.mp4', '.mov', '.mkv', '.avi', '.insv', '.lrv', '.ts', '.m2ts', '.flv', '.wmv'}
+INSTA360_VIDEO_EXTS = {'.insv', '.lrv'}    # Insta360 video formats (MP4 with trailer metadata)
+INSTA360_PHOTO_EXTS = {'.insp'}             # Insta360 photo format (JPEG with trailer metadata)
 
 # ── Codec Profiles ─────────────────────────────────────────────
 CODEC_PROFILES = {
@@ -432,6 +434,11 @@ DEFAULT_PARAMS = {
     'stabilize_smoothing':  30,      # smoothing window (frames)
     'stabilize_shakiness':  5,       # vidstab shakiness estimate (1-10)
     'stabilize_zoom':       0.05,    # zoom/border fill ratio (0-0.2)
+    # Insta360 native file processing (v3.9.0)
+    'insv_stitch':          True,    # convert dual-fisheye to equirectangular via v360 filter
+    'insv_stabilize':       False,   # Insta360 FlowState alternative (vidstab)
+    'insv_direction_lock':   False,   # horizon leveling / direction lock
+    'insv_denoise':          False,   # noise reduction (hqdn3d filter)
 }
 
 DEFAULT_BATCH_FORMULA = '{project_dir}/{name}_360.mp4'
@@ -626,6 +633,110 @@ def expand_formula(formula, source_path, params, project_dir=''):
 
 
 # ── ffprobe / ffmpeg helpers ───────────────────────────────────
+
+def validate_input_file(path):
+    """Pre-validate an input file before ffmpeg encoding.
+
+    Runs a quick ffprobe to check if the file is a readable media container.
+    Returns (valid: bool, error_msg: str).
+    If valid, error_msg is ''. If invalid, error_msg is a user-friendly
+    Chinese message explaining the problem.
+    """
+    # 1. Check file exists and is non-empty
+    if not os.path.exists(path):
+        return False, '输入文件不存在，请检查文件路径'
+    fsize = os.path.getsize(path)
+    if fsize == 0:
+        return False, '输入文件大小为 0 字节，文件为空'
+    if fsize < 1024:
+        return False, f'输入文件过小（{fsize} 字节），可能不是有效的视频文件'
+
+    # 2. Quick ffprobe check — this catches corrupted MP4 (moov atom missing),
+    #    truncated files, wrong format, etc. Much faster than letting ffmpeg
+    #    start and fail later.
+    try:
+        r = subprocess.run(
+            [FFPROBE_PATH, '-v', 'error', '-show_entries',
+             'format=format_name,duration', '-of', 'csv=p=0', path],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding='utf-8', errors='replace', timeout=15,
+            env=_ffmpeg_env(), creationflags=NO_WINDOW
+        )
+        if r.returncode != 0 or not (r.stdout or '').strip():
+            stderr = (r.stderr or '').strip()
+            # Parse known error patterns for user-friendly messages
+            err_lower = stderr.lower()
+            if 'moov atom not found' in err_lower:
+                return False, ('文件损坏或未完成写入（缺少 moov atom 索引）。'
+                               '常见原因：录制中断、文件传输不完整、或文件仍在被其他程序写入。'
+                               '请重新获取完整文件后重试。')
+            if 'invalid data found' in err_lower:
+                return False, ('文件数据无效，可能不是支持的视频格式或文件已损坏。'
+                               '请确认文件完整性后重试。')
+            if 'no such file' in err_lower:
+                return False, '输入文件不存在，请检查文件路径'
+            if 'end of file' in err_lower:
+                return False, ('文件意外结束（可能被截断）。'
+                               '请确认文件已完整写入/传输后重试。')
+            # Generic ffprobe failure
+            short_err = stderr.split('\n')[0][:200] if stderr else '未知错误'
+            return False, f'文件无法读取：{short_err}'
+    except subprocess.TimeoutExpired:
+        return False, '文件读取超时（ffprobe 15秒无响应），文件可能被锁定或存在I/O问题'
+    except Exception as e:
+        # If ffprobe itself crashes, don't block — let ffmpeg try
+        # (validate is best-effort, not a hard gate)
+        pass
+
+    return True, ''
+
+
+def parse_ffmpeg_error(stderr_lines, rc):
+    """Parse ffmpeg stderr output for known error patterns.
+
+    Args:
+        stderr_lines: list of stderr line strings (last N lines from run_ffmpeg)
+        rc: ffmpeg return code
+
+    Returns a user-friendly Chinese error message, or '' if no pattern matches.
+    """
+    combined = '\n'.join(stderr_lines).lower() if stderr_lines else ''
+
+    # File-level errors (input cannot be opened at all)
+    if 'moov atom not found' in combined:
+        return ('文件损坏或未完成写入（缺少 moov atom 索引）。'
+                '常见原因：录制中断、文件传输不完整、或文件仍在被其他程序写入。'
+                '请重新获取完整文件后重试。')
+    if 'invalid data found when processing input' in combined:
+        if 'error opening input' in combined:
+            return ('无法打开输入文件，文件数据无效或已损坏。'
+                    '请确认文件完整性后重试。')
+        return '文件中存在无效数据，部分内容可能已损坏。请尝试使用软件编码模式重试。'
+    if 'no such file or directory' in combined:
+        return '输入文件不存在，请检查文件路径'
+    if 'end of file' in combined:
+        return '文件意外结束（可能被截断）。请确认文件已完整写入/传输后重试。'
+    if 'permission denied' in combined:
+        return '文件访问被拒绝，可能被其他程序锁定。请关闭占用该文件的程序后重试。'
+
+    # Encoder-level errors
+    if 'no capable devices found' in combined or 'not find any gpu' in combined:
+        return '未检测到可用的 GPU 硬件编码器，请切换为软件编码（libx264/libx265）后重试'
+    if 'out of memory' in combined or 'cuda error' in combined:
+        return 'GPU 显存不足或 CUDA 错误，请降低分辨率或切换为软件编码后重试'
+
+    # NVENC crash (0xC0000005) — this is handled separately in convert_one
+    # for auto-fallback, so we only reach here if fallback also failed
+    if rc in (3221225477, -1073741819):
+        return '编码器崩溃（访问违规），文件可能包含损坏的数据。请尝试使用软件编码模式重试'
+
+    # Disk full
+    if 'no space left' in combined or 'disk full' in combined:
+        return '磁盘空间不足，请清理输出目录所在磁盘后重试'
+
+    return ''
+
+
 def get_duration(path):
     """Get video duration in seconds via ffprobe."""
     try:
@@ -893,6 +1004,256 @@ def build_okaa_filter_complex(params):
     return fc
 
 
+# ── Insta360 .insv helpers ─────────────────────────────────────
+
+def detect_insv_pair(filepath):
+    """Detect the paired .insv file for dual-lens cameras (pre-X4).
+    Insta360 cameras produce pairs: VID_..._00_NNN.insv (front) + VID_..._10_NNN.insv (back).
+    Returns the paired file path if found, else None.
+    """
+    p = Path(filepath)
+    name = p.name
+    # Match _00_ or _10_ pattern in filename
+    m = re.match(r'^(.+_)(00|10)(_\d+\.insv)$', name, re.IGNORECASE)
+    if not m:
+        return None
+    prefix, lens_id, suffix = m.groups()
+    pair_id = '10' if lens_id == '00' else '00'
+    pair_name = f"{prefix}{pair_id}{suffix}"
+    pair_path = p.parent / pair_name
+    if pair_path.exists():
+        return str(pair_path)
+    return None
+
+
+def is_insv_file(path):
+    """Check if a file is an Insta360 .insv video file."""
+    return path.lower().endswith('.insv')
+
+
+def is_insphoto_file(path):
+    """Check if a file is an Insta360 .insp photo file."""
+    return path.lower().endswith('.insp')
+
+
+def build_insv_v360_filter(params):
+    """Build ffmpeg v360 filter to convert Insta360 dual-fisheye to equirectangular.
+    For paired .insv files (front+back lenses), caller should hstack them first.
+    For single .insv files (X4+), the dual-fisheye is already in one stream.
+    """
+    res = params.get('resolution', '3840x1920')
+    if res == 'original':
+        res = '3840x1920'
+    w, h = res.split('x')
+
+    # Insta360 lens FOV is typically ~200° per lens
+    fov = params.get('insv_fov', 200)
+    yaw = params.get('insv_yaw', 0)
+    pitch = params.get('insv_pitch', 0)
+    roll = params.get('insv_roll', 0)
+
+    # dfisheye = dual fisheye input (side-by-side circular fisheye)
+    # equirect = equirectangular projection output
+    return (f"v360=dfisheye:equirect:"
+            f"ih_fov={fov}:iv_fov={fov}:"
+            f"h_fov=360:v_fov=180:"
+            f"yaw={yaw}:pitch={pitch}:roll={roll}:"
+            f"w={w}:h={h}:interp=lanczos")
+
+
+def build_insv_filter_chain(params):
+    """Build the complete Insta360 filter chain: v360 + optional denoise.
+    Returns a -vf filter string (not filter_complex).
+    """
+    filters = []
+
+    # 1. Dual-fisheye to equirectangular conversion
+    if params.get('insv_stitch', True):
+        filters.append(build_insv_v360_filter(params))
+
+    # 2. Denoise (alternative to Insta360 SDK denoise)
+    if params.get('insv_denoise', False):
+        filters.append('hqdn3d=3:2:2:3')
+
+    # 3. Resolution scale (if not handled by v360 w/h)
+    if not params.get('insv_stitch', True):
+        res = params.get('resolution', '')
+        if res and res != 'original':
+            w, h = res.split('x')
+            filters.append(f'scale={w}:{h}:flags=lanczos')
+
+    return ','.join(filters) if filters else None
+
+
+# ── VR 3D 360° synthesis helpers ────────────────────────────────
+
+def build_vr3d_cmd(left_inp, right_inp, out, params):
+    """Build ffmpeg command to merge left/right eye videos into a 3D 360° video.
+    Uses vstack (Top-Bottom) or hstack (Side-by-Side) based on params.
+    The output is a single equirectangular video with stereo metadata.
+    """
+    codec = params.get('codec', 'libx264')
+    ffmpeg = _encoder_ffmpeg_map.get(codec, FFMPEG_PATH)
+    cp = CODEC_PROFILES.get(codec, CODEC_PROFILES['libx264'])
+
+    stack_mode = params.get('vr3d_layout', 'top-bottom')  # 'top-bottom' or 'side-by-side'
+    stack_filter = 'vstack' if stack_mode == 'top-bottom' else 'hstack'
+
+    # Build filter_complex: stack left+right, then optional scale
+    res = params.get('resolution', '4096x2048')
+    if res == 'original':
+        # Use left eye resolution as reference
+        scale_filter = ''
+    else:
+        w, h = res.split('x')
+        # For top-bottom: each eye gets full width, half height
+        # For side-by-side: each eye gets half width, full height
+        if stack_mode == 'top-bottom':
+            scale_filter = f',scale={w}:{h}:flags=lanczos'
+        else:
+            scale_filter = f',scale={w}:{h}:flags=lanczos'
+
+    fc = f"[0:v][1:v]{stack_filter}=inputs=2[v]"
+    if scale_filter:
+        fc += f";[v]{scale_filter}[v]"
+
+    cmd = [ffmpeg, '-y',
+           '-err_detect', 'ignore_err',
+           '-fflags', '+discardcorrupt',
+           '-i', left_inp,
+           '-i', right_inp,
+           '-filter_complex', fc,
+           '-map', '[v]',
+           '-map', '0:a?',
+           '-c:v', cp['encoder']]
+
+    # Tag for HEVC
+    if cp.get('tag'):
+        cmd += ['-tag:v', cp['tag']]
+
+    # Profile
+    if cp.get('has_profile') and params.get('profile'):
+        cmd += ['-profile:v', params['profile']]
+
+    # Color params
+    cmd += [
+        '-pix_fmt', params.get('pix_fmt', 'yuv420p'),
+        '-color_range', params.get('color_range', 'tv'),
+        '-colorspace', params.get('color_space', 'bt709'),
+        '-color_primaries', params.get('color_primaries', 'bt709'),
+        '-color_trc', params.get('color_trc', 'bt709'),
+    ]
+
+    # B-frames, GOP
+    if cp.get('has_bf_refs'):
+        cmd += ['-bf', str(params.get('bf', 3)),
+                '-g', str(params.get('gop', 48))]
+        if codec in ('libx264', 'libx265'):
+            cmd += ['-refs', str(params.get('refs', 5)),
+                    '-keyint_min', str(params.get('gop', 48))]
+        if cp.get('has_sc_threshold'):
+            cmd += ['-sc_threshold', '0']
+
+    # NVENC quality
+    if cp['group'] == 'cuda':
+        cmd += ['-spatial-aq', '1', '-temporal-aq', '1', '-rc-lookahead', '16']
+
+    # Rate control
+    mode = params.get('rate_mode', 'crf')
+    group = cp['group']
+    if group == 'cpu':
+        if mode == 'crf':
+            cmd += ['-crf', str(params.get('crf', cp['default_crf'])),
+                    '-maxrate', params.get('maxrate', '40M'),
+                    '-bufsize', params.get('bufsize', '20M')]
+        elif mode == '2pass':
+            cmd += ['-b:v', params.get('target_bitrate', '50000k'),
+                    '-maxrate', params.get('maxrate', '80M'),
+                    '-bufsize', params.get('bufsize', '40M')]
+    elif group == 'cuda':
+        qp = params.get('crf', cp['default_crf'])
+        cmd += ['-qp', str(qp),
+                '-preset', params.get('preset', cp['default_preset']),
+                '-tune', 'hq',
+                '-rc', 'vbr',
+                '-maxrate', params.get('maxrate', '40M'),
+                '-bufsize', params.get('bufsize', '20M')]
+    elif group == 'qsv':
+        cmd += ['-global_quality', str(params.get('crf', cp['default_crf'])),
+                '-preset', params.get('preset', cp['default_preset'])]
+    elif group == 'amf':
+        cmd += ['-quality', 'quality',
+                '-rc', 'cqp',
+                '-qp_i', str(params.get('crf', cp['default_crf'])),
+                '-qp_p', str(params.get('crf', cp['default_crf']))]
+
+    # Preset
+    if group == 'cpu':
+        cmd += [cp['preset_key'], params.get('preset', cp['default_preset'])]
+
+    # Audio
+    cmd += ['-c:a', params.get('audio_codec', 'aac'),
+           '-b:a', params.get('audio_bitrate', '96k'),
+           '-ar', params.get('audio_sample_rate', '48000'),
+           '-ac', str(params.get('audio_channels', 2))]
+
+    # Container
+    if params.get('faststart', True):
+        cmd += ['-movflags', '+faststart']
+    brand = params.get('brand', 'mp42')
+    if brand:
+        cmd += ['-brand', brand]
+
+    # Output
+    cmd.append(out)
+    return cmd
+
+
+def check_vr3d_alignment(left_path, right_path):
+    """Check if left and right eye videos have compatible resolution and duration.
+    Returns (aligned: bool, warnings: list, info: dict).
+    """
+    warnings = []
+    info = {}
+
+    left_dur = get_duration(left_path)
+    right_dur = get_duration(right_path)
+    info['left_duration'] = round(left_dur, 2)
+    info['right_duration'] = round(right_dur, 2)
+
+    # Duration mismatch check
+    dur_diff = abs(left_dur - right_dur)
+    if dur_diff > 0.5:
+        warnings.append(f'时长差异 {dur_diff:.2f}s（左 {left_dur:.1f}s / 右 {right_dur:.1f}s）')
+    elif dur_diff > 0.1:
+        warnings.append(f'轻微时长差异 {dur_diff:.3f}s')
+
+    # Resolution check via ffprobe
+    def get_resolution(path):
+        try:
+            r = subprocess.run(
+                [FFPROBE_PATH, '-v', 'quiet', '-print_format', 'json',
+                 '-show_streams', '-select_streams', 'v:0', path],
+                capture_output=True, text=True, timeout=15,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+            )
+            d = json.loads(r.stdout)
+            s = d.get('streams', [{}])[0]
+            return f"{s.get('width', '?')}x{s.get('height', '?')}"
+        except Exception:
+            return 'unknown'
+
+    left_res = get_resolution(left_path)
+    right_res = get_resolution(right_path)
+    info['left_resolution'] = left_res
+    info['right_resolution'] = right_res
+
+    if left_res != right_res:
+        warnings.append(f'分辨率不一致（左 {left_res} / 右 {right_res}）— 将自动缩放对齐')
+
+    aligned = len(warnings) == 0
+    return aligned, warnings, info
+
 def build_cmd(inp, out, params, pass_num=0, passlogfile=None):
     """Build ffmpeg command list, supporting multiple codecs."""
     codec = params.get('codec', 'libx264')
@@ -910,13 +1271,34 @@ def build_cmd(inp, out, params, pass_num=0, passlogfile=None):
     codec = params.get('codec', 'libx264')
     cp = CODEC_PROFILES.get(codec, CODEC_PROFILES['libx264'])
 
-    # Video filter chain: Okaa dual-fisheye correction OR vidstab transform + scale
+    # Video filter chain: Okaa dual-fisheye correction OR Insta360 v360 OR vidstab transform + scale
     if params.get('okaa_correction'):
         # Okaa双鱼眼校正：使用 filter_complex，替换普通 -vf
         fc = build_okaa_filter_complex(params)
         cmd += ['-filter_complex', fc, '-map', '[vout]']
         if pass_num != 1:
             cmd += ['-map', '0:a?']
+    elif is_insv_file(inp) and (params.get('insv_stitch', True) or params.get('insv_denoise', False)):
+        # Insta360 .insv processing: v360 dual-fisheye→equirect + optional denoise
+        insv_filters = []
+        if params.get('insv_stitch', True):
+            insv_filters.append(build_insv_v360_filter(params))
+        if params.get('insv_denoise', False):
+            insv_filters.append('hqdn3d=3:2:2:3')
+        # vidstab transform (Insta360 FlowState alternative)
+        if params.get('_stab_trf') and vidstab_transform_filter is not None:
+            trf = params['_stab_trf']
+            sm = params.get('stabilize_smoothing', 30)
+            zoom = params.get('stabilize_zoom', 0.05)
+            insv_filters.append(vidstab_transform_filter(trf, smoothing=sm, zoom=zoom, crop=True))
+        # Scale if resolution differs from v360 output
+        if not params.get('insv_stitch', True):
+            res = params.get('resolution', '')
+            if res and res != 'original':
+                w, h = res.split('x')
+                insv_filters.append(f'scale={w}:{h}:flags=lanczos')
+        if insv_filters:
+            cmd += ['-vf', ','.join(insv_filters)]
     else:
         filters = []
         if params.get('_stab_trf') and vidstab_transform_filter is not None:
@@ -1187,9 +1569,16 @@ def _read_ffmpeg_lines(stream):
 
 
 def run_ffmpeg(cmd, jid, duration, pass_label=''):
-    """Run ffmpeg subprocess, stream progress to job log."""
+    """Run ffmpeg subprocess, stream progress to job log.
+
+    Stores the last 20 non-progress stderr lines in jobs[jid]['_ffmpeg_last_err']
+    so callers can parse them for user-friendly error messages on failure.
+    """
     with job_lock:
         jobs[jid]['proc'] = None
+
+    # Track last N stderr lines for error parsing (v3.8.1)
+    _last_err_lines = []
 
     # Extract ffmpeg path from cmd[0] to set correct environment (bundled vs system)
     ffmpeg_path = cmd[0] if cmd else FFMPEG_PATH
@@ -1256,6 +1645,10 @@ def run_ffmpeg(cmd, jid, duration, pass_label=''):
                                             ms['current_file_name'] = fname
                                             break
             else:
+                # Track non-progress lines for error parsing (keep last 20)
+                _last_err_lines.append(line)
+                if len(_last_err_lines) > 20:
+                    _last_err_lines.pop(0)
                 log_line(jid, f'{pass_label}{line}')
     except Exception as e:
         log_line(jid, f'ffmpeg output read error: {e}', 'error')
@@ -1266,6 +1659,12 @@ def run_ffmpeg(cmd, jid, duration, pass_label=''):
 
     try: proc.wait(timeout=10)
     except Exception: pass
+
+    # Store last stderr lines for error parsing by caller
+    with job_lock:
+        _j = jobs.get(jid)
+        if _j:
+            _j['_ffmpeg_last_err'] = _last_err_lines
 
     return proc.returncode
 
@@ -1446,7 +1845,9 @@ def merge_files(jid, input_files, output_path):
                 j = jobs.get(jid)
                 if j:
                     j['merge_status'] = None
-            return False, f'Merge failed (rc={rc})'
+                    _el = j.pop('_ffmpeg_last_err', [])
+            _fe = parse_ffmpeg_error(_el, rc)
+            return False, _fe or f'Merge failed (rc={rc})'
         log_line(jid, '  Merge: OK', 'success')
 
         # If we used .mkv intermediate, update the output_path so convert_one
@@ -1483,6 +1884,33 @@ def convert_one(jid, inp, out, params):
             params['stabilize'] = False
             params.pop('_stab_trf', None)
 
+    # Insta360 .insv processing (v3.9.0): auto-detect paired lens files,
+    # enable v360 dual-fisheye→equirect conversion, force panoramic metadata
+    if is_insv_file(inp):
+        # Detect paired lens file for pre-X4 cameras (front _00_ + back _10_)
+        pair = detect_insv_pair(inp)
+        if pair:
+            log_line(jid, f'  检测到 Insta360 双镜头文件配对: {os.path.basename(pair)}')
+            log_line(jid, f'  注意: 配对文件需先合并再处理。请使用合并模式添加两个文件。', 'warn')
+
+        if params.get('insv_stitch', True):
+            params['inject_spherical'] = True
+            params['pano_type'] = '360'
+            params['stereo_mode'] = 'mono'
+            log_line(jid, '  Insta360 双鱼眼→全景转换: 已启用 (v360=dfisheye:equirect)')
+
+        if params.get('insv_direction_lock', False):
+            # Direction lock = vidstab stabilization for horizon leveling
+            if not params.get('stabilize'):
+                params['stabilize'] = True
+                log_line(jid, '  方向锁定: 启用画面防抖进行地平线校正')
+
+        if params.get('insv_stabilize', False):
+            # Insta360 FlowState alternative = vidstab
+            if not params.get('stabilize'):
+                params['stabilize'] = True
+                log_line(jid, '  Insta360 防抖 (FlowState 替代): 启用 vidstab')
+
     # Test encoding mode: modify output filename and use test duration
     test_dur = params.get('test_duration', 0)
     if test_dur and test_dur > 0:
@@ -1491,6 +1919,14 @@ def convert_one(jid, inp, out, params):
         out = base + '_test' + ext
         log_line(jid, f'=== TEST MODE: encoding first {test_dur}s only ===')
         log_line(jid, f'Test output: {out}')
+
+    # Pre-validate input file (v3.8.1): catch corrupted/incomplete files
+    # before launching ffmpeg. This catches "moov atom not found" and similar
+    # errors early, giving the user a clear message instead of a cryptic rc.
+    valid, verr = validate_input_file(inp)
+    if not valid:
+        log_line(jid, f'  输入文件校验失败: {verr}', 'error')
+        return False, verr, out
 
     duration = get_duration(inp)
     log_line(jid, f'Duration: {duration:.1f}s')
@@ -1616,7 +2052,12 @@ def convert_one(jid, inp, out, params):
         cmd1 = build_cmd(inp, temp_out, params, pass_num=1, passlogfile=passlog)
         rc = run_ffmpeg(cmd1, jid, progress_duration, '[P1] ')
         if rc != 0:
-            return False, f'Pass 1 failed (rc={rc})', out
+            _el = []
+            with job_lock:
+                _j = jobs.get(jid)
+                if _j: _el = _j.pop('_ffmpeg_last_err', [])
+            _fe = parse_ffmpeg_error(_el, rc)
+            return False, _fe or f'Pass 1 failed (rc={rc})', out
         log_line(jid, '--- Pass 2/2 (encode) ---')
         cmd2 = build_cmd(inp, temp_out, params, pass_num=2, passlogfile=passlog)
         rc = run_ffmpeg(cmd2, jid, progress_duration, '[P2] ')
@@ -1624,7 +2065,12 @@ def convert_one(jid, inp, out, params):
             try: f.unlink()
             except Exception: pass
         if rc != 0:
-            return False, f'Pass 2 failed (rc={rc})', out
+            _el = []
+            with job_lock:
+                _j = jobs.get(jid)
+                if _j: _el = _j.pop('_ffmpeg_last_err', [])
+            _fe = parse_ffmpeg_error(_el, rc)
+            return False, _fe or f'Pass 2 failed (rc={rc})', out
     else:
         log_line(jid, '--- Encoding ---')
         cmd = build_cmd(inp, temp_out, params)
@@ -1666,6 +2112,15 @@ def convert_one(jid, inp, out, params):
                     if rc == 0:
                         log_line(jid, '软件编码回退成功', 'success')
             if rc != 0:
+                # Parse ffmpeg stderr for user-friendly error message (v3.8.1)
+                _err_lines = []
+                with job_lock:
+                    _j = jobs.get(jid)
+                    if _j:
+                        _err_lines = _j.pop('_ffmpeg_last_err', [])
+                _friendly = parse_ffmpeg_error(_err_lines, rc)
+                if _friendly:
+                    return False, _friendly, out
                 return False, f'ffmpeg failed (rc={rc})', out
 
     with job_lock:
@@ -1909,6 +2364,187 @@ def conversion_worker(jid):
     log_line(jid, '=== All conversions complete ===', 'success')
 
 
+# ── VR 3D 360° Synthesis Worker (v3.9.0) ──────────────────────
+
+def vr3d_merge_one(jid, left_inp, right_inp, out, params):
+    """Merge left and right eye videos into a single 3D 360° video.
+    Uses vstack (Top-Bottom) or hstack (Side-by-Side), then injects GSpherical stereo metadata.
+    Returns (ok: bool, error_msg: str|None, actual_out: str).
+    """
+    # Validate both input files
+    for label, path in [('左眼', left_inp), ('右眼', right_inp)]:
+        valid, verr = validate_input_file(path)
+        if not valid:
+            log_line(jid, f'  {label}文件校验失败: {verr}', 'error')
+            return False, verr, out
+
+    # Optional: alignment check
+    if params.get('vr3d_check_alignment', True):
+        aligned, warnings, info = check_vr3d_alignment(left_inp, right_inp)
+        log_line(jid, f'  左眼: {info["left_resolution"]} / {info["left_duration"]:.1f}s')
+        log_line(jid, f'  右眼: {info["right_resolution"]} / {info["right_duration"]:.1f}s')
+        if warnings:
+            for w in warnings:
+                log_line(jid, f'  ⚠ {w}', 'warn')
+            # If resolution mismatch, add scale filter to align
+            if info.get('left_resolution') != info.get('right_resolution'):
+                params['vr3d_auto_align'] = True
+                log_line(jid, '  自动缩放对齐: 已启用')
+        else:
+            log_line(jid, '  ✅ 左右眼视频对齐良好')
+
+    # Get duration for progress (use left eye as reference)
+    duration = get_duration(left_inp)
+    log_line(jid, f'  合成时长: {duration:.1f}s (基于左眼)')
+
+    # Cancel check
+    with job_lock:
+        j = jobs.get(jid)
+        if not j or j['status'] == 'cancelled':
+            return False, 'Cancelled by user', out
+
+    # Build command
+    cmd = build_vr3d_cmd(left_inp, right_inp, out, params)
+    log_line(jid, f'  命令: {" ".join(cmd[:6])}...')
+
+    # Run ffmpeg
+    with job_lock:
+        j = jobs.get(jid)
+        if j:
+            j['file_progress'] = 0.0
+
+    rc = run_ffmpeg(cmd, jid, duration, '[3D] ')
+
+    if rc != 0:
+        with job_lock:
+            err_lines = jobs.get(jid, {}).get('_ffmpeg_last_err', [])
+        err_msg = parse_ffmpeg_error(err_lines, rc)
+        if not err_msg:
+            err_msg = f'VR 3D 合成失败 (rc={rc})'
+        return False, err_msg, out
+
+    with job_lock:
+        jobs[jid]['file_progress'] = 100.0
+
+    # Inject GSpherical metadata with stereo mode
+    stereo_mode = 'top-bottom' if params.get('vr3d_layout', 'top-bottom') == 'top-bottom' else 'left-right'
+    pano_type = params.get('pano_type', '360')
+
+    if params.get('inject_spherical', True) and inject_uuid:
+        log_line(jid, f'--- Injecting GSpherical metadata (pano={pano_type}, stereo={stereo_mode}) ---')
+        temp_out = out + '.pre_meta.mp4'
+        try:
+            import shutil
+            shutil.move(out, temp_out)
+            ok = inject_uuid(temp_out, out, pano_type, stereo_mode)
+            if ok:
+                log_line(jid, 'Metadata injection: OK')
+            else:
+                log_line(jid, 'Metadata injection: FAILED (non-fatal)', 'warn')
+                shutil.copy2(temp_out, out)
+            try:
+                os.remove(temp_out)
+            except Exception:
+                pass
+        except Exception as e:
+            log_line(jid, f'Injection error: {e}', 'error')
+            # Fallback: keep the pre-injection output
+            try:
+                import shutil
+                shutil.move(temp_out, out)
+            except Exception:
+                pass
+
+    log_line(jid, f'  ✅ VR 3D 合成完成: {out}', 'success')
+    return True, None, out
+
+
+def vr3d_worker(jid):
+    """Worker thread for VR 3D 360° synthesis jobs."""
+    with job_lock:
+        j = jobs.get(jid)
+        if not j:
+            return
+        j['status'] = 'running'
+        params = dict(j['params'])
+        items = list(j['items'])
+
+    log_line(jid, '=== VR 3D 360° Synthesis Started ===')
+    log_line(jid, f'  Items: {len(items)}')
+    log_line(jid, f'  Layout: {params.get("vr3d_layout", "top-bottom")}')
+
+    for idx, item in enumerate(items):
+        left = item.get('left_input', '')
+        right = item.get('right_input', '')
+        out = item.get('output', '')
+
+        with job_lock:
+            j = jobs.get(jid)
+            if not j or j['status'] == 'cancelled':
+                return
+            j['current_index'] = idx
+            j['current_input'] = f'{os.path.basename(left)} + {os.path.basename(right)}'
+            j['current_output'] = out
+            j['file_progress'] = 0.0
+
+        log_line(jid, f'--- [{idx + 1}/{len(items)}] VR 3D Merge ---')
+        log_line(jid, f'  Left:  {left}')
+        log_line(jid, f'  Right: {right}')
+        log_line(jid, f'  Output: {out}')
+
+        # Cancel check
+        with job_lock:
+            j = jobs.get(jid)
+            if not j or j['status'] == 'cancelled':
+                return
+
+        try:
+            ok, err, actual_out = vr3d_merge_one(jid, left, right, out, params)
+            with job_lock:
+                j = jobs.get(jid)
+                if j:
+                    item['ok'] = ok
+                    item['error'] = err
+                    item['output_path'] = actual_out
+                    item['end_time'] = time.time()
+                    if not ok:
+                        j['error'] = err
+        except Exception as e:
+            import traceback
+            log_line(jid, f'  Internal error: {e}', 'error')
+            log_line(jid, traceback.format_exc(), 'error')
+            with job_lock:
+                j = jobs.get(jid)
+                if j:
+                    item['ok'] = False
+                    item['error'] = str(e)
+                    # Kill any lingering ffmpeg
+                    proc = j.get('proc')
+                    if proc:
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
+
+        with job_lock:
+            j = jobs.get(jid)
+            if j and len(items) > 0:
+                j['overall_progress'] = ((idx + 1) / len(items)) * 100
+
+    # Final status
+    with job_lock:
+        j = jobs.get(jid)
+        if j:
+            all_ok = all(item.get('ok', False) for item in items)
+            if j['status'] != 'cancelled':
+                j['status'] = 'completed' if all_ok else 'failed'
+                if not all_ok:
+                    first_err = next((item.get('error') for item in items if item.get('error')), None)
+                    j['error'] = first_err
+                j['end_time'] = time.time()
+    log_line(jid, '=== VR 3D Synthesis Complete ===', 'success')
+
+
 # ── Standalone Metadata Worker (no re-encoding) ──────────────
 def apply_metadata_one(jid, inp, out, params):
     """Apply metadata to a video without re-encoding (ffmpeg -c copy)."""
@@ -1922,6 +2558,12 @@ def apply_metadata_one(jid, inp, out, params):
 
     log_line(jid, f'  in:  {inp}')
     log_line(jid, f'  out: {out}')
+
+    # Pre-validate input file (v3.8.1)
+    valid, verr = validate_input_file(inp)
+    if not valid:
+        log_line(jid, f'  输入文件校验失败: {verr}', 'error')
+        return False, verr, out
 
     apply_date = params.get('apply_date', False)
     apply_location = params.get('apply_location', False)
@@ -2006,7 +2648,12 @@ def apply_metadata_one(jid, inp, out, params):
         if rc != 0:
             try: os.remove(temp_out)
             except Exception: pass
-            return False, f'ffmpeg stream copy failed (rc={rc})', out
+            _el = []
+            with job_lock:
+                _j = jobs.get(jid)
+                if _j: _el = _j.pop('_ffmpeg_last_err', [])
+            _fe = parse_ffmpeg_error(_el, rc)
+            return False, _fe or f'ffmpeg stream copy failed (rc={rc})', out
 
         # Inject spherical metadata if needed
         if need_spherical:
@@ -2057,7 +2704,12 @@ def apply_metadata_one(jid, inp, out, params):
         if rc != 0:
             try: os.remove(temp_out)
             except Exception: pass
-            return False, f'ffmpeg stream copy failed (rc={rc})', out
+            _el = []
+            with job_lock:
+                _j = jobs.get(jid)
+                if _j: _el = _j.pop('_ffmpeg_last_err', [])
+            _fe = parse_ffmpeg_error(_el, rc)
+            return False, _fe or f'ffmpeg stream copy failed (rc={rc})', out
         final_out = temp_out if not replace_original else out + '.spherical_tmp.mp4'
         try:
             ok = inject_uuid(temp_out, final_out, pano_type, stereo_mode)
@@ -2354,7 +3006,7 @@ def _run_ps_dialog(script, timeout=600):
 def _native_open_file(title, initial_dir, file_filter):
     """Show native Windows file open dialog."""
     if file_filter == 'video':
-        ps_filter = '视频文件|*.mp4;*.mov;*.mkv;*.avi;*.webm;*.m4v;*.flv|所有文件|*.*'
+        ps_filter = '视频文件|*.mp4;*.mov;*.mkv;*.avi;*.webm;*.m4v;*.flv;*.insv;*.lrv;*.ts;*.m2ts|Insta360 视频|*.insv;*.lrv|所有文件|*.*'
     elif file_filter == 'exe':
         ps_filter = '可执行文件|*.exe|所有文件|*.*'
     else:
@@ -2382,7 +3034,7 @@ def _native_open_file(title, initial_dir, file_filter):
 def _native_open_files_multi(title, initial_dir, file_filter):
     """Show native Windows file open dialog with multi-select enabled."""
     if file_filter == 'video':
-        ps_filter = '视频文件|*.mp4;*.mov;*.mkv;*.avi;*.webm;*.m4v;*.flv;*.insv;*.ts;*.m2ts|所有文件|*.*'
+        ps_filter = '视频文件|*.mp4;*.mov;*.mkv;*.avi;*.webm;*.m4v;*.flv;*.insv;*.lrv;*.ts;*.m2ts|Insta360 视频|*.insv;*.lrv|所有文件|*.*'
     else:
         ps_filter = '所有文件|*.*'
     script = (
@@ -3704,6 +4356,84 @@ def start_convert():
     t.start()
 
     return jsonify({'job_id': jid})
+
+
+# ── VR 3D 360° Synthesis API (v3.9.0) ────────────────────────
+
+@app.route('/api/start_vr3d', methods=['POST'])
+def start_vr3d():
+    """Start a VR 3D 360° synthesis job.
+    Expects: { params: {...}, items: [{left_input, right_input, output}] }
+    """
+    data = request.json
+    params = data.get('params', DEFAULT_PARAMS)
+    merged = {**DEFAULT_PARAMS, **params}
+    merged.pop('_effective_creation_time', None)
+    items = data.get('items', [])
+
+    if not items:
+        return jsonify({'error': 'No items provided'}), 400
+
+    # Validate items have left_input and right_input
+    for i, item in enumerate(items):
+        if not item.get('left_input') or not item.get('right_input'):
+            return jsonify({'error': f'Item {i}: missing left_input or right_input'}), 400
+
+    jid = new_job('vr3d', items, merged)
+    log_line(jid, f'VR 3D Job started: {len(items)} pair(s)')
+    log_line(jid, f'Layout: {merged.get("vr3d_layout", "top-bottom")}')
+    log_line(jid, f'Codec: {merged.get("codec")}, CRF={merged.get("crf")}')
+
+    t = threading.Thread(target=vr3d_worker, args=(jid,), daemon=True)
+    t.start()
+
+    return jsonify({'job_id': jid})
+
+
+@app.route('/api/vr3d/check_alignment', methods=['POST'])
+def vr3d_check_alignment():
+    """Check alignment between left and right eye videos.
+    Expects: { left: path, right: path }
+    Returns: { aligned, warnings, info }
+    """
+    data = request.json
+    left = data.get('left', '')
+    right = data.get('right', '')
+
+    if not left or not right:
+        return jsonify({'error': 'Missing left or right path'}), 400
+    if not os.path.isfile(left):
+        return jsonify({'error': f'File not found: {left}'}), 404
+    if not os.path.isfile(right):
+        return jsonify({'error': f'File not found: {right}'}), 404
+
+    aligned, warnings, info = check_vr3d_alignment(left, right)
+    return jsonify({
+        'aligned': aligned,
+        'warnings': warnings,
+        'info': info,
+    })
+
+
+@app.route('/api/insta360/detect_pair', methods=['POST'])
+def insta360_detect_pair():
+    """Detect the paired .insv file for dual-lens Insta360 cameras.
+    Expects: { path: filepath }
+    Returns: { paired: path|null, is_insv: bool }
+    """
+    data = request.json
+    path = data.get('path', '')
+
+    if not path:
+        return jsonify({'error': 'Missing path'}), 400
+
+    is_insv = is_insv_file(path)
+    pair = detect_insv_pair(path) if is_insv else None
+
+    return jsonify({
+        'is_insv': is_insv,
+        'paired': pair,
+    })
 
 
 @app.route('/api/apply_metadata', methods=['POST'])
