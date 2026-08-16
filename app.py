@@ -1268,6 +1268,11 @@ def build_cmd(inp, out, params, pass_num=0, passlogfile=None):
            '-fflags', '+discardcorrupt',
            '-i', inp]
 
+    # Insta360 paired .insv: add second input (paired lens file)
+    insv_pair = params.get('_insv_pair')
+    if insv_pair and is_insv_file(inp):
+        cmd += ['-i', insv_pair]
+
     codec = params.get('codec', 'libx264')
     cp = CODEC_PROFILES.get(codec, CODEC_PROFILES['libx264'])
 
@@ -1278,8 +1283,51 @@ def build_cmd(inp, out, params, pass_num=0, passlogfile=None):
         cmd += ['-filter_complex', fc, '-map', '[vout]']
         if pass_num != 1:
             cmd += ['-map', '0:a?']
+    elif is_insv_file(inp) and insv_pair and (params.get('insv_stitch', True) or params.get('insv_denoise', False)):
+        # Insta360 paired .insv: hstack front+back lenses, then v360 stitch
+        # Determine hstack order: front lens (_00_) on left, back lens (_10_) on right
+        if '_00_' in os.path.basename(inp):
+            left_in, right_in = '0:v', '1:v'   # inp=front, pair=back
+        else:
+            left_in, right_in = '1:v', '0:v'   # pair=front, inp=back
+
+        fc_parts = [f'[{left_in}][{right_in}]hstack=inputs=2[s0]']
+        prev = 's0'
+
+        if params.get('insv_stitch', True):
+            v360 = build_insv_v360_filter(params)
+            fc_parts.append(f'[s0]{v360}[s1]')
+            prev = 's1'
+
+        if params.get('insv_denoise', False):
+            fc_parts.append(f'[{prev}]hqdn3d=3:2:2:3[s2]')
+            prev = 's2'
+
+        if params.get('_stab_trf') and vidstab_transform_filter is not None:
+            trf = params['_stab_trf']
+            sm = params.get('stabilize_smoothing', 30)
+            zoom = params.get('stabilize_zoom', 0.05)
+            stab = vidstab_transform_filter(trf, smoothing=sm, zoom=zoom, crop=True)
+            fc_parts.append(f'[{prev}]{stab}[s3]')
+            prev = 's3'
+
+        # Scale if v360 not used or resolution differs
+        if not params.get('insv_stitch', True):
+            res = params.get('resolution', '')
+            if res and res != 'original':
+                w, h = res.split('x')
+                fc_parts.append(f'[{prev}]scale={w}:{h}:flags=lanczos[vout]')
+            else:
+                fc_parts.append(f'[{prev}]null[vout]')
+        else:
+            fc_parts.append(f'[{prev}]null[vout]')
+
+        fc = ';'.join(fc_parts)
+        cmd += ['-filter_complex', fc, '-map', '[vout]']
+        if pass_num != 1:
+            cmd += ['-map', '0:a?']
     elif is_insv_file(inp) and (params.get('insv_stitch', True) or params.get('insv_denoise', False)):
-        # Insta360 .insv processing: v360 dual-fisheye→equirect + optional denoise
+        # Insta360 single .insv (X4+): v360 dual-fisheye→equirect via -vf
         insv_filters = []
         if params.get('insv_stitch', True):
             insv_filters.append(build_insv_v360_filter(params))
@@ -1891,7 +1939,11 @@ def convert_one(jid, inp, out, params):
         pair = detect_insv_pair(inp)
         if pair:
             log_line(jid, f'  检测到 Insta360 双镜头文件配对: {os.path.basename(pair)}')
-            log_line(jid, f'  注意: 配对文件需先合并再处理。请使用合并模式添加两个文件。', 'warn')
+            log_line(jid, f'  自动合并双镜头 → v360 全景拼接')
+            params['_insv_pair'] = pair
+        else:
+            log_line(jid, f'  Insta360 单文件模式 (X4+ 内置双鱼眼)')
+            params.pop('_insv_pair', None)
 
         if params.get('insv_stitch', True):
             params['inject_spherical'] = True
