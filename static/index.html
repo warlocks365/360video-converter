@@ -754,14 +754,18 @@ tr:hover td { background: var(--surface-hover); }
       <div class="section-divider">视频编码参数</div>
       <div class="grid-4">
         <div class="field">
-          <label class="field-label">分辨率<span class="tip-icon" data-tip="输出视频的分辨率。360° 全景视频为 2:1 宽高比（等距柱状投影）。4096x2048 适合高端 VR 头显；3840x1920 适合普通 4K 显示器；2880x1440 适合手机 VR；2048x1024 适合网络分享。分辨率越高画质越好但文件越大、编码越慢。">?</span></label>
-          <select class="select" id="p_resolution">
+          <label class="field-label">分辨率<span class="tip-icon" data-tip="输出视频的分辨率。360° 全景视频为 2:1 宽高比（等距柱状投影）。7680x3840 (8K) 适合 Insta360 X4 原生素材和高端 VR 头显（编码极慢，建议硬件 HEVC）；5760x2880 (6K) 画质与速度平衡；4096x2048 适合高端 VR 头显；3840x1920 适合普通 4K 显示器；2880x1440 适合手机 VR；2048x1024 适合网络分享；自定义可输入任意 宽x高（如 6400x3200，宽高需为偶数）。分辨率越高画质越好但文件越大、编码越慢。">?</span></label>
+          <select class="select" id="p_resolution" onchange="onResolutionChange()">
+            <option value="7680x3840">7680x3840 (8K 全景)</option>
+            <option value="5760x2880">5760x2880 (6K 全景)</option>
             <option value="4096x2048">4096x2048 (4K 全景) （推荐）</option>
             <option value="3840x1920">3840x1920</option>
             <option value="2880x1440">2880x1440</option>
             <option value="2048x1024">2048x1024</option>
+            <option value="custom">自定义分辨率…</option>
             <option value="original">原始分辨率 (不缩放)</option>
           </select>
+          <input class="input" id="p_resolution_custom" placeholder="宽x高，如 6400x3200（需为偶数）" style="display:none;margin-top:6px;" oninput="onResolutionChange()">
         </div>
         <div class="field" id="field_profile">
           <label class="field-label">Profile<span class="tip-icon" data-tip="H.264/H.265 编码档次。High：支持 CABAC 熵编码和 B 帧，压缩效率最高（推荐）；Main：中等压缩，兼容性更广；Baseline：无 B 帧和 CABAC，文件最大但兼容性最好（老旧设备适用）。">?</span></label>
@@ -772,12 +776,15 @@ tr:hover td { background: var(--surface-hover); }
           </select>
         </div>
         <div class="field">
-          <label class="field-label">Level<span class="tip-icon" data-tip="编码级别限制最大码率、分辨率和帧率。5.1 支持 4K@30fps（推荐）；5.0 支持 4K@24fps；4.2 适合 1080p@60fps；4.1 适合 1080p@30fps。若播放设备不支持高 Level 会无法播放。">?</span></label>
+          <label class="field-label">Level<span class="tip-icon" data-tip="编码级别限制最大码率、分辨率和帧率。5.1 支持 4K@30fps；6.0 支持 6K/8K 全景；6.1/6.2 支持更大帧。软件编码器（libx264/libx265）会严格应用此参数，选择 6K/8K 分辨率时将自动提升；硬件编码器自动选择 Level（此参数不生效）。若播放设备不支持高 Level 会无法播放。">?</span></label>
           <select class="select" id="p_level">
-            <option value="5.1">5.1 （推荐）</option>
-            <option value="5.0">5.0</option>
-            <option value="4.2">4.2</option>
-            <option value="4.1">4.1</option>
+            <option value="6.2">6.2 (8K+ 超大帧)</option>
+            <option value="6.1">6.1 (8K UHD)</option>
+            <option value="6.0">6.0 (6K/8K 全景)</option>
+            <option value="5.1">5.1 (4K@30fps) （推荐）</option>
+            <option value="5.0">5.0 (4K@24fps)</option>
+            <option value="4.2">4.2 (1080p@60fps)</option>
+            <option value="4.1">4.1 (1080p@30fps)</option>
           </select>
         </div>
         <div class="field">
@@ -840,7 +847,7 @@ tr:hover td { background: var(--surface-hover); }
 
       <div class="grid-4">
         <div class="field">
-          <label class="field-label">最大码率<span class="tip-icon" data-tip="CRF 模式下的码率上限（VBR 约束模式），防止复杂场景码率飙升。40M (40Mbps) 适合 4K 全景视频。与缓冲大小配合使用：maxrate 越低文件越可控但复杂场景可能出现块效应。">?</span></label>
+          <label class="field-label">最大码率<span class="tip-icon" data-tip="CRF 模式下的码率上限（VBR 约束模式），防止复杂场景码率飙升。参考值：40M 适合 4K 全景、80M 适合 6K、120M 适合 8K（选择 6K/8K 分辨率时自动调整）。与缓冲大小配合使用：maxrate 越低文件越可控但复杂场景可能出现块效应。">?</span></label>
           <input class="input" id="p_maxrate" value="40M">
         </div>
         <div class="field">
@@ -980,6 +987,8 @@ tr:hover td { background: var(--surface-hover); }
             <div class="field">
               <label class="field-label">输出分辨率<span class="tip-icon" data-tip="校正后的全景视频分辨率。360° 等距柱状视频为 2:1 宽高比。4K 全景 (3840x1920) 推荐作为起点；2K (2048x1024) 文件更小但细节较少。">?</span></label>
               <select class="select" id="p_okaa_out_resolution" style="width:140px;">
+                <option value="7680x3840">7680x3840 (8K)</option>
+                <option value="5760x2880">5760x2880 (6K)</option>
                 <option value="4096x2048">4096x2048</option>
                 <option value="3840x1920" selected>3840x1920</option>
                 <option value="2880x1440">2880x1440</option>
@@ -2015,6 +2024,59 @@ async function onCodecChange() {
   toggleRateMode();
 }
 
+// ── Resolution change: high-res (6K/8K/custom) auto-adjustments ──
+function getOutputResolution() {
+  const sel = document.getElementById('p_resolution').value;
+  if (sel !== 'custom') return sel;
+  const custom = (document.getElementById('p_resolution_custom').value || '').trim().toLowerCase();
+  const m = custom.match(/^(\d{2,5})\s*x\s*(\d{2,5})$/);
+  return m ? (parseInt(m[1], 10) + 'x' + parseInt(m[2], 10)) : '';
+}
+
+function onResolutionChange() {
+  const sel = document.getElementById('p_resolution').value;
+  const customInput = document.getElementById('p_resolution_custom');
+  if (customInput) customInput.style.display = sel === 'custom' ? '' : 'none';
+
+  const res = getOutputResolution();
+  if (!res || res === 'original') return;
+
+  const parts = res.split('x');
+  const w = parseInt(parts[0], 10), h = parseInt(parts[1], 10);
+  const pixels = w * h;
+  const notices = [];
+
+  // 1. Auto-bump Level to minimum compliant value (software encoders apply it strictly)
+  const minLevel = pixels > 35651584 ? '6.1' : (pixels > 8912896 ? '6.0' : '5.1');
+  const levelSel = document.getElementById('p_level');
+  if (levelSel && parseFloat(levelSel.value) < parseFloat(minLevel)) {
+    levelSel.value = minLevel;
+    notices.push('Level 已自动提升至 ' + minLevel);
+  }
+
+  // 2. H.264 hardware encoders cap at 4096x4096 → auto-switch to HEVC variant
+  const codecSel = document.getElementById('p_codec');
+  const hwH264ToHevc = { h264_nvenc: 'hevc_nvenc', h264_qsv: 'hevc_qsv', h264_amf: 'hevc_amf' };
+  if ((w > 4096 || h > 4096) && codecSel && hwH264ToHevc[codecSel.value]) {
+    const hevc = hwH264ToHevc[codecSel.value];
+    codecSel.value = hevc;
+    onCodecChange();
+    notices.push('H.264 硬件编码上限 4096x4096，已切换至 HEVC 编码器');
+  }
+
+  // 3. Bitrate suggestion — only if maxrate still at 4K default (40M)
+  const mrInput = document.getElementById('p_maxrate');
+  const bufInput = document.getElementById('p_bufsize');
+  const suggestions = { '5760x2880': ['80M', '40M'], '7680x3840': ['120M', '60M'] };
+  if (suggestions[res] && mrInput && mrInput.value.trim() === '40M') {
+    mrInput.value = suggestions[res][0];
+    if (bufInput) bufInput.value = suggestions[res][1];
+    notices.push('最大码率/缓冲已调整为 ' + suggestions[res][0] + '/' + suggestions[res][1]);
+  }
+
+  if (notices.length) showToast(notices.join('；'), 'info');
+}
+
 // ── Date Extraction Preview ────────────────────────
 async function updateDatePreview() {
   const enabled = document.getElementById('p_date_from_filename').checked;
@@ -2890,9 +2952,26 @@ async function autoLoadTasks() {
 
 // ── Collect Params from UI ─────────────────────────
 function collectParams() {
+  // Custom resolution validation
+  if (val('p_resolution') === 'custom') {
+    const cres = getOutputResolution();
+    let errMsg = '';
+    if (!cres) {
+      errMsg = '自定义分辨率格式无效，请输入 "宽x高"（如 6400x3200）';
+    } else {
+      const _p = cres.split('x').map(Number);
+      if (_p[0] % 2 !== 0 || _p[1] % 2 !== 0) {
+        errMsg = '自定义分辨率的宽和高必须为偶数（yuv420p 要求），当前: ' + cres;
+      }
+    }
+    if (errMsg) {
+      alert(errMsg);
+      throw new Error(errMsg);
+    }
+  }
   const params = {
     codec: val('p_codec'),
-    resolution: val('p_resolution'), profile: val('p_profile'),
+    resolution: getOutputResolution() || 'original', profile: val('p_profile'),
     level: val('p_level'), pix_fmt: val('p_pix_fmt'),
     color_range: val('p_color_range'), color_space: val('p_color_space'),
     color_primaries: val('p_color_space') === 'bt2020nc' ? 'bt2020' : 'bt709',
@@ -3021,7 +3100,17 @@ function toggleInsta360() {
 function applyParams(p) {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('p_codec', p.codec || 'libx264');
-  set('p_resolution', p.resolution); set('p_profile', p.profile);
+  // Resolution: fall back to "custom" mode if value not in preset list
+  (function() {
+    const r = p.resolution || '4096x2048';
+    const sel = document.getElementById('p_resolution');
+    if (!sel) return;
+    const hasOpt = Array.from(sel.options).some(o => o.value === r);
+    sel.value = hasOpt ? r : 'custom';
+    const ci = document.getElementById('p_resolution_custom');
+    if (ci) ci.value = hasOpt ? '' : r;
+  })();
+  set('p_profile', p.profile);
   set('p_level', p.level); set('p_pix_fmt', p.pix_fmt);
   set('p_color_range', p.color_range); set('p_color_space', p.color_space);
   set('p_bf', p.bf); set('p_refs', p.refs); set('p_gop', p.gop);
@@ -3089,6 +3178,7 @@ function applyParams(p) {
   }
   // Update UI state
   onCodecChange();
+  onResolutionChange();
   toggleRateMode();
   updateDatePreview();
   toggleLocation();

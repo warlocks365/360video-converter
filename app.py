@@ -1085,6 +1085,91 @@ def build_insv_filter_chain(params):
     return ','.join(filters) if filters else None
 
 
+# ── High-resolution (6K/8K+) compatibility helpers ───────────────
+
+# Max luma samples per frame per H.264/HEVC level table (conservative union)
+_LEVEL_MAX_PIXELS = [
+    (5.1, 8_912_896),     # 4K-class (3840x2160 / 4096x2048)
+    (6.0, 35_651_584),    # 6K/8K equirect fits
+    (6.1, 71_303_168),    # 8K UHD / extreme custom
+]
+
+# H.264 hardware encoders cap at 4096x4096 → HEVC variant for >4K
+_HW_H264_TO_HEVC = {
+    'h264_nvenc': 'hevc_nvenc',
+    'h264_qsv':   'hevc_qsv',
+    'h264_amf':   'hevc_amf',
+}
+
+
+def min_level_for_pixels(pixels):
+    """Return minimum compliant level string ('5.1'/'6.0'/'6.1') or None if beyond spec."""
+    for lvl, max_px in _LEVEL_MAX_PIXELS:
+        if pixels <= max_px:
+            return f'{lvl:.1f}'
+    return None
+
+
+def _level_val(level):
+    try:
+        return float(level)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def enforce_hires_compat(params, log=None):
+    """Auto-adjust codec/level for high resolutions (6K/8K/custom >4K).
+
+    Mutates params in place:
+    - H.264 HW encoders (max 4096x4096) are downgraded to their HEVC variant
+    - Software encoder level is bumped to the minimum compliant value
+    """
+    res = params.get('resolution', '')
+    if not res or res == 'original':
+        return
+    try:
+        w, h = (int(x) for x in str(res).lower().split('x'))
+    except ValueError:
+        return
+    pixels = w * h
+
+    # 1. H.264 hardware encoder 4096 cap → HEVC downgrade
+    if (w > 4096 or h > 4096) and params.get('codec') in _HW_H264_TO_HEVC:
+        old = params['codec']
+        params['codec'] = _HW_H264_TO_HEVC[old]
+        if log:
+            log(f'  分辨率 {w}x{h} 超出 H.264 硬件编码上限 (4096x4096)，'
+                f'已自动切换编码器: {old} → {params["codec"]}', 'warn')
+
+    # 2. Level auto-bump (software encoders only; HW encoders auto-select level)
+    if params.get('codec') in ('libx264', 'libx265') and params.get('level'):
+        need = min_level_for_pixels(pixels)
+        cur = params.get('level', '5.1')
+        if need and _level_val(cur) < _level_val(need):
+            params['level'] = need
+            if log:
+                log(f'  分辨率 {w}x{h} 需要 Level {need}，已从 {cur} 自动提升', 'warn')
+        elif need is None and log:
+            log(f'  警告: {w}x{h} 超出 H.264/HEVC Level 表最大帧尺寸，'
+                f'输出 Level 为非标值，部分播放器可能无法解码', 'warn')
+
+    # 3. Bitrate hint: 6K+ resolutions need higher maxrate to avoid block artifacts
+    if pixels > 9_000_000 and log:
+        try:
+            mr = str(params.get('maxrate', '40M')).strip().lower()
+            if mr.endswith('m'):
+                mbps = float(mr[:-1])
+            elif mr.endswith('k'):
+                mbps = float(mr[:-1]) / 1000.0
+            else:
+                mbps = float(mr) / 1_000_000.0
+            if mbps < 60:
+                log(f'  提示: {w}x{h} 分辨率建议 maxrate ≥ 80M（当前 {params.get("maxrate")}），'
+                    f'码率上限过低会导致复杂画面出现块效应', 'warn')
+        except (ValueError, AttributeError):
+            pass
+
+
 # ── VR 3D 360° synthesis helpers ────────────────────────────────
 
 def build_vr3d_cmd(left_inp, right_inp, out, params):
@@ -1134,6 +1219,11 @@ def build_vr3d_cmd(left_inp, right_inp, out, params):
     # Profile
     if cp.get('has_profile') and params.get('profile'):
         cmd += ['-profile:v', params['profile']]
+
+    # Level (software encoders accept string values like "6.0";
+    # hardware encoders keep auto-selection — their -level is an int enum)
+    if codec in ('libx264', 'libx265') and params.get('level'):
+        cmd += ['-level:v', str(params['level'])]
 
     # Color params
     cmd += [
@@ -1371,6 +1461,10 @@ def build_cmd(inp, out, params, pass_num=0, passlogfile=None):
     # Profile (if supported by this codec)
     if cp.get('has_profile') and params.get('profile'):
         cmd += ['-profile:v', params['profile']]
+
+    # Level (software encoders only; hardware encoders auto-select)
+    if codec in ('libx264', 'libx265') and params.get('level'):
+        cmd += ['-level:v', str(params['level'])]
 
     # Universal color params
     cmd += [
@@ -2094,6 +2188,8 @@ def convert_one(jid, inp, out, params):
     temp_out = out + '.tmp.mp4' if params.get('inject_spherical') else out
 
     mode = params.get('rate_mode', 'crf')
+    # High-res (6K/8K/custom) codec & level compatibility auto-adjust
+    enforce_hires_compat(params, log=lambda m, lv='info': log_line(jid, m, lv))
     codec = params.get('codec', 'libx264')
     cp = CODEC_PROFILES.get(codec, CODEC_PROFILES['libx264'])
     log_line(jid, f'Codec: {cp["label"]}')
@@ -2455,7 +2551,8 @@ def vr3d_merge_one(jid, left_inp, right_inp, out, params):
         if not j or j['status'] == 'cancelled':
             return False, 'Cancelled by user', out
 
-    # Build command
+    # Build command (with high-res codec/level auto-adjust)
+    enforce_hires_compat(params, log=lambda m, lv='info': log_line(jid, m, lv))
     cmd = build_vr3d_cmd(left_inp, right_inp, out, params)
     log_line(jid, f'  命令: {" ".join(cmd[:6])}...')
 
