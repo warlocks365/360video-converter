@@ -119,21 +119,45 @@ if (pushT.status !== 0) fail('tag 推送失败：' + (pushT.stderr || '').trim()
 console.log('   ' + (pushT.stderr || '').trim().split('\n').slice(-1)[0]);
 
 // ── 6. 创建 Release 并上传安装包 ──
+// ⚠️ 必须显式传 --target <当前分支>。tag 已存在时若省略，GitHub 会把
+// targetCommitish 默认成仓库**默认分支**（本仓库为 main），于是新发行的这一项
+// 与历史发行不一致 —— v3.12.2 首次发布时即出现该问题（显示 main 而非
+// v3.0.0-stabilization），事后用 `gh release edit --target` 补救。
+const notesBody = fs.readFileSync(notesFile, 'utf8');
+const h1 = notesBody.split('\n').find(l => l.startsWith('# '));
+const title = h1 ? h1.replace(/^#\s*/, '').trim() : tag;
+
 console.log('\n[3/3] 创建 Release 并上传安装包（大文件，请稍候）…');
+console.log(`   标题: ${title}`);
+console.log(`   目标: ${branch}`);
 const rel = gh(['release', 'view', tag, '--repo', REPO_SLUG, '--json', 'tagName']);
 if (rel.status === 0 && rel.stdout.includes(tag)) {
   console.log(`   Release ${tag} 已存在，改为上传（覆盖同名资源）…`);
+  gh(['release', 'edit', tag, '--repo', REPO_SLUG, '--target', branch]);   // 顺带纠正 target
   const up = gh(['release', 'upload', tag, installer, '--repo', REPO_SLUG, '--clobber']);
   if (up.status !== 0) fail('上传失败：' + (up.stderr || '').trim());
 } else {
   const cr = gh(['release', 'create', tag,
     '--repo', REPO_SLUG,
-    '--title', `${tag} — 前端架构重构`,
+    '--target', branch,
+    '--title', title,
     '--notes-file', path.relative(REPO, notesFile).replace(/\\/g, '/'),
     installer]);
   if (cr.status !== 0) fail('创建 Release 失败：' + (cr.stderr || '').trim());
   console.log('   ' + cr.stdout.trim());
 }
+
+// ── 7. 结果校验 ──
+const chk = gh(['release', 'view', tag, '--repo', REPO_SLUG, '--json', 'targetCommitish,assets']);
+let ok = false;
+try {
+  const j = JSON.parse(chk.stdout);
+  ok = j.targetCommitish === branch
+    && j.assets.some(a => a.name === path.basename(installer) && a.state === 'uploaded');
+  console.log(`\n校验: targetCommitish=${j.targetCommitish}（期望 ${branch}）` +
+    `  资产=${j.assets.map(a => a.name + ' ' + (a.size / 1048576).toFixed(1) + 'MB').join(', ')}`);
+} catch (e) { /* 下面统一报错 */ }
+if (!ok) fail('发布后校验未通过，请到 Releases 页面人工确认。');
 
 console.log('\n✓ 发布完成');
 console.log(`   https://github.com/${REPO_SLUG}/releases/tag/${tag}`);
