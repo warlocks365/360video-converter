@@ -1,0 +1,110 @@
+// 门禁 08：打包产物端到端验证
+// 启动打包后的 EXE，验证其内置 HTTP 服务能正确提供**重构后的前端资源**。
+// 这能证明：PyInstaller 确实打进了 static/js/*.js 与 static/css/app.css，
+// 且应用在打包形态下可正常启动（静态资源路由 + 前端资源可访问）。
+//
+// 说明：EXE 会尝试创建 pywebview 窗口；在无显示环境下窗口可能失败，但 Flask
+// 运行在守护线程中并会先于窗口启动，因此 HTTP 端口仍可访问 —— 这正是要验证的部分。
+const { spawn } = require('child_process');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+
+const EXE = path.resolve(__dirname, '../../dist/360VideoConverter.exe');
+const PORT = 8765;
+
+if (!fs.existsSync(EXE)) { console.error('FAIL: 未找到打包产物 ' + EXE); process.exit(1); }
+console.log(`产物: ${EXE}  ${(fs.statSync(EXE).size / 1048576).toFixed(1)} MB\n`);
+
+const get = (p) => new Promise(resolve => {
+  const req = http.get({ host: '127.0.0.1', port: PORT, path: p, timeout: 3000 }, res => {
+    let d = ''; res.on('data', c => d += c);
+    res.on('end', () => resolve({ code: res.statusCode, len: d.length, body: d }));
+  });
+  req.on('error', e => resolve({ err: e.message }));
+  req.on('timeout', () => { req.destroy(); resolve({ err: 'timeout' }); });
+});
+
+(async () => {
+  // 启动 EXE（分离进程，稍后强制结束）
+  const child = spawn(EXE, [], { detached: true, stdio: 'ignore' });
+  child.unref();
+  console.log(`已启动 EXE (pid=${child.pid})，等待内置服务就绪...`);
+
+  // 轮询等待端口就绪（最多 40 秒）
+  let ready = false;
+  for (let i = 0; i < 40; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    const r = await get('/');
+    if (r.code === 200) { ready = true; console.log(`服务就绪（${i + 1}s）\n`); break; }
+  }
+  if (!ready) {
+    console.log('FAIL: 40 秒内未能在 127.0.0.1:' + PORT + ' 访问到内置服务');
+    try { process.kill(-child.pid); } catch (e) {}
+    process.exit(1);
+  }
+
+  const checks = [];
+  const check = (name, ok, detail) => checks.push({ name, ok: !!ok, detail: String(detail === undefined ? '' : detail) });
+
+  // 1. 首页
+  const home = await get('/');
+  check('首页可访问', home.code === 200, `${home.code}, ${home.len}B`);
+  check('首页为重构后的骨架（含 /js/ 与 /css/ 外链，无内联代码）',
+    home.body && home.body.includes('/js/00-core.js') && home.body.includes('/css/app.css')
+    && !/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/.test(home.body)
+    && !/<style[^>]*>/.test(home.body),
+    '外链 00-core.js/app.css；无内联 script/style');
+
+  // 2. 全部前端资源（拆分后的关键文件）
+  const assets = [
+    '/js/00-core.js', '/js/10-ui.js', '/js/20-map.js', '/js/30-params.js', '/js/40-files.js',
+    '/js/50-meta.js', '/js/60-jobs.js', '/js/70-report.js', '/js/80-codec.js', '/js/90-boot.js',
+    '/css/app.css', '/leaflet/leaflet.js', '/leaflet/leaflet.css',
+  ];
+  let missing = [];
+  for (const a of assets) {
+    const r = await get(a);
+    if (r.code !== 200 || r.len < 100) missing.push(`${a}(${r.code || r.err})`);
+  }
+  check(`打包内 ${assets.length} 项前端资源全部可访问`, missing.length === 0, missing.length ? missing.join(', ') : '全部 200');
+
+  // 3. 关键内容校验（证明不是旧版本残留）
+  const core = await get('/js/00-core.js');
+  check('00-core.js 含事件委托分发器（v3.12.0 特征）', core.body && core.body.includes('DELEGATED_ACTIONS'));
+  const ui = await get('/js/10-ui.js');
+  check('10-ui.js 含手风琴与路径工厂（v3.12.0 特征）',
+    ui.body && ui.body.includes('toggleParamGroup') && ui.body.includes('renderPathField'));
+  const jobs = await get('/js/60-jobs.js');
+  // 注意：不能用 includes('_origPollStatus') 判断——源码注释里记录了被删除的旧代码。
+  // 应检查"可执行语句"是否存在：行首（非注释）的赋值/声明。
+  check('60-jobs.js 含 ActiveJob 控制器且覆盖式补丁已移除（v3.11.0 特征）',
+    jobs.body && jobs.body.includes('ActiveJob') && jobs.body.includes('beginJob')
+    && !/^pollStatus = async function/m.test(jobs.body)
+    && !/^const _origPollStatus = pollStatus/m.test(jobs.body),
+    'ActiveJob/beginJob 存在；无行首 pollStatus 重新赋值与 _origPollStatus 声明');
+
+  // 4. 版本号
+  const ver = await get('/api/version');
+  let v = '';
+  try { v = JSON.parse(ver.body).version; } catch (e) {}
+  check('版本接口返回 3.12.0', v === '3.12.0', `version = "${v}"`);
+
+  // 5. 关键 API 端点存活
+  const apiPaths = ['/api/codecs', '/api/settings', '/api/presets', '/api/sysmon'];
+  let apiBad = [];
+  for (const a of apiPaths) {
+    const r = await get(a);
+    if (r.code !== 200) apiBad.push(`${a}(${r.code || r.err})`);
+  }
+  check('关键 API 端点存活', apiBad.length === 0, apiBad.length ? apiBad.join(', ') : '全部 200');
+
+  // 收尾：结束 EXE（含子进程树）
+  try { process.kill(-child.pid); } catch (e) { try { child.kill(); } catch (e2) {} }
+
+  let failed = 0;
+  console.log('══ 打包产物端到端验证 ══\n');
+  for (const c of checks) { if (!c.ok) failed++; console.log(`${c.ok ? 'OK  ' : 'FAIL'} ${c.name}${c.detail ? '  → ' + c.detail : ''}`); }
+  console.log(`\n合计 ${checks.length} 项，通过 ${checks.length - failed}，失败 ${failed}`);
+  process.exit(failed ? 1 : 0);
+})();
