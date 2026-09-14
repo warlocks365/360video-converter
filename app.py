@@ -218,6 +218,27 @@ except ImportError:
 
 app = Flask(__name__, static_folder='static', static_url_path='')
 
+
+@app.after_request
+def _disable_cache_for_ui(response):
+    """禁用 WebView2 对界面资源的缓存。
+
+    背景：应用通过 http://127.0.0.1:<port>/ 提供界面，各版本使用**同一个 URL**。
+    WebView2（Chromium）会按 URL 做磁盘缓存，而 Flask 对静态文件只发
+    Last-Modified/ETag、不发 Cache-Control，浏览器会套用启发式新鲜度，
+    于是可能直接复用上一個版本缓存的 index.html —— 表现为"装了新版本但界面毫无变化"，
+    且控制台无报错、无失败请求，极难定位（v3.12.0 排查时即遇到该风险点）。
+
+    这里对 HTML 与静态资源统一禁用缓存：本应用是本地单机、资源极小，
+    代价可忽略，换来的是"安装即生效"的确定性。
+    API 响应不在此列（它们本就应当每次实时计算）。
+    """
+    if not request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
+
 # Read app version from VERSION file
 def _read_app_version():
     # When bundled by PyInstaller (onefile), VERSION is extracted into sys._MEIPASS
@@ -5452,8 +5473,11 @@ if __name__ == '__main__':
         webview.create_window(
             '360° Video Converter',
             f'http://127.0.0.1:{PORT}',
-            width=1280, height=860,
-            min_size=(900, 600),
+            # ⚠️ 窗口宽度必须大于 app.css 中 .workspace 的单列回落断点（当前 1100px），
+            # 否则三栏工作台在启动瞬间就被自身断点压回单列，表现为"新版 UI 毫无变化"。
+            # 该约束由 scripts/frontend-gate/09-layout-breakpoint.js 自动校验。
+            width=1440, height=900,
+            min_size=(1024, 640),
         )
         webview.start()
         # When window closes, exit

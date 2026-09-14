@@ -49,10 +49,17 @@ body {
 .header-actions { display: flex; gap: 8px; align-items: center; }
 
 /* ── Workspace (3-column) ─────────────────────── */
-.workspace { display: grid; grid-template-columns: minmax(280px, 320px) minmax(0, 1fr) minmax(260px, 320px); gap: 16px; align-items: start; }
+/* 两侧栏取 minmax，中间用 minmax(0,1fr) 吸收剩余宽度；0 下限是为了让内部
+   宽表格可以自行收缩而不撑破网格（配合 .ws-col { min-width: 0 }）。 */
+.workspace { display: grid; grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(240px, 290px); gap: 16px; align-items: start; }
 .ws-col { min-width: 0; }
 .ws-col-sticky { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
-@media (max-width: 1280px) {
+
+/* ⚠️ 单列回落断点【必须小于应用默认窗口宽度】，否则三栏布局在启动瞬间就被自身
+   断点压回单列，表现为"新版 UI 完全没有变化"（v3.12.0 首版正是踩了这个坑：
+   断点 1280px 而窗口宽度恰为 1280px）。
+   该约束由 scripts/frontend-gate/09-layout-breakpoint.js 自动校验，勿手动调高。 */
+@media (max-width: 1100px) {
   .workspace { grid-template-columns: 1fr; }
   .ws-col-sticky { position: static; max-height: none; }
 }

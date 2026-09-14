@@ -19,7 +19,7 @@ console.log(`产物: ${EXE}  ${(fs.statSync(EXE).size / 1048576).toFixed(1)} MB\
 const get = (p) => new Promise(resolve => {
   const req = http.get({ host: '127.0.0.1', port: PORT, path: p, timeout: 3000 }, res => {
     let d = ''; res.on('data', c => d += c);
-    res.on('end', () => resolve({ code: res.statusCode, len: d.length, body: d }));
+    res.on('end', () => resolve({ code: res.statusCode, len: d.length, body: d, headers: res.headers }));
   });
   req.on('error', e => resolve({ err: e.message }));
   req.on('timeout', () => { req.destroy(); resolve({ err: 'timeout' }); });
@@ -55,6 +55,17 @@ const get = (p) => new Promise(resolve => {
     && !/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?<\/script>/.test(home.body)
     && !/<style[^>]*>/.test(home.body),
     '外链 00-core.js/app.css；无内联 script/style');
+  // 三栏工作台结构必须在打包页面里（否则会退回旧版单列观感）
+  const wsCount = (home.body.match(/class="workspace"/g) || []).length;
+  const wsCols = (home.body.match(/ws-col-(left|center|right)/g) || []).length;
+  check('打包页面含三栏工作台结构', wsCount === 1 && wsCols === 3,
+    `.workspace=${wsCount}, .ws-col-*=${wsCols}`);
+  // 注意：必须精确匹配 class 值，否则 "class=\"param-group" 会连带匹配
+  // param-group-head / param-group-body（9 组 × 3 = 27，误判为失败）
+  const pgCount = (home.body.match(/class="param-group(?: collapsed)?"/g) || []).length;
+  check('打包页面含 9 个手风琴分组与单一操作栏',
+    pgCount === 9 && home.body.includes('id="mainActionBar"'),
+    `param-group=${pgCount}, mainActionBar=${home.body.includes('id="mainActionBar"') ? 'YES' : 'NO'}`);
 
   // 2. 全部前端资源（拆分后的关键文件）
   const assets = [
@@ -88,7 +99,15 @@ const get = (p) => new Promise(resolve => {
   const ver = await get('/api/version');
   let v = '';
   try { v = JSON.parse(ver.body).version; } catch (e) {}
-  check('版本接口返回 3.12.0', v === '3.12.0', `version = "${v}"`);
+  check('版本接口返回 3.12.1', v === '3.12.1', `version = "${v}"`);
+
+  // 4b. 缓存策略：界面资源必须 no-store，否则旧版页面可能被 WebView2 缓存复用，
+  //     表现为"装了新版本但界面毫无变化"（v3.12.0 实际遇到的风险点）
+  const homeHdr = (home.headers && home.headers['cache-control']) || '';
+  check('首页下发 no-store（防止旧版页面被缓存复用）', /no-store/.test(homeHdr), `Cache-Control: ${homeHdr || '(缺失)'}`);
+  const cssHdr = await get('/css/app.css');
+  const cssCC = (cssHdr.headers && cssHdr.headers['cache-control']) || '';
+  check('CSS 资源下发 no-store', /no-store/.test(cssCC), `Cache-Control: ${cssCC || '(缺失)'}`);
 
   // 5. 关键 API 端点存活
   const apiPaths = ['/api/codecs', '/api/settings', '/api/presets', '/api/sysmon'];
