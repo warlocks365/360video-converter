@@ -5,16 +5,46 @@
 //
 // 说明：EXE 会尝试创建 pywebview 窗口；在无显示环境下窗口可能失败，但 Flask
 // 运行在守护线程中并会先于窗口启动，因此 HTTP 端口仍可访问 —— 这正是要验证的部分。
-const { spawn } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const net = require('net');
 
 const EXE = path.resolve(__dirname, '../../dist/360VideoConverter.exe');
 const PORT = 8765;
 
 if (!fs.existsSync(EXE)) { console.error('FAIL: 未找到打包产物 ' + EXE); process.exit(1); }
 console.log(`产物: ${EXE}  ${(fs.statSync(EXE).size / 1048576).toFixed(1)} MB\n`);
+
+// ── 进程清理：必须用 taskkill /F /T 杀整棵进程树 ──
+// 陷阱：spawn(detached:true) + process.kill(-pid) 在 Windows 上**不生效**，
+// 会留下僵尸实例占着 8765 端口。后果不仅是资源泄漏 —— 下一次验证会连到那个
+// 旧实例上，于是「测的是旧版本、却报告为通过」。这在 v3.12.2 排查中真实发生过。
+const killAll = () => {
+  try {
+    const out = execFileSync('tasklist', ['/FI', 'IMAGENAME eq 360VideoConverter.exe', '/FO', 'CSV', '/NH'],
+      { encoding: 'utf8', windowsHide: true });
+    const pids = [...out.matchAll(/"360VideoConverter\.exe","(\d+)"/g)].map(m => m[1]);
+    pids.forEach(p => {
+      try { execFileSync('taskkill', ['/F', '/T', '/PID', p], { encoding: 'utf8', windowsHide: true }); } catch (e) {}
+    });
+    return pids;
+  } catch (e) { return []; }
+};
+
+const portBusy = () => new Promise(resolve => {
+  const s = net.connect({ host: '127.0.0.1', port: PORT });
+  const done = v => { try { s.destroy(); } catch (e) {} resolve(v); };
+  s.on('connect', () => done(true));
+  s.on('error', () => done(false));
+  setTimeout(() => done(false), 1000);
+});
+
+// ── 收尾清理 ──
+const cleanup = () => { killAll(); };
+process.on('exit', cleanup);
+process.on('SIGINT', () => { cleanup(); process.exit(130); });
 
 const get = (p) => new Promise(resolve => {
   const req = http.get({ host: '127.0.0.1', port: PORT, path: p, timeout: 3000 }, res => {
@@ -26,7 +56,18 @@ const get = (p) => new Promise(resolve => {
 });
 
 (async () => {
-  // 启动 EXE（分离进程，稍后强制结束）
+  // ── 前置检查：先清掉遗留实例，再确认端口空闲 ──
+  // 若端口已被占用，本次启动的进程会因单实例检查而退出，测试将连到那个旧实例上，
+  // 于是「测的是旧版本、却报告为通过」—— 必须显式拦住这种情况。
+  killAll();
+  await new Promise(r => setTimeout(r, 600));
+  if (await portBusy()) {
+    console.error(`FAIL: 端口 ${PORT} 已被占用，无法确认被测进程就是本次启动的实例。`);
+    console.error('      请先结束所有 360VideoConverter.exe 后重试。');
+    process.exit(1);
+  }
+
+  // 启动 EXE（分离进程，稍后 taskkill 结束整棵树）
   const child = spawn(EXE, [], { detached: true, stdio: 'ignore' });
   child.unref();
   console.log(`已启动 EXE (pid=${child.pid})，等待内置服务就绪...`);
@@ -40,7 +81,7 @@ const get = (p) => new Promise(resolve => {
   }
   if (!ready) {
     console.log('FAIL: 40 秒内未能在 127.0.0.1:' + PORT + ' 访问到内置服务');
-    try { process.kill(-child.pid); } catch (e) {}
+    cleanup();
     process.exit(1);
   }
 
@@ -99,7 +140,7 @@ const get = (p) => new Promise(resolve => {
   const ver = await get('/api/version');
   let v = '';
   try { v = JSON.parse(ver.body).version; } catch (e) {}
-  check('版本接口返回 3.12.1', v === '3.12.1', `version = "${v}"`);
+  check('版本接口返回 3.12.2', v === '3.12.2', `version = "${v}"`);
 
   // 4b. 缓存策略：界面资源必须 no-store，否则旧版页面可能被 WebView2 缓存复用，
   //     表现为"装了新版本但界面毫无变化"（v3.12.0 实际遇到的风险点）
@@ -118,8 +159,8 @@ const get = (p) => new Promise(resolve => {
   }
   check('关键 API 端点存活', apiBad.length === 0, apiBad.length ? apiBad.join(', ') : '全部 200');
 
-  // 收尾：结束 EXE（含子进程树）
-  try { process.kill(-child.pid); } catch (e) { try { child.kill(); } catch (e2) {} }
+  // 收尾：结束整棵进程树（必须用 taskkill，见文件顶部说明）
+  cleanup();
 
   let failed = 0;
   console.log('══ 打包产物端到端验证 ══\n');

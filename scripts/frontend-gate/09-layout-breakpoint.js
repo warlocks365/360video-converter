@@ -73,6 +73,28 @@ check('app.py 对非 API 响应禁用缓存（no-store）',
   /Cache-Control/.test(py) && /no-store/.test(py) && /@app\.after_request/.test(py),
   /no-store/.test(py) ? 'OK' : '未找到 no-store —— 旧版 index.html 可能被 WebView2 缓存复用');
 
+// ── ⑥ 侧栏内容适配 ──
+// 背景（v3.12.1 实际踩过的坑）：编码参数面板原按约 1160px 全宽设计，内含 10 处
+// .grid-4 四列字段；.sysmon-grid 原为 5 列。把它们直接塞进约 380px / 250px 的侧栏后，
+// 每格只剩约 40–57px，标签被压到 min-content 而逐字折行（"视/频/编/码"），
+// <select> 还会按最长 option 撑出横向溢出。必须在侧栏语境内降列并允许收缩。
+const lc = (css.match(/\.ws-col-left \.grid-4[\s\S]{0,120}?\{([^}]*)\}/) || [])[1] || '';
+check('左栏内 .grid-4 已降为两列（不再是四列）',
+  /1fr\s+1fr/.test(lc) && !/repeat\(4/.test(lc),
+  lc ? lc.trim() : '未找到 .ws-col-left .grid-4 规则');
+check('左栏内 .grid-2 已降为单列（下拉框需整行宽度以完整显示选项文案）',
+  /\.ws-col-left \.grid-2\s*\{[^}]*grid-template-columns:\s*1fr\s*;/.test(css),
+  /\.ws-col-left \.grid-2/.test(css) ? 'OK' : '未找到降列规则');
+check('左栏内网格项已设 min-width:0（允许收缩到 min-content 以下，防横向溢出）',
+  /\.ws-col-left[\s\S]{0,400}?min-width:\s*0/.test(css),
+  /min-width:\s*0/.test(css) ? 'OK' : '缺失 —— <select> 会按最长 option 撑破网格');
+check('左栏内卡片内边距已收紧（为内容多让出宽度）',
+  /\.ws-col-left \.card\s*\{[^}]*padding:/.test(css), '');
+const sc = (css.match(/\.ws-col-right \.sysmon-grid\s*\{([^}]*)\}/) || [])[1] || '';
+check('右栏内 .sysmon-grid 已降为两列（原 5 列在 250px 栏内每格仅约 40px）',
+  /repeat\(2/.test(sc) && !/repeat\(5/.test(sc),
+  sc ? sc.trim() : '未找到 .ws-col-right .sysmon-grid 规则');
+
 // ── 输出 ──
 let failed = 0;
 console.log('══ 布局断点与窗口宽度协调性 ══\n');

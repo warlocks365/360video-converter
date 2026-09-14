@@ -39,7 +39,7 @@ body {
 }
 
 /* ── Layout ───────────────────────────────────── */
-.app { max-width: 1680px; margin: 0 auto; padding: 20px; }
+.app { max-width: 1920px; margin: 0 auto; padding: 20px; }
 .header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 0; margin-bottom: 16px; border-bottom: 2px solid var(--border);
@@ -50,18 +50,52 @@ body {
 
 /* ── Workspace (3-column) ─────────────────────── */
 /* 两侧栏取 minmax，中间用 minmax(0,1fr) 吸收剩余宽度；0 下限是为了让内部
-   宽表格可以自行收缩而不撑破网格（配合 .ws-col { min-width: 0 }）。 */
-.workspace { display: grid; grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(240px, 290px); gap: 16px; align-items: start; }
+   宽表格可以自行收缩而不撑破网格（配合 .ws-col { min-width: 0 }）。
+   左栏宽度由「参数配置」面板的内容决定：它内含 10 处 .grid-4 四列字段，
+   且部分控件内容很宽（如 #p_codec 的 option 文本达 30 字符）。
+   见下方「左栏侧栏适配」一节——光给宽度不够，列数必须同步降级。 */
+.workspace { display: grid; grid-template-columns: minmax(360px, 400px) minmax(0, 1fr) minmax(240px, 270px); gap: 16px; align-items: start; }
 .ws-col { min-width: 0; }
 .ws-col-sticky { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
+
+/* ── 左栏「参数配置」的侧栏适配 ──────────────────────
+   编码参数面板原按约 1160px 全宽设计：内含 10 处 .grid-4（四列字段）与 2 处 .grid-2，
+   字段标签为不换行的 flex 行，表单控件为 width:100% 但未设 min-width:0。
+   直接塞进约 380px 侧栏会同时触发两个问题：
+     ① 四列字段每列仅约 57px → 标签被压到 min-content，逐字折行（"视/频/编/码"）；
+     ② <select> 按最长 option 撑出 min-content 宽度 → 撑破网格、横向溢出。
+   下面按「降列 + 允许收缩 + 收紧留白」三招适配。 */
+.ws-col-left .grid-4,
+.ws-col-left .grid-3 { grid-template-columns: 1fr 1fr; }   /* 四列 → 两列 */
+.ws-col-left .grid-2 { grid-template-columns: 1fr; }        /* 两列 → 单列（编码器下拉框需要整行宽度以完整显示选项文案） */
+.ws-col-left .field,
+.ws-col-left .grid-2 > *,
+.ws-col-left .grid-3 > *,
+.ws-col-left .grid-4 > * { min-width: 0; }                  /* 允许网格项收缩到 min-content 以下 */
+.ws-col-left .select,
+.ws-col-left .input { min-width: 0; max-width: 100%; }
+.ws-col-left .field-label { flex-wrap: wrap; row-gap: 2px; } /* 标签过长时整词换行，而非挤出容器 */
+.ws-col-left .card { padding: 14px; }                        /* 收紧卡片内边距，多让出 12px 内容宽度 */
+.ws-col-left .field { margin-bottom: 10px; }
+
+/* ── 右栏「实时监控」的侧栏适配 ──────────────────────
+   .sysmon-grid 原为 5 列（适配全宽卡片）；放进约 250px 侧栏后每格仅约 40px，
+   出现 "N/A" 折行、数值被压断。侧栏语境下降为 2 列。 */
+.ws-col-right .sysmon-grid { grid-template-columns: repeat(2, 1fr); }
 
 /* ⚠️ 单列回落断点【必须小于应用默认窗口宽度】，否则三栏布局在启动瞬间就被自身
    断点压回单列，表现为"新版 UI 完全没有变化"（v3.12.0 首版正是踩了这个坑：
    断点 1280px 而窗口宽度恰为 1280px）。
-   该约束由 scripts/frontend-gate/09-layout-breakpoint.js 自动校验，勿手动调高。 */
-@media (max-width: 1100px) {
+   该约束由 scripts/frontend-gate/09-layout-breakpoint.js 自动校验，勿手动调高。
+   取 1180px：再窄时中间工作区不足 420px，三栏的表格已无法阅读，不如回落单列。 */
+@media (max-width: 1180px) {
   .workspace { grid-template-columns: 1fr; }
   .ws-col-sticky { position: static; max-height: none; }
+  /* 单列时左右栏恢复为全宽语境，需撤销侧栏适配 */
+  .ws-col-left .grid-4, .ws-col-left .grid-3 { grid-template-columns: 1fr 1fr; }
+  .ws-col-left .grid-2 { grid-template-columns: 1fr 1fr; }
+  .ws-col-left .card { padding: 20px; }
+  .ws-col-right .sysmon-grid { grid-template-columns: repeat(5, 1fr); }
 }
 
 /* ── Cards ────────────────────────────────────── */
