@@ -32,6 +32,9 @@ const EXPECTED_ADDED = new Set([
   'pg-okaa', 'pg-insta360', 'pg-date', 'pg-location',
   // v3.13.0 编码 copy 模式（流复制）开关与提示框
   'p_copy_mode', 'copyModeHint',
+  // v3.x 元数据报告：批量结果筛选 / 多选工具栏 / 加入批量转换队列
+  'reportFilterBar', 'reportFilterField', 'reportFilterKeyword', 'reportFilterBool',
+  'reportFilterCount', 'reportSelectBar', 'reportSelectCount', 'reportAddToQueueBtn',
 ]);
 
 if (MODE === 'baseline') {

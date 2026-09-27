@@ -552,6 +552,39 @@ function insertVar(v) {
 
 // ── Add to Batch Queue ────────────────────────────────
 
+// v3.x: 把媒体文件（源路径）加入批量转换队列的可复用入口。
+// 供元数据报告等模块调用：传入 Array<{path, name?, dir?, size_mb?, size_str?}>，
+// 返回 {added, skipped}。复用 makeTask + buildTaskConfig（快照当前编码/输出设置），
+// 任务结构与 batchTasks 现有条目完全一致；同路径重复添加计为 skipped。
+function addMediaToBatchQueue(files) {
+  const result = { added: 0, skipped: 0 };
+  if (!Array.isArray(files) || files.length === 0) return result;
+  const cfg = buildTaskConfig();
+  const existing = new Set(batchTasks.map(t => t.path));
+  for (const f of files) {
+    const path = (f && f.path || '').trim();
+    if (!path) { result.skipped++; continue; }
+    if (existing.has(path)) { result.skipped++; continue; }
+    const parts = path.split(/[\\/]/);
+    const name = (f && f.name) || parts.pop() || path;
+    const dir = (f && f.dir) || parts.join('\\');
+    batchTasks.push(makeTask({
+      path: path, name: name, dir: dir,
+      size_str: (f && f.size_str) || '--',
+      size_mb: (f && f.size_mb) || 0,
+      date_in_name: (f && f.date_in_name) || null
+    }, cfg));
+    existing.add(path);
+    result.added++;
+  }
+  if (result.added > 0) {
+    renderBatchTable();
+    recomputeOutputs(); // async：内部完成后会再次 renderBatchTable 刷新输出列
+  }
+  return result;
+}
+
+
 function addToBatchQueue() {
   const cfg = buildTaskConfig();
   if (currentMode === 'single') {

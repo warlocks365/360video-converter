@@ -240,6 +240,13 @@ const DELEGATED_ACTIONS = {
   // 元数据设置区子容器显隐（原为内联 onchange，三套命名不一致故用显式前缀/区段标识）
   'toggle-spherical-options': el => toggleSphericalOptions(el, el.dataset.prefix),
   'toggle-meta-edit-section': el => toggleMetaEditSection(el.dataset.metaSection, el.checked),
+  // 元数据报告批量结果（筛选 / 多选 / 加入批量转换队列）
+  'report-filter-change':     () => onReportFilterChange(),
+  'toggle-report-select':     (el, e) => toggleReportSelect(Number(el.dataset.idx), e.target.checked),
+  'report-select-all':        () => reportSelectVisibleAll(),
+  'report-select-invert':     () => reportSelectInvert(),
+  'report-select-clear':      () => reportSelectClear(),
+  'report-add-to-queue':      () => addSelectedReportToQueue(),
 };
 
 function dispatchDelegatedEvent(e) {

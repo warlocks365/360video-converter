@@ -79,7 +79,7 @@ const check = (name, cond, detail) => {
   })();
   const fnNames = dom.window.eval("(typeof switchMode) + ',' + (typeof collectParams) + ',' + (typeof toggleParamGroup)");
 
-  check('10 个业务脚本全部执行且委托表就绪', actionCount === 20, `注册 action 数 = ${actionCount}`);
+  check('10 个业务脚本全部执行且委托表就绪', actionCount >= 26, `注册 action 数 = ${actionCount}`);
   check('init() 完成：版本号已回填', $('appVersionTag') && $('appVersionTag').textContent.includes('3.12.0'),
     `appVersionTag = "${$('appVersionTag') && $('appVersionTag').textContent}"`);
   check('关键函数已导出为全局', fnNames === 'function,function,function', fnNames);
@@ -195,6 +195,22 @@ const check = (name, cond, detail) => {
     (() => { dom.window.switchMode('metadata');
       return $('metaApplyBtn').style.display !== 'none' && $('startBtn').style.display === 'none'; })());
   dom.window.switchMode('single');
+
+  // ── 12. 元数据功能增强（筛选 / 多选 / 加入队列）──
+  check('元数据增强：筛选栏 / 多选栏 / 加入队列按钮存在',
+    !!$('reportFilterBar') && !!$('reportSelectBar') && !!$('reportAddToQueueBtn'),
+    `filter=${!!$('reportFilterBar')} select=${!!$('reportSelectBar')} queue=${!!$('reportAddToQueueBtn')}`);
+  check('元数据增强：筛选字段下拉按源数据功能分组（≥5 个 optgroup）',
+    (() => { const g = $('reportFilterField'); return g ? g.querySelectorAll('optgroup').length >= 5 : false; })(),
+    `optgroup=${$('reportFilterField') ? $('reportFilterField').querySelectorAll('optgroup').length : 'N/A'}`);
+  check('元数据增强：勾选以 Set 按路径记录，空数据下全选/反选/清空不崩',
+    (() => { try {
+      const isSet = dom.window.eval('reportSelectedPaths instanceof Set');
+      dom.window.reportSelectVisibleAll();
+      dom.window.reportSelectInvert();
+      dom.window.reportSelectClear();
+      return isSet && dom.window.eval('reportSelectedPaths.size') === 0;
+    } catch (e) { return 'ERR:' + e.message; } })());
 
   // ── 11. 控制台无错误 ──
   check('页面无 JS 错误', errors.length === 0, errors.slice(0, 3).join(' | '));

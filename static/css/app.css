@@ -654,3 +654,31 @@ tr:hover td { background: var(--surface-hover); }
 .report-row .value.ok { color: var(--success); }
 .report-row .value.warn { color: var(--warning); }
 @media (max-width: 768px) { .report-grid { grid-template-columns: 1fr; } }
+
+/* ── Metadata Report: moov badge / filter bar / select bar (v3.x 新增) ── */
+.moov-badge-front {
+  background: rgba(34, 139, 34, 0.12); border-color: rgba(34, 139, 34, 0.4);
+  color: #228b22;
+}
+.moov-badge-end {
+  background: rgba(217, 119, 6, 0.12); border-color: rgba(217, 119, 6, 0.4);
+  color: #d97706;
+}
+.moov-badge-missing {
+  background: rgba(220, 38, 38, 0.12); border-color: rgba(220, 38, 38, 0.4);
+  color: #dc2626;
+}
+.report-filter-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 10px; flex-wrap: wrap;
+}
+.report-filter-bar .report-filter-field { max-width: 230px; }
+.report-filter-bar .report-filter-keyword { flex: 1; min-width: 160px; }
+.report-filter-bar .report-filter-bool { width: 100px; }
+.report-filter-count { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; }
+.report-select-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 10px; flex-wrap: wrap;
+}
+.report-select-count { font-size: 0.8rem; color: var(--text-secondary); }
+.report-item-select { display: inline-flex; align-items: center; margin-right: 6px; }

@@ -5104,6 +5104,68 @@ def probe_metadata():
         return jsonify({'error': str(e)}), 500
 
 
+def probe_moov_atom(path):
+    """遍历 MP4 顶层 box，返回 {'has_moov': bool, 'moov_position': 'front'|'end'|'-'}
+
+    MP4 box 结构：前 4 字节大端 size，接着 4 字节 type；size==1 表示后跟 8 字节
+    largesize；size==0 表示延伸到文件尾。moov 在 mdat 之前 = 'front'（faststart），
+    在 mdat 之后 = 'end'。文件不可读/非 MP4 → has_moov=False。
+
+    纯 Python 实现，不依赖 ffprobe：只读每个 box 的 8/16 字节头并 seek 跳过内容，
+    绝不把整个文件读进内存（视频文件可能几十 GB）。对恶意/损坏文件（size<8 且非
+    0/1）立即终止遍历，防止死循环或越界。
+    """
+    result = {'has_moov': False, 'moov_position': '-'}
+    try:
+        f = open(path, 'rb')
+    except OSError:
+        return result
+    with f:
+        try:
+            # 头 12 字节不足以确认是 MP4：MP4 容器必须以 ftyp box 开头
+            # （偏移 4-8 字节为 'ftyp'），MKV/AVI/FLV 等直接排除
+            sig = f.read(12)
+            if len(sig) < 12 or sig[4:8] != b'ftyp':
+                return result
+            f.seek(0)
+            seen_mdat = False
+            while True:
+                header = f.read(8)
+                if len(header) < 8:
+                    break  # 文件尾或截断
+                size = int.from_bytes(header[0:4], 'big')
+                btype = header[4:8]
+                hdr = 8
+                if size == 1:
+                    # 64 位 largesize：完整头共 16 字节
+                    large = f.read(8)
+                    if len(large) < 8:
+                        break
+                    size = int.from_bytes(large, 'big')
+                    hdr = 16
+                elif size == 0:
+                    # 延伸到文件尾：moov/mdat 判定后即到末尾
+                    if btype == b'moov':
+                        result['has_moov'] = True
+                        result['moov_position'] = 'end' if seen_mdat else 'front'
+                    break
+                if size < hdr:
+                    break  # 损坏/恶意 size（<8 或 largesize<16），终止防死循环
+                if btype == b'moov':
+                    result['has_moov'] = True
+                    result['moov_position'] = 'end' if seen_mdat else 'front'
+                    break
+                if btype == b'mdat':
+                    seen_mdat = True
+                try:
+                    f.seek(size - hdr, 1)  # 只 seek 不读，跳过 box 内容
+                except OSError:
+                    break
+        except (OSError, ValueError):
+            pass
+    return result
+
+
 @app.route('/api/report', methods=['POST'])
 def start_report():
     """Generate a metadata report for one or more video files using a job-based
@@ -5206,6 +5268,12 @@ def report_worker(jid):
                         except Exception:
                             pass
                     item['probe'] = probe_data
+                    # moov atom 位置（faststart 检测）：纯 Python 头部字节扫描，
+                    # 与 ffprobe 结果并列返回；失败不影响主探测结果
+                    try:
+                        item['moov'] = probe_moov_atom(path)
+                    except Exception:
+                        item['moov'] = None
                     item['ok'] = True
                     ok_count += 1
                     log_line(jid, '  读取成功', 'success')
