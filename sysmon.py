@@ -355,7 +355,11 @@ class SysMon:
             # doubling overhead and making encoder stats lag behind.
             cmd = [
                 self._nvidia_smi_path,
-                '--query-gpu=utilization.gpu,utilization.memory,'
+                # ⚠️ 不查 utilization.memory：该指标仅在 Quadro/Tesla 上支持，
+                # GeForce（消费卡，如 RTX 3090）返回 "[N/A]"。旧实现用裸 int() 解析
+                # 全部字段，一个 "[N/A]" 就让整个采样抛异常 → GPU 永远显示 N/A。
+                # 显存占用率改为由 memory.used / memory.total 计算（所有卡都支持）。
+                '--query-gpu=utilization.gpu,'
                 'memory.total,memory.used,temperature.gpu,'
                 'encoder_utilization.avg',
                 '--format=csv,noheader,nounits',
@@ -368,22 +372,30 @@ class SysMon:
                     data.update(self._smi_cache)
                 return
 
-            parts = [p.strip() for p in r.stdout.strip().split(',')]
-            if len(parts) >= 5:
-                gpu_data = {
-                    'gpu_percent': int(parts[0]),
-                    'gpu_mem_percent': int(parts[1]),
-                    'gpu_mem_total_mb': int(parts[2]),
-                    'gpu_mem_used_mb': int(parts[3]),
-                    'gpu_temp': int(parts[4]),
-                }
-                # Encoder utilization (6th field, may not exist on all drivers)
-                if len(parts) >= 6 and parts[5]:
-                    try:
-                        gpu_data['gpu_enc_percent'] = int(parts[5])
-                    except ValueError:
-                        pass  # Non-numeric (e.g. "N/A") — skip
+            # ⚠️ 逐字段容错解析：nvidia-smi 对不支持的指标返回 "[N/A]"，
+            # 单个字段解析失败不应拖垮整个采样（旧实现一个 N/A 就全废）。
+            def _smi_int(raw):
+                try:
+                    return int(raw)
+                except (TypeError, ValueError):
+                    return None
 
+            parts = [p.strip() for p in r.stdout.strip().split(',')]
+            gpu_data = {}
+            for key, idx in (('gpu_percent', 0), ('gpu_mem_total_mb', 1),
+                             ('gpu_mem_used_mb', 2), ('gpu_temp', 3)):
+                val = _smi_int(parts[idx]) if len(parts) > idx else None
+                if val is not None:
+                    gpu_data[key] = val
+            if len(parts) >= 5:
+                enc = _smi_int(parts[4])
+                if enc is not None:
+                    gpu_data['gpu_enc_percent'] = enc
+            total, used = gpu_data.get('gpu_mem_total_mb'), gpu_data.get('gpu_mem_used_mb')
+            if total and used is not None:
+                gpu_data['gpu_mem_percent'] = round(used * 100.0 / total)
+
+            if gpu_data:
                 self._smi_cache = gpu_data
                 self._smi_last_ts = now
                 data.update(gpu_data)
