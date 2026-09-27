@@ -1384,6 +1384,21 @@ def build_cmd(inp, out, params, pass_num=0, passlogfile=None):
     if insv_pair and is_insv_file(inp):
         cmd += ['-i', insv_pair]
 
+
+    # ── copy 模式（v3.13.0）：直接复制源流，不做任何重编码 ──
+    # 用途：只改封装/元数据（GSpherical、faststart、creation_time、location），
+    # 不想要转码损耗与画质损失，速度接近磁盘拷贝。
+    # 约束：-c copy 不能与任何视频滤镜共存（滤镜必须重编码）。因此 copy 模式下
+    # 强制关闭 okaa / insv 拼接 / vidstab / 缩放（前端已互斥禁用，这里再兜底一次）。
+    copy_mode = bool(params.get('copy_mode'))
+    if copy_mode:
+        params = dict(params)          # 复制一份，不污染调用方的 dict
+        for _k in ('okaa_correction', 'insv_stitch', 'insv_denoise', 'stabilize'):
+            params[_k] = False
+        params.pop('_insv_pair', None)
+        params.pop('_stab_trf', None)
+        params['resolution'] = 'original'   # 跳过 scale（缩放需重编码）
+        insv_pair = None                    # 中和上面已赋值的局部变量
     codec = params.get('codec', 'libx264')
     cp = CODEC_PROFILES.get(codec, CODEC_PROFILES['libx264'])
 
@@ -1471,6 +1486,41 @@ def build_cmd(inp, out, params, pass_num=0, passlogfile=None):
             filters.append(f'scale={w}:{h}:flags=lanczos')
         if filters:
             cmd += ['-vf', ','.join(filters)]
+
+    # Metadata: creation_time (if date extraction or manual date is enabled)
+    creation_time = params.get('_effective_creation_time', '')
+    if creation_time:
+        cmd += ['-metadata', f'creation_time={creation_time}']
+
+    # Metadata: location (ISO 6709 format: +lat-lon/) + location.name + comment (address)
+    # FIX BUG: MP4 muxer stores location (©xyz atom) at FORMAT level only.
+    # Using -metadata:s:v:0 silently drops the location tag. Must use -metadata.
+    loc_lat = params.get('location_lat', '')
+    loc_lon = params.get('location_lon', '')
+    if params.get('set_location') and loc_lat and loc_lon:
+        iso6709 = format_location_iso6709(loc_lat, loc_lon)
+        if iso6709:
+            cmd += ['-metadata', f'location={iso6709}']
+        loc_name = params.get('location_name', '')
+        if loc_name:
+            cmd += ['-metadata', f'location.name={loc_name}']
+        loc_addr = params.get('location_address', '')
+        if loc_addr:
+            cmd += ['-metadata', f'comment={loc_addr}']
+
+    # ── copy 模式：跳过编码器与音频重编码，直接流复制后提前返回 ──
+    # 元数据（上方）对 stream copy 同样有效，这正是 copy 模式的主要用途。
+    if copy_mode:
+        cmd += ['-map', '0', '-c', 'copy']
+        if params.get('brand'):
+            cmd += ['-brand', params['brand']]
+        if params.get('faststart', True):
+            cmd += ['-movflags', '+faststart']
+        _td = params.get('test_duration', 0)
+        if _td and _td > 0:
+            cmd += ['-t', str(_td)]
+        cmd.append(out)
+        return cmd
 
     # Set encoder
     cmd += ['-c:v', cp['encoder']]
@@ -1565,27 +1615,6 @@ def build_cmd(inp, out, params, pass_num=0, passlogfile=None):
         cmd += ['-x264-params', params['x264_params']]
     elif codec == 'libx265' and params.get('x265_params'):
         cmd += ['-x265-params', params['x265_params']]
-
-    # Metadata: creation_time (if date extraction or manual date is enabled)
-    creation_time = params.get('_effective_creation_time', '')
-    if creation_time:
-        cmd += ['-metadata', f'creation_time={creation_time}']
-
-    # Metadata: location (ISO 6709 format: +lat-lon/) + location.name + comment (address)
-    # FIX BUG: MP4 muxer stores location (©xyz atom) at FORMAT level only.
-    # Using -metadata:s:v:0 silently drops the location tag. Must use -metadata.
-    loc_lat = params.get('location_lat', '')
-    loc_lon = params.get('location_lon', '')
-    if params.get('set_location') and loc_lat and loc_lon:
-        iso6709 = format_location_iso6709(loc_lat, loc_lon)
-        if iso6709:
-            cmd += ['-metadata', f'location={iso6709}']
-        loc_name = params.get('location_name', '')
-        if loc_name:
-            cmd += ['-metadata', f'location.name={loc_name}']
-        loc_addr = params.get('location_address', '')
-        if loc_addr:
-            cmd += ['-metadata', f'comment={loc_addr}']
 
     # Audio
     if pass_num == 1:
@@ -2215,7 +2244,8 @@ def convert_one(jid, inp, out, params):
     cp = CODEC_PROFILES.get(codec, CODEC_PROFILES['libx264'])
     log_line(jid, f'Codec: {cp["label"]}')
 
-    if mode == '2pass' and cp['group'] == 'cpu':
+    # copy 模式没有码率控制，无需 2-pass（也避免把整段流复制白跑一遍）
+    if mode == '2pass' and cp['group'] == 'cpu' and not params.get('copy_mode'):
         passlog = os.path.join(os.path.dirname(temp_out), f'.ffpass_{uuid_mod.uuid4().hex[:8]}')
         log_line(jid, '--- Pass 1/2 (analysis) ---')
         cmd1 = build_cmd(inp, temp_out, params, pass_num=1, passlogfile=passlog)
@@ -5469,11 +5499,24 @@ if __name__ == '__main__':
 
     # Try pywebview for embedded window
     try:
+        # ⚠️ WebView2 渲染参数（闪烁修复）。
+        # 现象：v3.12.2 的三栏工作台引入了两处 position:sticky + box-shadow 的合成层，
+        # 在无 GPU 直通的环境（VMware / RDP / 远程桌面）里，Chromium 的 DirectComposition
+        # 合成路径会让画面出现整块区域频繁闪烁，用户描述为「频繁弹出未知窗口的闪烁」。
+        # 取证：用 Win32 EnumWindows 以 200ms 间隔采样主窗口出现后的 20 秒，本进程
+        # **零新窗口** → 排除真实弹窗，确认是渲染层问题。
+        # 修复：默认禁用 GPU 加速，改走 CPU 合成。本应用是表单/表格型界面，无视频
+        # 预览等重绘负载，CPU 渲染绰绰有余。如需恢复 GPU 加速，设环境变量 360VC_ENABLE_GPU=1。
+        # 说明：WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS 是 WebView2 运行时自带的环境变量，
+        # pywebview 不经手，因此在 import webview 之前设置即可生效。
+        if os.environ.get('360VC_ENABLE_GPU') != '1':
+            os.environ['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = '--disable-gpu'
+
         import webview
         webview.create_window(
             '360° Video Converter',
             f'http://127.0.0.1:{PORT}',
-            # ⚠️ 窗口宽度必须大于 app.css 中 .workspace 的单列回落断点（当前 1100px），
+            # ⚠️ 窗口宽度必须大于 app.css 中 .workspace 的单列回落断点（当前 1180px），
             # 否则三栏工作台在启动瞬间就被自身断点压回单列，表现为"新版 UI 毫无变化"。
             # 该约束由 scripts/frontend-gate/09-layout-breakpoint.js 自动校验。
             width=1440, height=900,

@@ -30,6 +30,8 @@ const EXPECTED_ADDED = new Set([
   // v3.12.0 参数手风琴：9 个分组容器（每个 .section-divider 分组被包成独立可折叠组）
   'pg-codec', 'pg-video', 'pg-audio', 'pg-container', 'pg-stabilize',
   'pg-okaa', 'pg-insta360', 'pg-date', 'pg-location',
+  // v3.13.0 编码 copy 模式（流复制）开关与提示框
+  'p_copy_mode', 'copyModeHint',
 ]);
 
 if (MODE === 'baseline') {

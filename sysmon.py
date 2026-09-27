@@ -23,6 +23,12 @@ import warnings
 # Suppress pynvml deprecation FutureWarning (nvidia-ml-py provides same API)
 warnings.filterwarnings("ignore", category=FutureWarning, module="pynvml")
 
+# ⚠️ Windows 上启动控制台子进程（powershell / nvidia-smi）时，若父进程无控制台
+# 且未设 CREATE_NO_WINDOW，系统会为子进程分配一个**新的控制台窗口** → 每次调用
+# 都闪一个黑框。GPU 采样节流为 1s/次，等于每秒弹窗一次 —— 即"频繁弹出未知窗口
+# 的闪烁"。app.py 的所有 ffmpeg 调用早已带此标志，这里补齐 sysmon 自己的。
+_NO_WINDOW = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+
 # Global singleton instance
 _global_sysmon = None
 _global_lock = threading.Lock()
@@ -156,7 +162,8 @@ class SysMon:
                 )
                 r = subprocess.run(
                     ['powershell', '-NoProfile', '-Command', ps_cmd],
-                    capture_output=True, text=True, timeout=5
+                    capture_output=True, text=True, timeout=5,
+                    creationflags=_NO_WINDOW
                 )
                 lines = [l.strip() for l in r.stdout.splitlines() if l.strip()]
                 gpus = [l for l in lines if l and not l.lower().startswith('name')]
@@ -311,7 +318,8 @@ class SysMon:
             try:
                 r = subprocess.run(
                     [path, '--query-gpu=name', '--format=csv,noheader,nounits'],
-                    capture_output=True, text=True, timeout=5
+                    capture_output=True, text=True, timeout=5,
+                    creationflags=_NO_WINDOW
                 )
                 if r.returncode == 0 and r.stdout.strip():
                     self._nvidia_smi_path = path
@@ -352,7 +360,8 @@ class SysMon:
                 'encoder_utilization.avg',
                 '--format=csv,noheader,nounits',
             ]
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=5,
+                               creationflags=_NO_WINDOW)
             if r.returncode != 0 or not r.stdout.strip():
                 # nvidia-smi failed — keep using cached data
                 if self._smi_cache:

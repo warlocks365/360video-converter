@@ -215,8 +215,11 @@ function collectParams() {
     audio_channels: num('p_audio_channels'),
     audio_profile: val('p_audio_profile'),
     brand: val('p_brand'),
-    faststart: document.getElementById('p_faststart').checked,
-    inject_spherical: document.getElementById('p_inject_spherical').checked,
+  faststart: document.getElementById('p_faststart').checked,
+  // copy 模式（v3.13.0）：直接复制源流，不重编码。后端 build_cmd 据此走流复制分支，
+  // 并自动忽略 okaa/insv/vidstab/scale（这些功能必须重编码，与 -c copy 互斥）。
+  copy_mode: !!(document.getElementById('p_copy_mode') || {}).checked,
+  inject_spherical: document.getElementById('p_inject_spherical').checked,
     pano_type: (function(){ var m=val('p_spherical_mode')||'360-mono'; var i=m.indexOf('-'); return m.substring(0,i); })(),
     stereo_mode: (function(){ var m=val('p_spherical_mode')||'360-mono'; var i=m.indexOf('-'); return m.substring(i+1); })(),
     // Stabilization
@@ -295,6 +298,8 @@ function applyParams(p) {
   set('p_audio_profile', p.audio_profile);
   set('p_brand', p.brand);
   document.getElementById('p_faststart').checked = p.faststart;
+  document.getElementById('p_copy_mode').checked = !!p.copy_mode;
+  if (typeof onCopyModeChange === 'function') onCopyModeChange();   // 同步互斥禁用态
   document.getElementById('p_inject_spherical').checked = p.inject_spherical;
   set('p_spherical_mode', (p.pano_type || '360') + '-' + (p.stereo_mode || 'mono'));
   // Stabilization

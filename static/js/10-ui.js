@@ -316,6 +316,24 @@ function toggleTestEncode() {
 }
 
 
+// ── copy 模式（流复制）互斥联动 ─────────────────────
+// -c copy 不能与任何视频滤镜共存（滤镜必须重编码），因此启用后把"需要重编码"
+// 的参数组整体置为惰性（半透明 + 不可交互），并把编码器下拉禁用。
+// 后端 build_cmd 也会再兜底一次（强制忽略 okaa/insv/vidstab/scale），双保险。
+const COPY_INERT_GROUPS = ['pg-video', 'pg-audio', 'pg-stabilize', 'pg-okaa', 'pg-insta360'];
+
+function onCopyModeChange() {
+  const cb = document.getElementById('p_copy_mode');
+  const on = !!(cb && cb.checked);
+  setDisplay('copyModeHint', on ? '' : 'none');
+  const codecSel = document.getElementById('p_codec');
+  if (codecSel) codecSel.disabled = on;
+  COPY_INERT_GROUPS.forEach(id => {
+    const g = document.getElementById(id);
+    if (g) g.classList.toggle('pg-inert', on);
+  });
+}
+
 function toggleStabilize() {
   const cb = document.getElementById('p_stabilize');
   const opts = document.getElementById('stabilizeOptions');

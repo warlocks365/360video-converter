@@ -157,6 +157,13 @@
     <span class="pg-arrow">▾</span><span class="pg-title">编码方案选择</span>
   </div>
   <div class="param-group-body">
+      <label class="check" style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+        <input type="checkbox" id="p_copy_mode" onchange="onCopyModeChange()">
+        直接复制源流（-c copy，不重编码）<span class="tip-icon" data-tip="勾选后不做任何重编码，仅重新封装并写入元数据（GSpherical / faststart / 拍摄时间 / GPS）。速度接近磁盘拷贝、零画质损失。注意：与防抖、Okaa 校正、Insta360 拼接、分辨率缩放互斥（这些功能必须重编码），启用后相关参数将被忽略。">?</span>
+      </label>
+      <div class="info-box" id="copyModeHint" style="display:none;margin-bottom:10px;">
+        已启用流复制：编码器与画质参数不生效；防抖 / Okaa / Insta360 拼接 / 缩放已被忽略（滤镜需重编码）。仅封装与元数据变更会生效。
+      </div>
       <div class="grid-2">
         <div class="field">
           <label class="field-label">视频编码器<span class="tip-icon" data-tip="选择视频编码方案。H.264 兼容性最广（几乎所有设备支持）；H.265 压缩率更高（同等质量文件更小）但旧设备可能不支持。软件编码（libx264/libx265）质量最好但速度慢；硬件编码（NVENC/QSV/AMF）速度快 5-20 倍但质量略低。360° 全景视频因分辨率高，推荐使用硬件编码加速。">?</span></label>

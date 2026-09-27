@@ -119,6 +119,25 @@ const check = (name, cond, detail) => {
     collected && String(collected.insv_fov) === '210',
     collected ? `insv_fov = ${collected.insv_fov}` : 'N/A');
 
+  // ── copy 模式（流复制）开关 ──
+  check('copy 模式：开关与提示框存在', !!$('p_copy_mode') && !!$('copyModeHint'));
+  const pCopy = $('p_copy_mode');
+  pCopy.checked = true;
+  dom.window.onCopyModeChange();
+  const inertGroups = ['pg-video', 'pg-audio', 'pg-stabilize', 'pg-okaa', 'pg-insta360']
+    .filter(id => $(id).classList.contains('pg-inert')).length;
+  check('copy 模式：启用后 5 个"需重编码"参数组被置为惰性', inertGroups === 5, `惰性 ${inertGroups}/5`);
+  check('copy 模式：启用后编码器下拉被禁用', $('p_codec').disabled === true);
+  check('copy 模式：提示框显示', $('copyModeHint').style.display !== 'none');
+  const collectedCopy = (() => { try { return dom.window.collectParams(); } catch (e) { return null; } })();
+  check('copy 模式：collectParams 采集到 copy_mode=true',
+    collectedCopy && collectedCopy.copy_mode === true,
+    collectedCopy ? `copy_mode = ${collectedCopy.copy_mode}` : 'N/A');
+  pCopy.checked = false;
+  dom.window.onCopyModeChange();
+  check('copy 模式：关闭后恢复可交互',
+    $('p_codec').disabled === false && !$('pg-video').classList.contains('pg-inert'));
+
   // ── 5. 事件委托可用性（item 2）──
   // 构造一个带 data-action 的元素并派发 click，验证 document 级委托确实能分发
   let delegatedHit = false;

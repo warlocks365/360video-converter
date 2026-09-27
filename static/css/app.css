@@ -56,7 +56,7 @@ body {
    见下方「左栏侧栏适配」一节——光给宽度不够，列数必须同步降级。 */
 .workspace { display: grid; grid-template-columns: minmax(360px, 400px) minmax(0, 1fr) minmax(240px, 270px); gap: 16px; align-items: start; }
 .ws-col { min-width: 0; }
-.ws-col-sticky { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
+.ws-col-sticky { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-gutter: stable; }
 
 /* ── 左栏「参数配置」的侧栏适配 ──────────────────────
    编码参数面板原按约 1160px 全宽设计：内含 10 处 .grid-4（四列字段）与 2 处 .grid-2，
@@ -316,7 +316,7 @@ body {
 .sm-net  .sm-bar-fill { background: #06b6d4; }
 
 /* ── Table ─────────────────────────────────────── */
-.table-wrap { overflow-x: auto; max-height: 360px; overflow-y: auto; }
+.table-wrap { overflow-x: auto; max-height: 360px; overflow-y: auto; scrollbar-gutter: stable; }
 table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 th {
   text-align: left; padding: 10px 12px; border-bottom: 2px solid var(--border);
@@ -338,7 +338,7 @@ tr:hover td { background: var(--surface-hover); }
   background: var(--bg); border: 1px solid var(--border);
   border-radius: 8px; padding: 12px; height: 220px;
   min-height: 120px; max-height: 260px;
-  overflow-y: auto; font-family: 'Consolas', 'Monaco', monospace;
+  overflow-y: auto; scrollbar-gutter: stable; font-family: 'Consolas', 'Monaco', monospace;
   font-size: 0.78rem; line-height: 1.6;
 }
 .log-line { display: flex; gap: 8px; }
@@ -448,6 +448,10 @@ tr:hover td { background: var(--surface-hover); }
 .pg-summary { margin-left: auto; font-size: 0.72rem; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-muted); }
 .param-group-body { padding: 4px 2px 12px; }
 .param-group.collapsed .param-group-body { display: none; }
+/* copy 模式（流复制）下，"必须重编码"的参数组整体置惰性：
+   半透明提示不可用，pointer-events:none 防止误改（折叠头仍可点击，因为
+   pointer-events 只作用在 body 上）。 */
+.param-group.pg-inert .param-group-body { opacity: 0.55; pointer-events: none; user-select: none; }
 
 /* ── Action Bar ───────────────────────────────── */
 .action-bar {
