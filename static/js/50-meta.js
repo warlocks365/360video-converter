@@ -231,10 +231,15 @@ async function probeMetaFile(idx) {
     }
     if (data.has_date) {
       s.apply_date = true;
-      // Use existing creation_time as manual_date so it's preserved
-      // FIX (v3.13.4 场景4): 归一化为本地 naive（源值是 UTC Z 字符串）
-      if (data.creation_time) s.manual_date = utcToLocalNaive(data.creation_time);
-      s.date_from_filename = false; // prefer existing date over filename
+      // FIX (v3.13.6): 用户已明确的日期来源不被探测覆盖。旧链路只要源视频带
+      // 拍摄时间就改写 manual_date 并关闭「从文件名提取」，导致全局面板选的
+      // 「从文件名提取日期」入队后被悄悄换成源时间，弹窗与外部预览不一致。
+      // 现改为：仅在用户未选择任何来源（未勾选文件名提取 且 手动框为空）时，
+      // 才默认复用源视频拍摄时间（UTC Z 归一化为本地 naive）。
+      if (!s.date_from_filename && !s.manual_date && data.creation_time) {
+        s.manual_date = utcToLocalNaive(data.creation_time);
+        s.date_from_filename = false;   // 复用路径下保持与手动框互斥
+      }
     }
     if (data.has_gps && data.gps) {
       s.apply_location = true;

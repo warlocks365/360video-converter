@@ -85,8 +85,23 @@ const check = (name, cond, detail) => {
   check('场景4: utcToLocalNaive 归一化（Z → 本地 naive）', norm === expected,
     `got=${norm} expected=${expected}`);
   const storedManual = dom.window.eval('metaBatchItems[0].settings.manual_date');
-  check('场景4: 探测自动填充的 manual_date 已无 Z/UTC 偏差',
-    storedManual === expected && !/Z$/.test(storedManual), `manual_date="${storedManual}"`);
+  const storedFromName = dom.window.eval('metaBatchItems[0].settings.date_from_filename');
+  check('场景6a: 全局选了「从文件名提取」→ 探测不覆盖（弹窗与外部预览一致）',
+    storedManual === '' && storedFromName === true,
+    `manual_date="${storedManual}" date_from_filename=${storedFromName}`);
+
+  // ══ 场景6b/6c：日期来源优先级（探测只在"未选择任何来源"时兜底）══
+  dom.window.eval('metaBatchItems[0].settings.date_from_filename = false; metaBatchItems[0].settings.manual_date = "";');
+  await dom.window.probeMetaFile(0);
+  check('场景6b: 未选择任何来源 → 探测默认复用源拍摄时间（本地 naive）',
+    dom.window.eval('metaBatchItems[0].settings.manual_date') === expected
+    && dom.window.eval('metaBatchItems[0].settings.date_from_filename') === false,
+    `manual="${dom.window.eval('metaBatchItems[0].settings.manual_date')}"`);
+  dom.window.eval('metaBatchItems[0].settings.date_from_filename = false; metaBatchItems[0].settings.manual_date = "2026-01-01T08:00:00";');
+  await dom.window.probeMetaFile(0);
+  check('场景6c: 手动指定日期已填 → 探测不覆盖',
+    dom.window.eval('metaBatchItems[0].settings.manual_date') === '2026-01-01T08:00:00',
+    `manual="${dom.window.eval('metaBatchItems[0].settings.manual_date')}"`);
 
   // ══ 场景1：弹窗内复用 GPS 及地名 ══
   dom.window.editMetaFileSettings(0);
