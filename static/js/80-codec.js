@@ -273,11 +273,14 @@ async function exportDiagnosticReport() {
 // ── Export Encoding Log ─────────────────────────
 
 async function exportEncodeLog() {
-  if (!jobId) { alert('当前没有可导出的日志'); return; }
+  // FIX (v3.13.2 P1-4): 任务结束后全局 jobId 已被 endJob() 置 null，
+  // 旧实现必得 404。导出时优先用终态缓存的 lastCompletedJobId。
+  const exportJobId = lastCompletedJobId || jobId;
+  if (!exportJobId) { alert('当前没有可导出的日志'); return; }
   const btn = document.getElementById('exportLogBtn');
   if (btn) { btn.disabled = true; btn.textContent = '正在导出...'; }
   try {
-    const r = await fetch(`/api/encode_log/${jobId}`);
+    const r = await fetch(`/api/encode_log/${exportJobId}`);
     const d = await r.json();
     if (d.error) { alert(d.error); return; }
     const logText = d.log || '日志为空';

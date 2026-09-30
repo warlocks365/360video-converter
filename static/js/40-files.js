@@ -425,7 +425,18 @@ function selectAllBatch(checked) {
 }
 
 
+// FIX (v3.13.2 P1-7): 运行中移除/过滤批量行会使表格与后端 items 错位
+// （行状态映射与跳过按钮全部失效），任务运行期间必须禁止这三类操作。
+function guardBatchMutation() {
+  if (isJobRunning()) {
+    showToast('任务运行中，暂不能移除批量任务', 'error');
+    return true;
+  }
+  return false;
+}
+
 async function removeBatchItem(idx) {
+  if (guardBatchMutation()) return;
   batchTasks.splice(idx, 1);
   renderBatchTable();
   await recomputeOutputs();
@@ -433,6 +444,7 @@ async function removeBatchItem(idx) {
 
 
 async function removeUnselectedBatch() {
+  if (guardBatchMutation()) return;
   batchTasks = batchTasks.filter((t, i) => {
     const cb = document.querySelector(`.batch-check[data-idx="${i}"]`);
     return cb && cb.checked;
@@ -470,6 +482,7 @@ function loadTaskIntoEditor(t) {
 
 
 async function removeSelectedTasks() {
+  if (guardBatchMutation()) return;
   const checked = [...document.querySelectorAll('.batch-check:checked')];
   if (checked.length === 0) { alert('请先勾选要移除的任务'); return; }
   const idxs = checked.map(cb => parseInt(cb.dataset.idx)).sort((a, b) => b - a);

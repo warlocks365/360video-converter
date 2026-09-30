@@ -284,13 +284,17 @@ class SysMon:
             data['gpu_temp'] = temp
 
             # Encoder / Decoder utilization
+            # FIX (v3.13.2 P1-1): pynvml 的 nvmlDeviceGet{Encoder,Decoder}Utilization
+            # 是单参数 API（返回 (utilization, samplingPeriod) 元组），旧代码多传的
+            # 第二参数触发 TypeError 被 except 吞掉 → pynvml 激活时 enc/dec 利用率
+            # 永远缺失。nvidia-smi 回退路径（本文件后段）不受影响。
             try:
-                enc = pynvml.nvmlDeviceGetEncoderUtilization(handle, 0)
+                enc = pynvml.nvmlDeviceGetEncoderUtilization(handle)
                 data['gpu_enc_percent'] = enc[0]
             except Exception:
                 pass
             try:
-                dec = pynvml.nvmlDeviceGetDecoderUtilization(handle, 0)
+                dec = pynvml.nvmlDeviceGetDecoderUtilization(handle)
                 data['gpu_dec_percent'] = dec[0]
             except Exception:
                 pass

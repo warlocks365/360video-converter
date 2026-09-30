@@ -297,8 +297,11 @@ async function saveSettings() {
   }
   closeSettings();
   // Re-check codecs if custom ffmpeg path was set
+  // FIX (v3.13.2 P1-5): 旧实现整页 init()，其中 applyParams(DEFAULT_PARAMS)
+  // 会把用户未保存的编码参数重置为出厂默认。自定义路径只影响编码器探测，
+  // 重跑 checkCodecs() 即可。
   if (customFfmpeg) {
-    setTimeout(() => init(), 500);
+    setTimeout(() => checkCodecs(), 500);
   }
 }
 

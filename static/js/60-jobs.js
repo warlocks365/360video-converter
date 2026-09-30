@@ -113,6 +113,11 @@ async function detectInsvPair(inputId) {
 // _metaProcessingIndices (50-meta.js).
 let _encodeProcessingIndices = [];
 
+// FIX (v3.13.2 P1-4): 任务终态时 endJob() 会把全局 jobId 置 null，导致
+// 「导出编码日志」请求 /api/encode_log/null 必然 404。终态渲染时把 job id
+// 缓存到这里，导出时优先使用。
+let lastCompletedJobId = null;
+
 async function startConversion() {
   let items = [];
 
@@ -204,6 +209,15 @@ async function cancelConversion() {
   } catch (e) {
     // Even if the request fails or times out, the polling will detect the final state
     console.error('Cancel request failed:', e);
+    // FIX (v3.13.2 P1-6): 请求超时/失败且后端未实际取消时，必须恢复取消按钮
+    // 与暂停按钮 —— 否则没有任何代码复位它们，用户直到任务自然结束前都
+    // 失去取消能力。若取消其实已生效，轮询会在 500ms 内检测到终态并收尾。
+    if (isJobRunning()) {
+      if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.innerHTML = '&#9209; 取消'; }
+      if (pauseBtn) pauseBtn.style.display = '';
+      updatePauseButtonUI();
+      setText('progressLabel', ActiveJob.type === 'metadata' ? '应用中...' : '转换中...');
+    }
   } finally {
     clearTimeout(timeoutId);
   }
@@ -524,6 +538,9 @@ function renderMetadataJob(data) {
 // ── 渲染器：任务结束（按钮复位 + 终态标签 + 元数据表收尾）──
 
 function renderJobCompletion(data, nowSec) {
+  // FIX (v3.13.2 P1-4): endJob() 尚未执行（pollActiveJob 中顺序在此之后），
+  // 此刻 ActiveJob.id 仍有效 —— 缓存下来供「导出编码日志」使用。
+  if (ActiveJob.id) lastCompletedJobId = ActiveJob.id;
   const cancelBtn = document.getElementById('cancelBtn');
   if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.innerHTML = '&#9209; 取消'; cancelBtn.style.display = 'none'; }
   const pauseBtn = document.getElementById('pauseBtn');

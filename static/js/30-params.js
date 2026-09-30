@@ -179,6 +179,14 @@ function updateBatchDatePreview() {
 
 // ── Location Toggle ────────────────────────────────
 
+// FIX (v3.13.2 P1-2): parseInt 的 0 是合法值 —— 旧写法 `parseInt(v) || 默认`
+// 会把合法的 0 吞成默认值（okaa_yaw_r 显示 0、实际按 180 执行）。
+// 改用 Number.isNaN 判空：空/非数字才落默认值，0 原样通过。
+function intOrDefault(id, def) {
+  const n = parseInt(val(id));
+  return Number.isNaN(n) ? def : n;
+}
+
 function collectParams() {
   // Custom resolution validation
   if (val('p_resolution') === 'custom') {
@@ -229,14 +237,14 @@ function collectParams() {
     stabilize_zoom: parseFloat(val('p_stabilize_zoom')) || 0.05,
     // Okaa dual-fisheye correction
     okaa_correction: document.getElementById('p_okaa_correction').checked,
-    okaa_fov: parseInt(val('p_okaa_fov')) || 185,
+    okaa_fov: intOrDefault('p_okaa_fov', 200),          // 后端默认 200（app.py build_okaa）
     okaa_yaw_l: parseInt(val('p_okaa_yaw_l')) || 0,
-    okaa_yaw_r: parseInt(val('p_okaa_yaw_r')) || 180,
+    okaa_yaw_r: intOrDefault('p_okaa_yaw_r', 180),      // 0 是合法值，不得吞成 180
     okaa_pitch_l: parseInt(val('p_okaa_pitch_l')) || 0,
     okaa_pitch_r: parseInt(val('p_okaa_pitch_r')) || 0,
     okaa_roll_l: parseInt(val('p_okaa_roll_l')) || 0,
     okaa_roll_r: parseInt(val('p_okaa_roll_r')) || 0,
-    okaa_blend: val('p_okaa_blend') || 'seam',
+    okaa_blend: val('p_okaa_blend') || 'replace',       // 后端默认 'replace'（原 'seam' 不一致）
     okaa_layout: val('p_okaa_layout') || 'sbs',
     okaa_out_resolution: val('p_okaa_out_resolution') || '3840x1920',
     // Insta360 native processing (v3.9.0)
