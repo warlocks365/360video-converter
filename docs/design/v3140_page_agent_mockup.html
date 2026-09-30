@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>v3.14.0 · page-agent 集成效果图 — 360 Video Converter</title>
+<style>
+/* ── 设计令牌：与应用 app.css light 主题完全一致 ── */
+:root {
+  --bg: #f0f2f5; --surface: #ffffff; --surface-hover: #f8f9fa;
+  --border: #e2e8f0; --border-strong: #cbd5e1;
+  --text: #1e293b; --text-secondary: #64748b; --text-muted: #94a3b8;
+  --primary: #2563eb; --primary-hover: #1d4ed8; --primary-light: #dbeafe;
+  --success: #16a34a; --success-light: #dcfce7;
+  --warning: #d97706; --warning-light: #fef3c7;
+  --accent: #8b5cf6; --accent-light: #ede9fe;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-lg: 0 10px 30px rgba(0,0,0,0.1);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:-apple-system,'Segoe UI','Microsoft YaHei',system-ui,sans-serif; background:var(--bg); color:var(--text); padding:28px; }
+h1 { font-size:20px; margin-bottom:4px; }
+.sub { color:var(--text-secondary); font-size:13px; margin-bottom:20px; }
+.frame { background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow-lg); overflow:hidden; margin-bottom:34px; }
+.frame-label { font-size:13px; color:var(--text-secondary); margin:0 0 10px 4px; }
+.frame-label b { color:var(--text); }
+
+/* ── 应用窗体 ── */
+.app { position:relative; height:760px; display:flex; flex-direction:column; background:var(--bg); }
+.hdr { height:48px; background:var(--surface); border-bottom:1px solid var(--border); display:flex; align-items:center; padding:0 14px; gap:10px; flex:none; }
+.logo { width:22px; height:22px; border-radius:6px; background:var(--primary); color:#fff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; }
+.hdr-title { font-weight:600; font-size:14px; }
+.ver { font-size:11px; color:var(--text-muted); border:1px solid var(--border); border-radius:99px; padding:1px 8px; }
+.spacer { flex:1; }
+.hdr-btn { display:flex; align-items:center; gap:6px; font-size:12.5px; padding:6px 12px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); position:relative; }
+.hdr-btn.primary { background:var(--primary); border-color:var(--primary); color:#fff; }
+.badge-new { position:absolute; top:-8px; right:-10px; background:var(--warning); color:#fff; font-size:10px; padding:1px 6px; border-radius:99px; }
+.ws { flex:1; display:flex; gap:10px; padding:10px; min-height:0; }
+.col { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px; overflow:hidden; }
+.col-l { width:265px; flex:none; } .col-m { flex:1; } .col-r { width:285px; flex:none; }
+.col h3 { font-size:12.5px; color:var(--text-secondary); font-weight:600; margin-bottom:10px; letter-spacing:.02em; }
+.card { border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-bottom:8px; background:var(--surface-hover); font-size:12px; }
+.fname { font-weight:600; font-size:12px; }
+.fmeta { color:var(--text-muted); font-size:11px; margin-top:2px; }
+.pgroup { border:1px solid var(--border); border-radius:8px; margin-bottom:8px; }
+.pgroup-h { padding:8px 10px; font-size:12.5px; font-weight:600; background:var(--surface-hover); border-radius:8px 8px 0 0; display:flex; justify-content:space-between; }
+.pgroup-b { padding:10px; }
+.frow { display:flex; gap:8px; margin-bottom:8px; align-items:center; }
+.flabel { font-size:12px; color:var(--text-secondary); width:70px; flex:none; }
+.sel, .input { flex:1; height:30px; border:1px solid var(--border-strong); border-radius:7px; background:#fff; font-size:12px; padding:0 8px; color:var(--text); display:flex; align-items:center; }
+.ring { outline:2px solid var(--primary); outline-offset:1px; border-radius:7px; }
+.hl-note { position:absolute; font-size:11px; background:var(--primary); color:#fff; padding:2px 8px; border-radius:99px; }
+.sysgrid { display:grid; grid-template-columns:repeat(2,1fr); gap:8px; }
+.sys { border:1px solid var(--border); border-radius:8px; padding:8px; }
+.sys .k { font-size:10.5px; color:var(--text-muted); }
+.sys .v { font-size:15px; font-weight:600; }
+.bar { height:4px; border-radius:99px; background:var(--border); margin-top:6px; }
+.bar i { display:block; height:100%; border-radius:99px; background:var(--primary); }
+.actionbar { flex:none; background:var(--surface); border-top:1px solid var(--border); padding:10px 14px; display:flex; align-items:center; gap:10px; }
+.btn { height:34px; padding:0 16px; border-radius:8px; border:1px solid var(--border); background:var(--surface); font-size:13px; display:flex; align-items:center; gap:6px; }
+.btn.primary { background:var(--primary); border-color:var(--primary); color:#fff; font-weight:600; }
+.btn:disabled { opacity:.5; }
+.prog { flex:1; }
+.prog .bar { height:8px; margin:0 0 4px; }
+.prog .t { font-size:11.5px; color:var(--text-secondary); }
+
+/* ── AI 助手抽屉（v3.14.0 新增）── */
+.drawer { position:absolute; top:48px; right:0; bottom:0; width:392px; background:var(--surface); border-left:1px solid var(--border); box-shadow:var(--shadow-lg); display:flex; flex-direction:column; border-radius:0; }
+.d-hdr { height:46px; flex:none; display:flex; align-items:center; gap:8px; padding:0 12px; border-bottom:1px solid var(--border); }
+.d-hdr .ttl { font-weight:600; font-size:13.5px; flex:1; }
+.dot { width:8px; height:8px; border-radius:99px; background:var(--success); }
+.d-sub { font-size:11px; color:var(--text-muted); }
+.iconbtn { width:26px; height:26px; border-radius:6px; border:none; background:transparent; color:var(--text-secondary); display:flex; align-items:center; justify-content:center; }
+.d-chat { flex:1; overflow:hidden; padding:12px; display:flex; flex-direction:column; gap:10px; }
+.msg { max-width:92%; font-size:12.5px; line-height:1.55; border-radius:10px; padding:9px 11px; }
+.msg.user { align-self:flex-end; background:var(--primary-light); border:1px solid #c3d9fb; }
+.msg.agent { align-self:flex-start; background:var(--surface-hover); border:1px solid var(--border); }
+.msg .who { font-size:10.5px; color:var(--text-muted); margin-bottom:3px; display:flex; align-items:center; gap:5px; }
+.plan { margin:6px 0 0; padding-left:0; list-style:none; }
+.plan li { display:flex; gap:6px; align-items:flex-start; margin-bottom:4px; }
+.plan svg { flex:none; margin-top:2px; }
+.chips { display:flex; gap:6px; flex-wrap:wrap; padding:0 12px 8px; }
+.chip { font-size:11px; color:var(--primary); background:var(--primary-light); border:1px solid #c3d9fb; border-radius:99px; padding:4px 10px; }
+.d-input { flex:none; border-top:1px solid var(--border); padding:10px 12px; display:flex; gap:8px; align-items:flex-end; }
+.d-input .ta { flex:1; min-height:44px; border:1px solid var(--border-strong); border-radius:9px; padding:8px 10px; font-size:12.5px; color:var(--text-muted); background:#fff; }
+.send { width:40px; height:40px; flex:none; border-radius:9px; background:var(--primary); color:#fff; display:flex; align-items:center; justify-content:center; }
+.d-foot { flex:none; font-size:10.5px; color:var(--text-muted); padding:6px 12px 9px; border-top:1px dashed var(--border); display:flex; align-items:center; gap:6px; }
+.step-chip { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; background:var(--success-light); color:var(--success); border-radius:99px; padding:2px 8px; margin-top:6px; }
+
+/* ── 设置弹窗变体 ── */
+.dlg-wrap { position:relative; height:560px; background:var(--bg); display:flex; align-items:center; justify-content:center; }
+.dlg { width:520px; background:var(--surface); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow-lg); }
+.dlg-h { padding:14px 18px; font-weight:600; font-size:14px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; }
+.dlg-b { padding:16px 18px; }
+.gtitle { font-size:12.5px; font-weight:600; margin:14px 0 8px; display:flex; align-items:center; gap:6px; }
+.gtitle:first-child { margin-top:0; }
+.note { font-size:11px; color:var(--text-secondary); background:var(--surface-hover); border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-top:10px; line-height:1.6; }
+.switch { width:36px; height:20px; border-radius:99px; background:var(--primary); position:relative; flex:none; }
+.switch i { position:absolute; top:2px; right:2px; width:16px; height:16px; border-radius:99px; background:#fff; }
+.key { font-size:12px; }
+.legend { font-size:13px; color:var(--text-secondary); line-height:1.8; margin-bottom:18px; }
+.legend b { color:var(--text); }
+.n { display:inline-flex; width:18px; height:18px; border-radius:99px; background:var(--primary); color:#fff; font-size:11px; align-items:center; justify-content:center; margin-right:6px; }
+</style>
+</head>
+<body>
+
+<h1>v3.14.0 · page-agent 集成效果图（待确认稿）</h1>
+<div class="sub">360 Video Converter ｜ 本地网页 UI 注入 page-agent：界面内自然语言 Agent ｜ 生成于 2026-09-30 ｜ 遵守 P0 规则（无 emoji 图标 / 无紫粉渐变 / 无占位文案）</div>
+<div class="legend">
+  <span class="n">1</span><b>顶栏新增「AI 助手」入口</b>（右侧滑出抽屉，不改变现有三栏结构与 1180px 响应式断点）；<br>
+  <span class="n">2</span><b>抽屉 = 对话式操控台</b>：自然语言驱动现有 UI（Agent 直接操作真实的编码器下拉、输出目录、开始按钮），每步执行结果回显；<br>
+  <span class="n">3</span><b>设置弹窗新增「AI 助手」组</b>：功能开关（默认关）/ API 端点 / Key / 模型，兼容本地 llama.cpp（OpenAI 协议），并明示数据流向。
+</div>
+
+<!-- ═══ 主界面：抽屉打开 ═══ -->
+<div class="frame-label"><b>画面 1</b>：主工作台 + AI 助手抽屉（Agent 已完成一次参数修改并启动批量任务）</div>
+<div class="frame"><div class="app">
+  <div class="hdr">
+    <div class="logo">360</div>
+    <div class="hdr-title">360 Video Converter</div>
+    <div class="ver">v3.13.3</div>
+    <div class="spacer"></div>
+    <div class="hdr-btn primary">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.9 2.4L22 18.3l-2.1.9L19 21.6l-.9-2.4-2.1-.9 2.1-.9z"/></svg>
+      AI 助手
+      <span class="badge-new">v3.14.0 新增</span>
+    </div>
+    <div class="hdr-btn">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </div>
+  </div>
+
+  <div class="ws">
+    <div class="col col-l">
+      <h3>文件扫描</h3>
+      <div class="card"><div class="fname">20260503 凤凰岭爬山.mp4</div><div class="fmeta">41.5 GB · 4096×2048 · 109:54</div></div>
+      <div class="card"><div class="fname">20260526 欧乐堡骑士酒店温泉.mp4</div><div class="fmeta">30.8 GB · 4096×2048 · 80:53</div></div>
+      <div class="card"><div class="fname">20260529 青岛54广场.mp4</div><div class="fmeta">123.2 GB · 4096×2048 · 5:23:23</div></div>
+      <div class="card" style="opacity:.55"><div class="fname">+ 扫描更多目录…</div></div>
+    </div>
+
+    <div class="col col-m" style="position:relative">
+      <h3>编码参数</h3>
+      <div class="pgroup">
+        <div class="pgroup-h"><span>编码器</span><span style="color:var(--text-muted);font-weight:400">已由 AI 助手修改</span></div>
+        <div class="pgroup-b">
+          <div class="frow"><div class="flabel">编码器</div><div class="sel ring">H.265 (libx265)<span style="flex:1"></span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div></div>
+          <div class="frow"><div class="flabel">码率模式</div><div class="sel">CRF <span style="flex:1"></span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></div></div>
+          <div class="frow"><div class="flabel">CRF</div><div class="input">20</div><div class="flabel" style="width:40px">预设</div><div class="sel">medium</div></div>
+        </div>
+      </div>
+      <div class="pgroup">
+        <div class="pgroup-h"><span>输出设置</span></div>
+        <div class="pgroup-b">
+          <div class="frow"><div class="flabel">输出目录</div><div class="input ring">D:\out<span style="flex:1"></span></div></div>
+          <div class="frow"><div class="flabel">文件名</div><div class="input">{原名}_360</div></div>
+        </div>
+      </div>
+      <div class="pgroup">
+        <div class="pgroup-h"><span>球面元数据</span></div>
+        <div class="pgroup-b"><div class="frow"><div class="flabel">注入</div><div class="sel">360 等距柱状 · mono</div></div></div>
+      </div>
+      <div class="hl-note" style="top:-6px; right:14px;">3 由 AI 助手修改 <b style="margin-left:6px">②</b></div>
+    </div>
+
+    <div class="col col-r">
+      <h3>系统监控</h3>
+      <div class="sysgrid">
+        <div class="sys"><div class="k">CPU</div><div class="v">12%</div><div class="bar"><i style="width:12%"></i></div></div>
+        <div class="sys"><div class="k">内存</div><div class="v">40%</div><div class="bar"><i style="width:40%"></i></div></div>
+        <div class="sys"><div class="k">GPU (RTX 3090)</div><div class="v">22%</div><div class="bar"><i style="width:22%"></i></div></div>
+        <div class="sys"><div class="k">编码器</div><div class="v">51%</div><div class="bar"><i style="width:51%"></i></div></div>
+      </div>
+      <h3 style="margin-top:12px">转换日志</h3>
+      <div class="card" style="font-family:Consolas,monospace;font-size:10.5px;line-height:1.7">
+        <div style="color:var(--text-muted)">17:41:02</div>Job #24 started: mode=batch, files=3<br>
+        <div style="color:var(--text-muted)">17:41:02</div>Codec: libx265, CRF=20<br>
+        <div style="color:var(--text-muted)">17:41:05</div>[1/3] 凤凰岭爬山.mp4 …
+      </div>
+    </div>
+  </div>
+
+  <div class="actionbar">
+    <button class="btn primary" disabled>开始转换</button>
+    <button class="btn" disabled>暂停</button>
+    <button class="btn">取消</button>
+    <div class="prog"><div class="bar"><i style="width:42%"></i></div><div class="t">批量任务 #24 · 42% · [1/3] 凤凰岭爬山.mp4</div></div>
+  </div>
+
+  <!-- AI 助手抽屉 -->
+  <div class="drawer">
+    <div class="d-hdr">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.9 2.4L22 18.3l-2.1.9L19 21.6l-.9-2.4-2.1-.9 2.1-.9z"/></svg>
+      <div class="ttl">AI 助手</div>
+      <div class="dot"></div><div class="d-sub">已连接 · 本地模型</div>
+      <button class="iconbtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="d-chat">
+      <div class="msg agent"><div class="who">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+        AI 助手</div>
+        你好，我可以直接操作本工具的界面：扫描文件、修改编码参数、设置输出目录、启动/暂停/取消任务、读取系统监控与日志。所有操作都在本地完成。
+      </div>
+      <div class="msg user">把参数改成 H.265 CRF 20，输出到 D:\out，然后开始批量转换选中的 3 个文件</div>
+      <div class="msg agent"><div class="who">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+        AI 助手</div>
+        已按你的要求执行：
+        <ul class="plan">
+          <li><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>编码器 → H.265 (libx265)，CRF 20，预设 medium</li>
+          <li><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>输出目录 → D:\out</li>
+          <li><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>已启动批量任务 #24（3 个文件，约 5.5 小时）</li>
+        </ul>
+        <span class="step-chip">已执行 3 步 · 均成功</span>
+      </div>
+      <div class="msg agent"><div class="who">AI 助手</div>提示：libx265 软编下 3 个 4096×2048 文件预计较慢。如需提速可切到 H.265 (NVENC) 使用你的 RTX 3090，要切换吗？</div>
+    </div>
+    <div class="chips">
+      <span class="chip">解释当前参数</span><span class="chip">估算剩余时间</span><span class="chip">切到 NVENC</span><span class="chip">读取最近日志</span>
+    </div>
+    <div class="d-input">
+      <div class="ta">用自然语言指挥本工具，例如「暂停任务，10 分钟后继续」…</div>
+      <div class="send"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg></div>
+    </div>
+    <div class="d-foot">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      模型 qwen3.6-27b · 端点 http://127.0.0.1:1234/v1 · 界面文本仅发送至所配置端点
+    </div>
+  </div>
+</div></div>
+
+<!-- ═══ 画面 2：设置弹窗 ═══ -->
+<div class="frame-label" style="margin-top:6px"><b>画面 2</b>：设置弹窗新增「AI 助手」组（功能开关默认关 · 兼容本地/云端 OpenAI 协议端点）</div>
+<div class="frame"><div class="dlg-wrap">
+  <div class="dlg">
+    <div class="dlg-h"><span>设置</span>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </div>
+    <div class="dlg-b">
+      <div class="gtitle">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/></svg>
+        AI 助手（v3.14.0 新增）
+        <span style="flex:1"></span>
+        <div class="switch"><i></i></div>
+      </div>
+      <div class="frow"><div class="flabel" style="width:90px">API 端点</div><div class="input">http://127.0.0.1:1234/v1</div></div>
+      <div class="frow"><div class="flabel" style="width:90px">API Key</div><div class="input key">••••••••••••••••（留空 = 本地免鉴权端点）</div></div>
+      <div class="frow"><div class="flabel" style="width:90px">模型</div><div class="input">qwen3.6-27b</div></div>
+      <div class="note">数据流向说明：启用后，Agent 会把<b>界面元素结构与你的指令</b>发送至上方所配置的模型端点；本工具自身不经过任何第三方服务器。关闭开关时，Agent 组件完全不加载。</div>
+    </div>
+  </div>
+</div></div>
+
+<div class="sub" style="margin-top:-10px">范围声明：本效果图仅用于 v3.14.0 设计确认；Agent 能力统一计入 v3.14.0，不属于已发布的 v3.13.3。确认后严格按门禁流程开发（DOM id 契约登记 → 13 文件加载顺序 → 9 门禁全绿 → 人工视觉验收）。</div>
+</body>
+</html>
