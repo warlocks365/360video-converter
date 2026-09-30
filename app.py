@@ -522,41 +522,54 @@ def set_file_dates(filepath, dt, set_created=True, set_modified=True):
             results['modified_error'] = str(e)
 
     # Set creation time (Windows only via ctypes)
+    # FIX (v3.13.3 BUG-2): the old call relied on ctypes' default restype (c_int).
+    # On 64-bit Python a HANDLE must be read as c_void_p — the truncated value broke
+    # the INVALID_HANDLE_VALUE check and SetFileTime silently failed, so the file
+    # creation time was NEVER applied (verified: in-app job log had no success line
+    # and ctime unchanged, while .NET SetCreationTime works on the same volume).
+    # Explicit argtypes/restype + use_last_error make any remaining failure diagnosable.
     if set_created and os.name == 'nt':
         try:
-            # Convert Unix timestamp to Windows FILETIME (100-nanosecond intervals since 1601-01-01)
-            win_epoch_diff = 11644473600  # seconds between 1601 and 1970
-            win_ts = int((ts + win_epoch_diff) * 10000000)
+            import ctypes
+            from ctypes import wintypes
 
-            handle = ctypes.windll.kernel32.CreateFileW(
+            kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+            kernel32.CreateFileW.restype = ctypes.c_void_p
+            kernel32.CreateFileW.argtypes = [
+                wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+            ]
+            kernel32.SetFileTime.restype = wintypes.BOOL
+            kernel32.SetFileTime.argtypes = [
+                wintypes.HANDLE, ctypes.POINTER(wintypes.FILETIME),
+                ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME),
+            ]
+            kernel32.CloseHandle.restype = wintypes.BOOL
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+            INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+            handle = kernel32.CreateFileW(
                 filepath,
-                0x10000000,  # GENERIC_WRITE
-                0x00000007,   # FILE_SHARE_READ|WRITE|DELETE
+                0x40000000,          # GENERIC_WRITE
+                0x00000007,          # FILE_SHARE_READ|WRITE|DELETE
+                None,                # no security attributes
+                3,                   # OPEN_EXISTING
+                0x00000080,          # FILE_ATTRIBUTE_NORMAL
                 None,
-                3,            # OPEN_EXISTING
-                0x00000080,   # FILE_ATTRIBUTE_NORMAL
-                None
             )
-            if handle != -1 and handle != 0:
-                class FILETIME(ctypes.Structure):
-                    _fields_ = [("dwLowDateTime", ctypes.c_uint32),
-                                ("dwHighDateTime", ctypes.c_uint32)]
-                ft = FILETIME()
-                ft.dwLowDateTime = win_ts & 0xFFFFFFFF
-                ft.dwHighDateTime = (win_ts >> 32) & 0xFFFFFFFF
-
-                # SetFileTime(handle, creation_time, access_time, modification_time)
-                # We only want to set creation time here (modification set via os.utime)
-                ok = ctypes.windll.kernel32.SetFileTime(
-                    handle, ctypes.byref(ft), None, None
-                )
-                ctypes.windll.kernel32.CloseHandle(handle)
-                if ok:
+            if not handle or handle == INVALID_HANDLE_VALUE:
+                results['created_error'] = f'CreateFileW failed (err={ctypes.get_last_error()})'
+            else:
+                win_ts = int((ts + 11644473600) * 10000000)  # 1601→1970 epoch, 100ns units
+                ft = wintypes.FILETIME(dwLowDateTime=win_ts & 0xFFFFFFFF,
+                                       dwHighDateTime=(win_ts >> 32) & 0xFFFFFFFF)
+                # SetFileTime(handle, creation, access, modification) — creation only
+                # (modification is set via os.utime above)
+                if kernel32.SetFileTime(handle, ctypes.byref(ft), None, None):
                     results['created'] = True
                 else:
-                    results['created_error'] = f'SetFileTime returned {ok}'
-            else:
-                results['created_error'] = f'CreateFileW returned handle {handle}'
+                    results['created_error'] = f'SetFileTime failed (err={ctypes.get_last_error()})'
+                kernel32.CloseHandle(handle)
         except Exception as e:
             results['created_error'] = str(e)
 
@@ -2509,7 +2522,12 @@ def conversion_worker(jid):
                 return
 
         # Each task may carry its own export parameters; fall back to job-level defaults
-        item_params = dict(item.get('params') or job_params)
+        # FIX (v3.13.3): per-item params used to REPLACE the global params entirely
+        # (`dict(item.get('params') or job_params)`) — an item carrying a partial
+        # params dict silently lost every global key. Merge per-key instead (item
+        # wins); the frontend always sends complete snapshots, so its behavior is
+        # unchanged, but API callers with partial params no longer drop globals.
+        item_params = {**job_params, **(item.get('params') or {})}
         try:
             ok, err, actual_out = convert_one(jid, inp, out, item_params)
         except Exception as e:
@@ -2835,7 +2853,12 @@ def apply_metadata_one(jid, inp, out, params):
                 cmd += ['-metadata', f'location={iso6709}']
             loc_name = params.get('location_name', '')
             if loc_name:
-                cmd += ['-metadata', f'location.name={loc_name}']
+                # FIX (v3.13.3 BUG-1): the MP4 mov muxer only maps a whitelist of udta
+                # keys — 'location.name' (and underscore variants) are silently dropped,
+                # so the place name never landed in the output. 'description' IS a
+                # whitelisted key (verified against the bundled ffmpeg build) and is the
+                # standard free-form tag closest to a place name.
+                cmd += ['-metadata', f'description={loc_name}']
             loc_addr = params.get('location_address', '')
             if loc_addr:
                 cmd += ['-metadata', f'comment={loc_addr}']
@@ -2962,8 +2985,16 @@ def apply_metadata_one(jid, inp, out, params):
                 log_line(jid, f'  Failed to replace original: {e}', 'error')
                 return False, str(e), out
     else:
-        log_line(jid, '  No metadata features enabled', 'warn')
-        return False, 'No metadata features enabled', out
+        # FIX (v3.13.3): distinguish "nothing enabled at all" from "enabled but
+        # ineffective" (e.g. an unparseable date, or location missing its lon) —
+        # the old single message was misleading when the user HAD enabled a feature.
+        if apply_date or apply_location or apply_spherical:
+            msg = ('No actionable metadata: enabled feature(s) produced nothing to apply '
+                   '(check the date value / location coordinates)')
+        else:
+            msg = 'No metadata features enabled'
+        log_line(jid, f'  {msg}', 'warn')
+        return False, msg, out
 
     # Set file dates
     if effective_dt and (params.get('set_file_created', True) or params.get('set_file_modified', True)):
@@ -2977,6 +3008,13 @@ def apply_metadata_one(jid, inp, out, params):
             log_line(jid, '    File creation date: updated')
         if date_results.get('modified'):
             log_line(jid, '    File modification date: updated')
+        # FIX (v3.13.3 BUG-2): set_file_dates failures used to be silently swallowed
+        # (only success branches were logged) — the FS creation time could never be
+        # applied without the user ever knowing. Surface both error fields now.
+        if date_results.get('created_error'):
+            log_line(jid, f"    File creation date ERROR: {date_results['created_error']}", 'warn')
+        if date_results.get('modified_error'):
+            log_line(jid, f"    File modification date ERROR: {date_results['modified_error']}", 'warn')
 
     return True, None, out
 
@@ -3029,7 +3067,12 @@ def metadata_worker(jid):
         item['start_time'] = time.time()
         log_line(jid, f'[{idx+1}/{total}] {os.path.basename(inp)}')
 
-        item_params = dict(item.get('params') or job_params)
+        # FIX (v3.13.3): per-item params used to REPLACE the global params entirely
+        # (`dict(item.get('params') or job_params)`) — an item carrying a partial
+        # params dict silently lost every global key. Merge per-key instead (item
+        # wins); the frontend always sends complete snapshots, so its behavior is
+        # unchanged, but API callers with partial params no longer drop globals.
+        item_params = {**job_params, **(item.get('params') or {})}
         try:
             ok, err, actual_out = apply_metadata_one(jid, inp, out, item_params)
         except Exception as e:
@@ -4902,6 +4945,11 @@ def skip_item(jid, idx):
             return jsonify({'error': 'Job not found'}), 404
         if idx < 0 or idx >= len(j['items']):
             return jsonify({'error': 'Invalid item index'}), 400
+        # FIX (v3.13.3): skipping an item that has already started produced a
+        # contradictory state (skipped=true while the item finished and wrote its
+        # output). Only pending items may be skipped.
+        if j['items'][idx].get('start_time'):
+            return jsonify({'error': 'Item already started, cannot skip'}), 400
         j['items'][idx]['skipped'] = True
     # NOTE: log_line() re-acquires job_lock, so it MUST run OUTSIDE the lock block
     # to avoid unnecessary re-entrant acquisition (job_lock is an RLock, so re-entrant

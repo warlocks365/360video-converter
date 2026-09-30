@@ -270,7 +270,7 @@ if jid:
     tg = tags_of(out)
     tv = tag_values(tg)
     check(c, 'location tag = +36.0671+120.3826/', tg.get('location') == '+36.0671+120.3826/', f'location={tg.get("location")}')
-    check(c, '地名 tag 存在', 'Qingdao May Fourth Square' in tv, f'tags={tv[:160]}')
+    check(c, '地名(description) tag = Qingdao May Fourth Square', tg.get('description') == 'Qingdao May Fourth Square', f'tags={tv[:160]}')
     check(c, '地址 tag 存在', '东海西路' in tv, f'tags={tv[:160]}')
 finish(c)
 
@@ -309,7 +309,7 @@ if jid:
     tv = tag_values(tg)
     check(c, 'creation_time = 02-14 19:45 本地', near(tag_creation_epoch(tg), utc_epoch(datetime(2026, 2, 14, 19, 45, 0))), f'tags={tv[:150]}')
     check(c, 'location = +22.5400+114.0500/', tg.get('location') == '+22.5400+114.0500/', f'location={tg.get("location")}')
-    check(c, '地名(location.name) tag 存在', 'Shenzhen Bay' in tv, f'tags={tv[:160]}')
+    check(c, '地名(description) tag = Shenzhen Bay', tg.get('description') == 'Shenzhen Bay', f'tags={tv[:160]}')
     check(c, '地址(comment) tag 存在', '南山区' in tv, f'tags={tv[:160]}')
 finish(c)
 
@@ -330,7 +330,7 @@ if jid:
     check(c, 'creation_time = 08-08 08:08 本地', near(tag_creation_epoch(tg), utc_epoch(datetime(2026, 8, 8, 8, 8, 0))), f'tags={tag_values(tg)[:150]}')
     check(c, 'location = +30.6500+104.0600/', tg.get('location') == '+30.6500+104.0600/', f'location={tg.get("location")}')
     check(c, 'GSpherical + StereoMode=top-bottom', sc['gs'] >= 0 and sc['stereo_tb'] >= 0, f'gs@{sc["gs"]} tb@{sc["stereo_tb"]}')
-    check(c, '地名(location.name) tag 存在', 'Chengdu' in tag_values(tg), f'tags={tag_values(tg)[:160]}')
+    check(c, '地名(description) tag = Chengdu', tg.get('description') == 'Chengdu', f'tags={tag_values(tg)[:160]}')
     check(c, '地址(comment) tag 存在', '成都市' in tag_values(tg), f'tags={tag_values(tg)[:160]}')
 finish(c)
 
@@ -435,16 +435,17 @@ if jid:
     s1, s2, s3 = scan_of(o1), scan_of(o2), scan_of(o3)
     check(c, 'out1 日期=item1 的 06-01 08:00（非 global 2020）',
           near(tag_creation_epoch(t1), utc_epoch(datetime(2026, 6, 1, 8, 0, 0))), f't1={tag_values(t1)[:120]}')
-    check(c, 'out1 无位置/球面（干扰值未串入）',
-          t1.get('location') is None and s1['gs'] == -1, f'loc={t1.get("location")} gs@{s1["gs"]}')
+    check(c, 'out1 无位置/球面/地名（干扰值未串入）',
+          t1.get('location') is None and s1['gs'] == -1 and t1.get('description') is None, f'loc={t1.get("location")} gs@{s1["gs"]} desc={t1.get("description")}')
     check(c, 'out2 坐标=item2 的上海（非 global 1.0/2.0）',
           t2.get('location') == '+31.2300+121.4700/', f'loc={t2.get("location")}')
+    check(c, 'out2 地名(description)=Shanghai（非 global BAD）', t2.get('description') == 'Shanghai', f'desc={t2.get("description")}')
     check(c, 'out2 无日期/球面',
           t2.get('creation_time') is None and s2['gs'] == -1, f'ct={t2.get("creation_time")} gs@{s2["gs"]}')
     check(c, 'out3 球面=item3 的 top-bottom（非 global mono）',
           s3['stereo_tb'] >= 0 and s3['stereo_mono'] == -1, f'tb@{s3["stereo_tb"]} mono@{s3["stereo_mono"]}')
-    check(c, 'out3 无日期/位置',
-          t3.get('creation_time') is None and t3.get('location') is None, f't3={tag_values(t3)[:120]}')
+    check(c, 'out3 无日期/位置/地名',
+          t3.get('creation_time') is None and t3.get('location') is None and t3.get('description') is None, f't3={tag_values(t3)[:120]}')
 finish(c)
 
 # ── M16 批量：同参数全功能 ×3（逐项逐参数不遗漏）──
@@ -469,7 +470,7 @@ if jid:
         check(c, f'out{i+1}: creation_time=07-04 20:00 本地', near(tag_creation_epoch(tg), exp_ct), f't={tag_values(tg)[:120]}')
         check(c, f'out{i+1}: location=+39.9000+116.4000/', tg.get('location') == '+39.9000+116.4000/', f'loc={tg.get("location")}')
         check(c, f'out{i+1}: 地址(comment)存在', '北京市' in tag_values(tg), f'tags={tag_values(tg)[:140]}')
-        check(c, f'out{i+1}: 地名(location.name)存在', 'Beijing' in tag_values(tg), f'tags={tag_values(tg)[:140]}')
+        check(c, f'out{i+1}: 地名(description)=Beijing', tg.get('description') == 'Beijing', f'tags={tag_values(tg)[:140]}')
         check(c, f'out{i+1}: GSpherical+mono+SourceCount1', sc['gs'] >= 0 and sc['stereo_mono'] >= 0 and sc['srccnt1'] >= 0,
               f'gs@{sc["gs"]} mono@{sc["stereo_mono"]}')
         check(c, f'out{i+1}: faststart(moov 在 mdat 前)', 0 <= sc['moov'] < sc['mdat'], f'moov@{sc["moov"]} mdat@{sc["mdat"]}')
@@ -526,7 +527,7 @@ jid, d = run_meta(c, {'apply_date': True, 'manual_date': 'not-a-date', 'date_fro
 if jid:
     err = json.dumps(d.get('items', [{}])[0].get('error') or d.get('error') or '', ensure_ascii=False)
     warn = 'Invalid manual date' in json.dumps(d.get('log', []), ensure_ascii=False)
-    check(c, '错误信息含 No metadata features enabled', 'No metadata features enabled' in err, f'err={err[:120]}')
+    check(c, '错误信息含 No actionable metadata（新语义：已启用但无效果）', 'No actionable metadata' in err, f'err={err[:120]}')
     check(c, '日志含 Invalid manual date 警告', warn, 'log 未含警告' if not warn else '')
     check(c, '不产出输出文件', not os.path.isfile(out), f'exists={os.path.isfile(out)}')
 finish(c)
@@ -563,7 +564,7 @@ jid, d = run_meta(c, {'apply_date': False, 'apply_location': True, 'location_lat
                   [{'input': inp.replace('/', '\\'), 'output': out.replace('/', '\\')}], expect_ok=False)
 if jid:
     err = json.dumps(d.get('items', [{}])[0].get('error') or d.get('error') or '', ensure_ascii=False)
-    check(c, '错误信息含 No metadata features enabled', 'No metadata features enabled' in err, f'err={err[:120]}')
+    check(c, '错误信息含 No actionable metadata（新语义）', 'No actionable metadata' in err, f'err={err[:120]}')
     check(c, '不产出输出文件', not os.path.isfile(out), f'exists={os.path.isfile(out)}')
 finish(c)
 
