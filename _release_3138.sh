@@ -12,7 +12,7 @@ export GIT_ASKPASS="$(pwd)/_askpass_tmp.sh"
 REPO_SLUG="warlocks365/360video-converter"
 LOCAL_HEAD=$(git rev-parse HEAD)
 LOCAL_HEAD12=$(echo "$LOCAL_HEAD" | cut -c1-12)
-VER="3.13.7"
+VER="3.13.8"
 echo "local HEAD: $LOCAL_HEAD12"
 echo "== push branch =="
 git push origin v3.0.0-stabilization || fail "branch push failed"
@@ -28,7 +28,7 @@ python - "docs/releases/github_release_v$VER.md" > rel_payload.json <<'PYEOF'
 import json, sys
 md = open(sys.argv[1], encoding='utf-8').read()
 title = next((l[2:].strip() for l in md.splitlines() if l.startswith('# ')), '360 Video Converter')
-print(json.dumps({'tag_name': 'v' + '3.13.7', 'target_commitish': 'v3.0.0-stabilization',
+print(json.dumps({'tag_name': 'v' + VER, 'target_commitish': 'v3.0.0-stabilization',
                   'name': title, 'body': md, 'draft': False, 'prerelease': False},
                  ensure_ascii=False))
 PYEOF

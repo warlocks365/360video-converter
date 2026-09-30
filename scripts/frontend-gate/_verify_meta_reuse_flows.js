@@ -223,6 +223,34 @@ const check = (name, cond, detail) => {
     $('me_location_address').value.includes('旅游路'),
     `addr="${$('me_location_address').value}"`);
 
+  check('场景7: 逆地理补全详细地址',
+    $('me_location_address').value.includes('旅游路'),
+    `addr="${$('me_location_address').value}"`);
+
+  // ══ 场景8（v3.13.8）：元数据报告显示拍摄时间 = 本地墙钟 ══
+  // 旧实现透传 ffprobe 原始 UTC 标签值（2026-05-26T12:12:41Z），与元数据工具
+  // 写入口径（本地墙钟 20:12:41）相差 8 小时——同 app 两处显示互相矛盾。
+  const item8 = { probeData: { format: { tags: { creation_time: '2026-05-26T12:12:41.000000Z' } }, streams: [] } };
+  check('场景8: 报告字段值 = 本地墙钟（非 UTC 原串）',
+    dom.window.reportItemFilterValue(item8, 'creation_time') === '2026-05-26 20:12:41',
+    dom.window.reportItemFilterValue(item8, 'creation_time'));
+  check('场景8: fmtCreationTimeDisplay 空值安全',
+    dom.window.fmtCreationTimeDisplay('') === '' && dom.window.fmtCreationTimeDisplay(null) === '',
+    '空值不抛错');
+  // 真实产物数据核验：v3.13.4 e2e 写入的 out_t1.mp4（naive 15:30 → 标签 07:30Z）。
+  // REAL_TAG 由外层 bash 用 ffprobe 读取后经环境变量传入（规避 node spawnSync EBUSY）。
+  try {
+    const realRaw = process.env.REAL_TAG || '';
+    if (!realRaw) { check('场景8: 真实产物标签核验', false, 'REAL_TAG 未传入'); }
+    else {
+      const realDisp = dom.window.fmtCreationTimeDisplay(realRaw);
+      check('场景8: 真实产物标签 → 报告显示本地墙钟 15:30',
+        realDisp === '2026-05-26 15:30:00', `raw="${realRaw}" display="${realDisp}"`);
+    }
+  } catch (e) {
+    check('场景8: 真实产物标签核验', false, e.message.slice(0, 120));
+  }
+
   // ══ 收尾 ══
   check('页面无 JS 错误', errors.length === 0, errors.slice(0, 3).join(' | '));
 

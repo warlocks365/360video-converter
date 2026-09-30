@@ -7,6 +7,16 @@
 
 let reportData = []; // Array of {filename, path, probeData, error, moov, size}
 
+// FIX (v3.13.8): 报告显示的拍摄时间统一为本地墙钟（与元数据工具的写入/复用/
+// 源信息面板同一语义）。旧实现透传 ffprobe 原始 UTC 标签值（如
+// 2026-05-26T12:12:41.000000Z），与写入口径相差时区偏移，两处显示互相矛盾。
+// utcToLocalNaive 定义于 50-meta.js（加载顺序在其前，全局可用）。
+function fmtCreationTimeDisplay(v) {
+  if (!v) return '';
+  const local = utcToLocalNaive(v);
+  return (local || String(v)).replace('T', ' ');
+}
+
 // 勾选状态按「文件路径」记录（Set<string>），而非显示索引——
 // 这样筛选条件变化导致可见条目增减时，勾选不会丢失
 let reportSelectedPaths = new Set();
@@ -214,7 +224,7 @@ function reportItemFilterValue(item, field) {
       return sph.stereo || '';
     }
     // 时间
-    case 'creation_time': return tags['creation_time'] || vTags['creation_time'] || '';
+    case 'creation_time': return fmtCreationTimeDisplay(tags['creation_time'] || vTags['creation_time'] || '');
     // 位置 GPS（location 标签为 "+lat+lon/" 原始串；名称/地址通常由注入流程写入 tags）
     case 'gps_coord': return tags['location'] || vTags['location'] || '';
     case 'location_name': return tags['location_name'] || vTags['location_name'] || '';
@@ -376,7 +386,7 @@ function renderReportItem(item, idx) {
   const location = tags['location'] || vTags['location'] || '';
 
   // Check for creation_time
-  const creationTime = tags['creation_time'] || vTags['creation_time'] || '';
+  const creationTime = fmtCreationTimeDisplay(tags['creation_time'] || vTags['creation_time'] || '');
 
   return `<div class="report-item">
     <div class="report-item-header">
@@ -484,7 +494,7 @@ function saveReport() {
       text += `声道: ${a.channels || '—'} ch (${a.channel_layout || ''})\n`;
       text += `音频码率: ${formatBitrate(parseInt(a.bit_rate))}\n`;
       text += `\n-- 元数据 --\n`;
-      text += `拍摄日期: ${tags['creation_time'] || vTags['creation_time'] || '未设置'}\n`;
+      text += `拍摄日期: ${fmtCreationTimeDisplay(tags['creation_time'] || vTags['creation_time'] || '') || '未设置'}\n`;
       text += `拍摄位置: ${tags['location'] || vTags['location'] || '未设置'}\n`;
       const sphInfo2 = detectSpherical(d);
       text += `全景元数据: ${sphericalLabel(sphInfo2)}\n`;
