@@ -349,7 +349,7 @@ function selectSearchResult(lat, lon, name, address) {
   mapInstance.setView([lat, lon], 15);
 
   // Show POI info right away
-  mapSelectedLocation = { name, lat, lon, address };
+  mapSelectedLocation = { name: mapFieldToStr(name), lat, lon, address: mapFieldToStr(address) };
   document.getElementById('mapSelectedName').textContent = name;
   document.getElementById('mapSelectedCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
   document.getElementById('mapSelectedAddress').textContent = address || '获取完整地址中...';
@@ -441,7 +441,7 @@ async function reverseGeocode(lat, lon, fallbackName, fallbackAddress) {
     address = `(地址获取失败 — ${lastError})`;
   }
 
-  mapSelectedLocation = { name, lat, lon, address };
+  mapSelectedLocation = { name: mapFieldToStr(name), lat, lon, address: mapFieldToStr(address) };
   document.getElementById('mapSelectedName').textContent = name;
   document.getElementById('mapSelectedCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
   document.getElementById('mapSelectedAddress').textContent = address || '(无地址信息)';
@@ -491,15 +491,29 @@ function openMapPicker(target) {
 }
 
 
+// FIX (v3.13.5): 搜索/逆地理返回的 name/address 在个别响应形态下不是字符串
+//（如 Nominatim 的本地化名映射对象、AMap 的空数组字段）。统一收敛为字符串，
+// 否则 confirmMapSelection 的 .trim()/.split() 会抛 TypeError（v3.13.4 实测回归：
+// Uncaught TypeError: nameVal.trim is not a function）。
+function mapFieldToStr(v) {
+  if (typeof v === 'string') return v;
+  if (v == null) return '';
+  if (typeof v === 'object') {
+    const vals = Object.values(v).filter(x => typeof x === 'string' && x.trim());
+    return vals.length ? vals[0] : '';
+  }
+  return String(v);
+}
+
 function confirmMapSelection() {
   if (!mapSelectedLocation) {
     alert('请先在地图上选择一个位置');
     return;
   }
-  const addr = mapSelectedLocation.address || '';
+  const addr = mapFieldToStr(mapSelectedLocation.address);
   // FIX (v3.13.4 场景2): 名称兜底 —— 直接点击地图且逆地理失败/无 POI 时，name 可能
   // 是纯坐标串或空；拍摄地点必须始终有可用内容，此时从地址首段推导。
-  let nameVal = mapSelectedLocation.name || '';
+  let nameVal = mapFieldToStr(mapSelectedLocation.name);
   if (!nameVal.trim() || /^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/.test(nameVal.trim())) {
     nameVal = (addr && addr !== '') ? addr.split(/[,,]/)[0].trim() : nameVal;
   }

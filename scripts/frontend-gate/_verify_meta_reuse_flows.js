@@ -158,6 +158,22 @@ const check = (name, cond, detail) => {
   check('场景2: 队列徽章显示拍摄地点（不再只有坐标）',
     $('metaBatchTableBody').innerHTML.includes('泉城广场'), 'badge 含地名');
 
+  // ══ 场景5（v3.13.5 回归）：非字符串 name/address 不再抛 TypeError ══
+  // 线上实测：Nominatim 的 name 字段可能是本地化名映射对象 → nameVal.trim 抛
+  // "Uncaught TypeError: nameVal.trim is not a function"（v3.13.4 回归）
+  dom.window.eval(`mapPickerTarget = 'meta'; mapSelectedLocation = { name: { zh: '凤凰岭景区', en: 'Fenghuangling' }, lat: 40.1052, lon: 116.0786, address: {} };`);
+  let threw5 = false;
+  try { dom.window.confirmMapSelection(); } catch (e) { threw5 = true; }
+  check('场景5: name/address 为对象 → 不抛 TypeError 且取本地化名',
+    !threw5 && $('m_location_name').value === '凤凰岭景区',
+    `threw=${threw5} name="${$('m_location_name').value}"`);
+  dom.window.eval(`mapPickerTarget = 'meta'; mapSelectedLocation = { name: 12345, lat: 40.1, lon: 116.0, address: null };`);
+  threw5 = false;
+  try { dom.window.confirmMapSelection(); } catch (e) { threw5 = true; }
+  check('场景5: name 为数字 → 收敛为字符串不抛错',
+    !threw5 && $('m_location_name').value === '12345',
+    `threw=${threw5} name="${$('m_location_name').value}"`);
+
   // ══ 收尾 ══
   check('页面无 JS 错误', errors.length === 0, errors.slice(0, 3).join(' | '));
 
