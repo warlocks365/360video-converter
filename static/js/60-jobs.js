@@ -107,13 +107,24 @@ async function detectInsvPair(inputId) {
 
 // ── Start Conversion ────────────────────────────────
 
+// FIX (v3.13.2 P0-4): maps backend item index → batchTasks row index for the
+// running batch encode job (backend items = checked tasks only). Reset on
+// every batch submission in startConversion(); same pattern as
+// _metaProcessingIndices (50-meta.js).
+let _encodeProcessingIndices = [];
+
 async function startConversion() {
-  const params = collectParams();
   let items = [];
 
   if (currentMode === 'vr3d') {
-    return startVR3D(params);
+    // FIX (v3.13.2 P0-5): must submit collectVR3DParams() — the plain
+    // collectParams() snapshot never carried vr3d_layout /
+    // vr3d_check_alignment, so the user's layout choice was silently
+    // ignored (always top-bottom) and stereo metadata followed suit.
+    return startVR3D(collectVR3DParams());
   }
+
+  const params = collectParams();
 
   if (currentMode === 'single') {
     const inp = document.getElementById('singleInput').value;
@@ -131,9 +142,13 @@ async function startConversion() {
     // Recompute outputs from each task's own config (await to finalize)
     await recomputeOutputs();
     const selected = [];
+    // FIX (v3.13.2 P0-4): record checked row indices — the backend only
+    // returns the submitted (checked) items, so renderEncodeJob maps item
+    // index → row index through this array.
+    _encodeProcessingIndices = [];
     batchTasks.forEach((t, i) => {
       const cb = document.querySelector(`.batch-check[data-idx="${i}"]`);
-      if (cb && cb.checked) selected.push(t);
+      if (cb && cb.checked) { selected.push(t); _encodeProcessingIndices.push(i); }
     });
     if (selected.length === 0) { alert('请至少勾选一个文件'); return; }
 
@@ -461,10 +476,18 @@ function appendLogLines(log) {
 
 function renderEncodeJob(data, nowSec) {
   if (currentMode !== 'batch') return;
+  if (!_encodeProcessingIndices.length || !data.items) return;
   const tbody = document.getElementById('batchTableBody');
   if (!tbody) return;
+  // FIX (v3.13.2 P0-4): data.items holds only the CHECKED tasks while
+  // tbody.rows is the full table — indexing rows by backend item position
+  // misaligned every row after any task was unchecked (status/time/skip
+  // buttons all applied to the wrong file). Map rows via
+  // _encodeProcessingIndices; `i` stays the backend index because
+  // renderItemStatus compares it with data.current_index and the skip API
+  // consumes backend item indexes.
   data.items.forEach((item, i) => {
-    const row = tbody.rows[i];
+    const row = tbody.rows[_encodeProcessingIndices[i]];
     if (!row) return;
     renderItemStatus(row.cells[7], row.cells[9], item, i, data, isPaused);
     updateItemTimeInfo(row, item, i, data, nowSec);

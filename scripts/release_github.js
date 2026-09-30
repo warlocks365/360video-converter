@@ -26,7 +26,8 @@ const cp = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const PG = 'C:/Users/warlocks/.workbuddy/binaries/PortableGit/versions/1.2.0';
+// FIX（2026-09-30 迁移）：勿硬编码用户名 —— 从主目录推导，跨机器可用
+const PG = path.join(require('os').homedir(), '.workbuddy', 'binaries', 'PortableGit', 'versions', '1.2.0');
 const GIT = PG + '/cmd/git.exe';
 const WINCRED = PG + '/mingw64/bin/git-credential-wincred.exe';
 const GH = 'C:/Program Files/GitHub CLI/gh.exe';

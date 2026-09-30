@@ -9,7 +9,9 @@
  * 同时捕获 console.error 与未捕获异常 —— 用数据定位来源，而不是猜。
  */
 const path = require('path');
-const WS = 'C:/Users/warlocks/.workbuddy/binaries/node/workspace/node_modules';
+const os = require('os');
+// FIX（2026-09-30 迁移）：勿硬编码用户名 —— 从主目录推导，跨机器可用
+const WS = path.join(os.homedir(), '.workbuddy', 'binaries', 'node', 'workspace', 'node_modules');
 const { JSDOM, VirtualConsole } = require(path.join(WS, 'jsdom'));
 
 const PORT = 8800;

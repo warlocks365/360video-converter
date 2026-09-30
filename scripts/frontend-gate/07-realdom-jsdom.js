@@ -5,7 +5,9 @@
 //
 // 依赖：jsdom 已安装于托管 node 工作区；桩服务器需在 8800 端口运行。
 const path = require('path');
-const WS = 'C:/Users/warlocks/.workbuddy/binaries/node/workspace/node_modules';
+const os = require('os');
+// FIX（2026-09-30 迁移）：勿硬编码用户名 —— 从主目录推导，跨机器可用
+const WS = path.join(os.homedir(), '.workbuddy', 'binaries', 'node', 'workspace', 'node_modules');
 const { JSDOM, VirtualConsole } = require(path.join(WS, 'jsdom'));
 
 const PORT = 8800;
@@ -137,6 +139,45 @@ const check = (name, cond, detail) => {
   dom.window.onCopyModeChange();
   check('copy 模式：关闭后恢复可交互',
     $('p_codec').disabled === false && !$('pg-video').classList.contains('pg-inert'));
+
+  // ── 4c. P0 修复回归（v3.13.2）──
+  // P0-5：VR3D 必须提交 collectVR3DParams()（布局选择曾恒被忽略为 top-bottom）
+  check('P0-5：startConversion 的 vr3d 分支调用 collectVR3DParams()',
+    dom.window.startConversion.toString().includes('collectVR3DParams()'),
+    '源码应含 startVR3D(collectVR3DParams())');
+  check('P0-5：vr3dLayout 不再挂无效的内联 onchange（调用结果无接收者）',
+    $('vr3dLayout').getAttribute('onchange') === null,
+    `onchange = ${$('vr3dLayout').getAttribute('onchange')}`);
+  // P0-4：勾选过滤后，批量编码状态必须按 _encodeProcessingIndices 映射回正确行
+  check('P0-4：renderEncodeJob 经 _encodeProcessingIndices 映射行索引',
+    dom.window.renderEncodeJob.toString().includes('_encodeProcessingIndices[i]')
+    && dom.window.startConversion.toString().includes('_encodeProcessingIndices = []'),
+    '提交时登记勾选行号；渲染时按下标映射');
+  check('P0-4（行为）：取消勾选中间任务后，状态只写到正确的行',
+    (() => {
+      try {
+        dom.window.switchMode('batch');
+        const tbody = $('batchTableBody');
+        tbody.innerHTML = '';
+        for (let r = 0; r < 3; r++) {
+          const tr = d.createElement('tr');
+          for (let c = 0; c < 10; c++) tr.appendChild(d.createElement('td'));
+          tbody.appendChild(tr);
+        }
+        // 模拟：勾选第 0、2 行提交（第 1 行被取消勾选）
+        dom.window.eval('_encodeProcessingIndices = [0, 2]');
+        dom.window.renderEncodeJob(
+          { status: 'completed', current_index: 2,
+            items: [{ start_time: 1, end_time: 2, ok: true },
+                    { start_time: 1, end_time: 2, ok: false, error: 'boom' }] }, 10);
+        const row0 = tbody.rows[0].cells[7].innerHTML.includes('status-done');
+        const row2 = tbody.rows[2].cells[7].innerHTML.includes('status-fail');
+        const row1Clean = tbody.rows[1].cells[7].innerHTML === '';
+        tbody.innerHTML = '';
+        return row0 && row2 && row1Clean;
+      } catch (e) { return 'ERR:' + e.message; }
+    })(),
+    'item0→行0(done)、item1→行2(fail)、行1 保持空');
 
   // ── 5. 事件委托可用性（item 2）──
   // 构造一个带 data-action 的元素并派发 click，验证 document 级委托确实能分发

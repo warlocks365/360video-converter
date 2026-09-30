@@ -1208,20 +1208,23 @@ def build_vr3d_cmd(left_inp, right_inp, out, params):
     # Build filter_complex: stack left+right, then optional scale
     res = params.get('resolution', '4096x2048')
     if res == 'original':
-        # Use left eye resolution as reference
+        # Use left eye resolution as reference (no scaling step)
         scale_filter = ''
     else:
         w, h = res.split('x')
         # For top-bottom: each eye gets full width, half height
         # For side-by-side: each eye gets half width, full height
-        if stack_mode == 'top-bottom':
-            scale_filter = f',scale={w}:{h}:flags=lanczos'
-        else:
-            scale_filter = f',scale={w}:{h}:flags=lanczos'
+        scale_filter = f'scale={w}:{h}:flags=lanczos,setsar=1'
 
-    fc = f"[0:v][1:v]{stack_filter}=inputs=2[v]"
+    # FIX (v3.13.2 P0-2): the old graph reused the [v] label — defined as the
+    # stack output and again as the scale chain's input AND output — and
+    # scale_filter carried a leading comma (empty filter name after the chain
+    # input label). ffmpeg rejected the whole graph for every non-original
+    # resolution ("Invalid filterchain"). Use a dedicated intermediate label
+    # [stk] and a clean second chain.
+    fc = f"[0:v][1:v]{stack_filter}=inputs=2[stk]"
     if scale_filter:
-        fc += f";[v]{scale_filter}[v]"
+        fc += f";[stk]{scale_filter}[v]"
 
     cmd = [ffmpeg, '-y',
            '-err_detect', 'ignore_err',
@@ -2008,7 +2011,9 @@ def merge_files(jid, input_files, output_path):
             '-safe', '0',
             '-i', list_path,
             '-map', '0:v:0',        # Only copy first video stream
-            '-map', '0:a:0',        # Only copy first audio stream
+            '-map', '0:a:0?',       # First audio stream, OPTIONAL — FIX (v3.13.2 P0-1):
+                                    # sources without an audio track made the whole merge
+                                    # fail with "Stream map '' matches no streams"
             '-ignore_unknown',       # Skip unknown streams (GoPro tmcd etc.)
             '-c', 'copy',
             merge_output
@@ -2860,7 +2865,15 @@ def apply_metadata_one(jid, inp, out, params):
             pano_type = params.get('pano_type', '360')
             stereo_mode = params.get('stereo_mode', 'mono')
             log_line(jid, f'  Injecting GSpherical metadata (pano={pano_type}, stereo={stereo_mode})...')
-            final_out = temp_out if not replace_original else out + '.spherical_tmp.mp4'
+            # FIX (v3.13.2 P0-3): final_out must never alias temp_out. When the
+            # output goes to a new directory, temp_out IS out (the destination),
+            # so the old `final_out = temp_out` made inject_uuid(out, out)
+            # mmap-read and 'wb'-write the same file → ERROR_USER_MAPPED_FILE,
+            # and the exception fallback shutil.copy2(out, out) raised
+            # SameFileError. Always inject into a separate sibling temp file,
+            # then move it onto the destination below (covers both the
+            # replace-original and the new-directory paths).
+            final_out = out + '.spherical_tmp.mp4'
             try:
                 ok = inject_uuid(temp_out, final_out, pano_type, stereo_mode)
                 if ok:
@@ -2874,19 +2887,28 @@ def apply_metadata_one(jid, inp, out, params):
                 import shutil
                 shutil.copy2(temp_out, final_out)
             finally:
-                if temp_out != final_out:
+                # temp_out is only disposable when it is a genuine temp file —
+                # never when it aliases the destination (new-directory path):
+                # out is re-populated by os.replace(final_out, out) below.
+                if temp_out not in (final_out, out):
                     try: os.remove(temp_out)
                     except Exception: pass
         else:
             final_out = temp_out
 
-        # Replace original if needed
-        if replace_original:
-            try:
-                os.replace(final_out, out)
-            except Exception as e:
-                log_line(jid, f'  Failed to replace original: {e}', 'error')
-                return False, str(e), out
+        # Move the result onto the destination: spherical always (final_out is
+        # a separate temp), plain copy only when overwriting the source.
+        if need_spherical or replace_original:
+            if not os.path.exists(final_out):
+                # Injection and its copy fallback both failed — keep whatever
+                # is already at out (muxed file / untouched original).
+                log_line(jid, '  Injected file missing; keeping non-spherical output', 'warn')
+            else:
+                try:
+                    os.replace(final_out, out)
+                except Exception as e:
+                    log_line(jid, f'  Failed to replace original: {e}', 'error')
+                    return False, str(e), out
 
     elif need_spherical:
         # Only spherical metadata requested: mirror the single-file conversion
@@ -2910,7 +2932,11 @@ def apply_metadata_one(jid, inp, out, params):
                 if _j: _el = _j.pop('_ffmpeg_last_err', [])
             _fe = parse_ffmpeg_error(_el, rc)
             return False, _fe or f'ffmpeg stream copy failed (rc={rc})', out
-        final_out = temp_out if not replace_original else out + '.spherical_tmp.mp4'
+        # FIX (v3.13.2 P0-3): same aliasing hazard as the need_ffmpeg branch —
+        # always inject into a separate sibling temp file. This branch only
+        # runs when spherical injection was requested, so the destination move
+        # below is unconditional.
+        final_out = out + '.spherical_tmp.mp4'
         try:
             ok = inject_uuid(temp_out, final_out, pano_type, stereo_mode)
             if ok:
@@ -2924,11 +2950,12 @@ def apply_metadata_one(jid, inp, out, params):
             import shutil
             shutil.copy2(temp_out, final_out)
         finally:
-            if temp_out != final_out:
+            if temp_out not in (final_out, out):
                 try: os.remove(temp_out)
                 except Exception: pass
-        # Replace original if needed
-        if replace_original:
+        if not os.path.exists(final_out):
+            log_line(jid, '  Injected file missing; keeping non-spherical output', 'warn')
+        else:
             try:
                 os.replace(final_out, out)
             except Exception as e:
