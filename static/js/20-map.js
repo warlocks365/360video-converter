@@ -360,13 +360,9 @@ function selectSearchResult(lat, lon, name, address) {
 }
 
 
-async function reverseGeocode(lat, lon, fallbackName, fallbackAddress) {
-  // FIX: Guard against null mapInstance — called from map click handler
-  if (!mapInstance) return;
-  if (mapMarker) mapInstance.removeLayer(mapMarker);
-  mapMarker = L.marker([lat, lon]).addTo(mapInstance);
-  mapInstance.setView([lat, lon], 15);
-
+// FIX (v3.13.7): 纯解析版逆地理（无 DOM）——地图选点与元数据工具「复用 GPS」
+// 共用同一套地名/地址解析（AMap regeo + Nominatim + 兜底），行为一致不重复实现。
+async function resolveReverseGeo(lat, lon, fallbackName, fallbackAddress) {
   // Default name: fallbackName (from POI) or raw coordinates
   let name = fallbackName || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
   let address = '';
@@ -441,10 +437,21 @@ async function reverseGeocode(lat, lon, fallbackName, fallbackAddress) {
     address = `(地址获取失败 — ${lastError})`;
   }
 
-  mapSelectedLocation = { name: mapFieldToStr(name), lat, lon, address: mapFieldToStr(address) };
-  document.getElementById('mapSelectedName').textContent = name;
+  return { name: mapFieldToStr(name), address: mapFieldToStr(address) };
+}
+
+
+async function reverseGeocode(lat, lon, fallbackName, fallbackAddress) {
+  // FIX: Guard against null mapInstance — called from map click handler
+  if (!mapInstance) return;
+  if (mapMarker) mapInstance.removeLayer(mapMarker);
+  mapMarker = L.marker([lat, lon]).addTo(mapInstance);
+  mapInstance.setView([lat, lon], 15);
+  const r = await resolveReverseGeo(lat, lon, fallbackName, fallbackAddress);
+  mapSelectedLocation = { name: r.name, lat, lon, address: r.address };
+  document.getElementById('mapSelectedName').textContent = r.name;
   document.getElementById('mapSelectedCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-  document.getElementById('mapSelectedAddress').textContent = address || '(无地址信息)';
+  document.getElementById('mapSelectedAddress').textContent = r.address || '(无地址信息)';
 }
 
 

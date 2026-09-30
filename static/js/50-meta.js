@@ -546,7 +546,11 @@ async function probeSourceVideo(path, target) {
 
     // Creation time row
     if (data.has_time && ct) {
-      const ctDisplay = ct.replace('T', ' ').replace(/\.\d+Z?$/, '').replace('Z', '');
+      // FIX (v3.13.7): 显示本地墙钟。旧实现剥掉 Z 直接展示 UTC 墙钟，与
+      // 「复用拍摄时间」填充的本地值相差时区偏移——用户按显示值设定时间即产生
+      // "标签时间与设定不一致（±8h）"的报告。显示、复用、写入三处统一为本地语义。
+      const ctLocal = utcToLocalNaive(ct) || ct;
+      const ctDisplay = ctLocal.replace('T', ' ');
       html += `<div class="si-row"><span class="si-label">拍摄时间:</span><span class="si-value">${ctDisplay}</span></div>`;
     } else {
       html += '<div class="si-row"><span class="si-label">拍摄时间:</span><span class="si-none">未找到</span></div>';
@@ -603,17 +607,18 @@ function probeHasTime(probe) {
   return !!(probe.has_date && probe.creation_time);
 }
 
-function reuseSourceGPS(target) {
+async function reuseSourceGPS(target) {
   const t = REUSE_TARGETS[target];
   const probe = probeForTarget(target);
   if (!t || !probe || !probe.has_gps || !probe.gps) return;
   const gps = probe.gps;
-  const locName = probe.location_name || '';
-  const locAddr = probe.location_address || '';
+  // FIX (v3.13.5): 非字符串类型收敛（Nominatim 本地化名映射对象等）
+  let locName = mapFieldToStr(probe.location_name);
+  let locAddr = mapFieldToStr(probe.location_address);
   document.getElementById(t.lat).value = gps.lat.toFixed(6);
   document.getElementById(t.lon).value = gps.lon.toFixed(6);
   // FIX (v3.13.4 场景2): 地名缺失时用地址首段兜底，保证「拍摄地点」始终有内容
-  const nameVal = locName || (locAddr ? locAddr.split(/[,,]/)[0].trim() : '');
+  let nameVal = locName || (locAddr ? locAddr.split(/[,,]/)[0].trim() : '');
   document.getElementById(t.name).value = nameVal;
   if (locAddr && document.getElementById(t.address)) {
     document.getElementById(t.address).value = locAddr;
@@ -623,8 +628,26 @@ function reuseSourceGPS(target) {
   const info = document.getElementById(t.infoGps);
   if (info) {
     info.classList.remove('hidden');
-    info.innerHTML = `已复用素材 GPS 及地名: <strong>${gps.lat.toFixed(4)}, ${gps.lon.toFixed(4)}</strong>` +
+    info.innerHTML = `已复用素材 GPS: <strong>${gps.lat.toFixed(4)}, ${gps.lon.toFixed(4)}</strong>` +
       (nameVal ? ` (${nameVal})` : '');
+  }
+  // FIX (v3.13.7 场景2): 源文件只有坐标、没有地名/地址文本时，调用逆地理补全
+  // （与地图选点同一套解析：AMap regeo + Nominatim + 兜底），保证「复用 GPS」
+  // 完整包含经纬度 + 详细地址 + 拍摄位置文本。
+  if (!nameVal || !locAddr) {
+    try {
+      const r = await resolveReverseGeo(gps.lat, gps.lon, nameVal, locAddr);
+      const rAddr = (r.address || '').startsWith('(地址获取失败') ? '' : r.address;
+      nameVal = r.name || nameVal;
+      locAddr = rAddr || locAddr;
+      document.getElementById(t.name).value = nameVal;
+      if (document.getElementById(t.address)) document.getElementById(t.address).value = locAddr;
+      if (info) {
+        info.innerHTML = `已复用素材 GPS 及地名: <strong>${gps.lat.toFixed(4)}, ${gps.lon.toFixed(4)}</strong>` +
+          (nameVal ? ` (${nameVal})` : '') +
+          (locAddr ? `<br><span style="opacity:0.7">${esc(locAddr)}</span>` : '');
+      }
+    } catch (e) { /* 逆地理失败：保留坐标与已得文本 */ }
   }
 }
 

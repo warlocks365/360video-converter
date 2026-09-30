@@ -5035,7 +5035,12 @@ def probe_source():
         # creation_time can be at format level or stream level (prefer stream)
         creation_time = fmt_tags.get('creation_time', '')
         location_raw = fmt_tags.get('location', '')
-        location_name = fmt_tags.get('location.name', '') or fmt_tags.get('location_name', '')
+        # FIX (v3.13.7): 地名/地址读取与本工具的写入映射对齐——v3.13.3 起地名写
+        # description、地址写 comment，旧读取链只认 location.name/location_name，
+        # 导致本工具自己处理过的文件在「复用」时读不到地名/地址文本。
+        location_name = (fmt_tags.get('location.name', '') or fmt_tags.get('location_name', '')
+                         or fmt_tags.get('description', ''))
+        location_address = fmt_tags.get('comment', '')
         for s in streams:
             if not isinstance(s, dict):
                 continue
@@ -5044,8 +5049,10 @@ def probe_source():
                 creation_time = st_tags['creation_time']
             if not location_raw and st_tags.get('location'):
                 location_raw = st_tags['location']
-            if not location_name and (st_tags.get('location.name') or st_tags.get('location_name')):
-                location_name = st_tags.get('location.name') or st_tags.get('location_name')
+            if not location_name and (st_tags.get('location.name') or st_tags.get('location_name') or st_tags.get('description')):
+                location_name = st_tags.get('location.name') or st_tags.get('location_name') or st_tags.get('description')
+            if not location_address and st_tags.get('comment'):
+                location_address = st_tags['comment']
 
         # Parse ISO 6709 location: +34.0522-118.2437/ or +34.0522-118.2437
         gps = None
@@ -5067,6 +5074,8 @@ def probe_source():
             'creation_time': creation_time,
             'has_location_name': bool(location_name),
             'location_name': location_name,
+            # FIX (v3.13.7): 响应补充详细地址，供「复用 GPS」完整回填
+            'location_address': location_address,
             'filename': os.path.basename(path),
         })
     except Exception as e:
@@ -5115,7 +5124,9 @@ def probe_metadata():
             streams = data.get('streams') or []
             creation_time = fmt_tags.get('creation_time', '')
             location_raw = fmt_tags.get('location', '')
-            location_name = fmt_tags.get('location.name', '') or fmt_tags.get('location_name', '')
+            # FIX (v3.13.7): 地名读取对齐写入映射（v3.13.3 起地名写 description）
+            location_name = (fmt_tags.get('location.name', '') or fmt_tags.get('location_name', '')
+                             or fmt_tags.get('description', ''))
             # comment field sometimes holds the address
             location_address = fmt_tags.get('comment', '')
             for s in streams:
@@ -5126,8 +5137,8 @@ def probe_metadata():
                     creation_time = st_tags['creation_time']
                 if not location_raw and st_tags.get('location'):
                     location_raw = st_tags['location']
-                if not location_name and (st_tags.get('location.name') or st_tags.get('location_name')):
-                    location_name = st_tags.get('location.name') or st_tags.get('location_name')
+                if not location_name and (st_tags.get('location.name') or st_tags.get('location_name') or st_tags.get('description')):
+                    location_name = st_tags.get('location.name') or st_tags.get('location_name') or st_tags.get('description')
             # file size
             try:
                 file_size_mb = round(os.path.getsize(path) / (1024 * 1024), 1)

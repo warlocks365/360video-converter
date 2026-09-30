@@ -24,6 +24,17 @@ const API = (url) => {
     location_name: '', location_address: '山东省济南市历城区某某路1号',
     file_size_mb: 34.5, date_in_name: '', filename: 'X.mp4',
   };
+  if (u.includes('/api/geocode') && u.includes('__regeo__')) return {
+    status: '1',
+    regeocode: {
+      formatted_address: '山东省济南市历城区旅游路1号',
+      addressComponent: { province: '山东省', city: '济南市', district: '历城区', township: '旅游路', building: {}, neighborhood: {} },
+    },
+  };
+  if (u.includes('/api/nominatim') && u.includes('reverse=1')) return {
+    display_name: '山东省济南市历城区旅游路1号', name: '',
+    address: { state: '山东省', city: '济南市' },
+  };
   if (u.includes('/api/extract_date')) return { date_str: '2026-05-26T10:30:00' };
   if (u.includes('/api/codecs')) return { codecs: { libx264: { label: 'x', group: 'cpu', presets: [], default_preset: '', has_profile: true, has_level: true, has_bf_refs: true, has_x264_params: false, x265_params: false } } };
   if (u.includes('/api/codec_check')) return { available: {}, error_details: {}, ffmpeg_info: {}, runtime_dlls: {}, fix_hints: {} };
@@ -86,9 +97,19 @@ const check = (name, cond, detail) => {
     `got=${norm} expected=${expected}`);
   const storedManual = dom.window.eval('metaBatchItems[0].settings.manual_date');
   const storedFromName = dom.window.eval('metaBatchItems[0].settings.date_from_filename');
+  check('场景4: 探测自动填充的 manual_date 已无 Z/UTC 偏差（探测不覆盖用户选择）',
+    storedManual === '' && storedFromName === true,
+    `manual_date="${storedManual}" date_from_filename=${storedFromName}`);
   check('场景6a: 全局选了「从文件名提取」→ 探测不覆盖（弹窗与外部预览一致）',
     storedManual === '' && storedFromName === true,
     `manual_date="${storedManual}" date_from_filename=${storedFromName}`);
+  // 场景4 显示层：源信息面板展示本地墙钟（旧实现展示 UTC 墙钟 → 用户按显示值
+  // 设定即产生 ±8h 偏差）
+  await dom.window.probeSourceVideo('X.mp4', 'm');
+  check('场景4: 源信息面板拍摄时间显示本地墙钟（非 UTC）',
+    $('metaSourceInfo').innerHTML.includes('20:12:41')
+    && !$('metaSourceInfo').innerHTML.includes('12:12:41'),
+    $('metaSourceInfo').innerHTML.replace(/<[^>]+>/g, ' ').slice(0, 120));
 
   // ══ 场景6b/6c：日期来源优先级（探测只在"未选择任何来源"时兜底）══
   dom.window.eval('metaBatchItems[0].settings.date_from_filename = false; metaBatchItems[0].settings.manual_date = "";');
@@ -188,6 +209,19 @@ const check = (name, cond, detail) => {
   check('场景5: name 为数字 → 收敛为字符串不抛错',
     !threw5 && $('m_location_name').value === '12345',
     `threw=${threw5} name="${$('m_location_name').value}"`);
+
+  // ══ 场景7（v3.13.7）：纯坐标源复用 GPS → 逆地理补全地名/地址 ══
+  dom.window.eval(`metaBatchItems[0].probeData = { has_gps: true, gps: { lat: 36.7458, lon: 116.8331 }, has_time: true, creation_time: '2026-05-26T12:12:41.000000Z', location_name: '', location_address: '' };`);
+  dom.window.editMetaFileSettings(0);
+  const gpsBtn7 = [...d.querySelectorAll('#metaEditReuse [data-action="reuse-source-gps"]')][0];
+  gpsBtn7.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 600));   // 等待异步逆地理
+  check('场景7: 纯坐标源复用 GPS → 逆地理补全拍摄地点',
+    $('me_location_name').value !== '' && !$('me_location_name').value.startsWith('36.'),
+    `name="${$('me_location_name').value}"`);
+  check('场景7: 逆地理补全详细地址',
+    $('me_location_address').value.includes('旅游路'),
+    `addr="${$('me_location_address').value}"`);
 
   // ══ 收尾 ══
   check('页面无 JS 错误', errors.length === 0, errors.slice(0, 3).join(' | '));
