@@ -993,46 +993,10 @@
       </div>
       <!-- v3.x 批量结果筛选（纯前端，对已加载的 reportData 过滤后重渲染） -->
       <div id="reportFilterBar" class="report-filter-bar hidden">
-        <select class="input report-filter-field" id="reportFilterField" data-action="report-filter-change">
-          <option value="">— 选择筛选字段 —</option>
-          <optgroup label="容器">
-            <option value="moov">moov 状态</option>
-            <option value="container_format">封装格式</option>
-            <option value="file_size">文件大小</option>
-            <option value="duration">时长</option>
-          </optgroup>
-          <optgroup label="视频流">
-            <option value="vcodec">编码器</option>
-            <option value="resolution">分辨率</option>
-            <option value="fps">帧率</option>
-            <option value="vbitrate">码率</option>
-            <option value="pix_fmt">pix_fmt</option>
-          </optgroup>
-          <optgroup label="音频流">
-            <option value="acodec">音频编码</option>
-            <option value="sample_rate">采样率</option>
-            <option value="channels">声道数</option>
-          </optgroup>
-          <optgroup label="球面元数据">
-            <option value="gspherical">是否 GSpherical</option>
-            <option value="pano_type">pano 类型（360/180）</option>
-            <option value="stereo_mode">立体模式</option>
-          </optgroup>
-          <optgroup label="时间">
-            <option value="creation_time">creation_time</option>
-          </optgroup>
-          <optgroup label="位置 GPS">
-            <option value="gps_coord">经纬度</option>
-            <option value="location_name">地点名称</option>
-            <option value="location_address">详细地址</option>
-          </optgroup>
-        </select>
-        <input class="input report-filter-keyword" id="reportFilterKeyword" placeholder="关键词（包含匹配，不区分大小写）">
-        <select class="input report-filter-bool" id="reportFilterBool" data-action="report-filter-change" style="display:none;">
-          <option value="">全部</option>
-          <option value="yes">是</option>
-          <option value="no">否</option>
-        </select>
+        <!-- v3.13.9: 多条件筛选叠加 —— 行由 70-report.js 按 reportFilterList 动态渲染，
+             每行 = 字段下拉 + 值下拉（当前数据该字段的值集合） + 删除按钮；行间 AND 叠加 -->
+        <div id="reportFilterRows"></div>
+        <button class="btn btn-sm" type="button" id="reportFilterAddBtn">添加筛选条件</button>
         <span id="reportFilterCount" class="report-filter-count"></span>
       </div>
       <!-- v3.x 批量结果多选：全选/反选只作用于当前筛选可见的条目；勾选按文件路径记录 -->
@@ -1041,7 +1005,12 @@
         <button class="btn btn-sm" type="button" data-action="report-select-invert">反选</button>
         <button class="btn btn-sm" type="button" data-action="report-select-clear">清空</button>
         <span id="reportSelectCount" class="report-select-count">已选 0 个</span>
-        <button class="btn btn-sm btn-primary" type="button" id="reportAddToQueueBtn" data-action="report-add-to-queue">加入批量转换队列（已选 0）</button>
+        <!-- v3.13.9: 加入队列目标可选（转换批量队列 / 元数据批量队列） -->
+        <select class="input" id="reportQueueTarget" style="width:auto;padding:4px 8px;font-size:0.78rem;">
+          <option value="convert">加入批量转换队列</option>
+          <option value="meta">加入元数据批量队列</option>
+        </select>
+        <button class="btn btn-sm btn-primary" type="button" id="reportAddToQueueBtn" data-action="report-add-to-queue">加入队列（已选 0）</button>
       </div>
       <div id="reportResult" style="min-height:200px;">
         <div style="padding:40px;text-align:center;color:var(--text-muted);">

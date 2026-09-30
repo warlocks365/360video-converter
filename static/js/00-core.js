@@ -241,7 +241,9 @@ const DELEGATED_ACTIONS = {
   'toggle-spherical-options': el => toggleSphericalOptions(el, el.dataset.prefix),
   'toggle-meta-edit-section': el => toggleMetaEditSection(el.dataset.metaSection, el.checked),
   // 元数据报告批量结果（筛选 / 多选 / 加入批量转换队列）
-  'report-filter-change':     () => onReportFilterChange(),
+  // FIX (v3.13.9): 单条件筛选控件已重构为多条件行容器，旧委托条目移除
+  'report-filter-row-change': (el) => onReportFilterRowChange(el),
+  'report-filter-remove':     (el) => removeReportFilterRow(el.dataset.row),
   'toggle-report-select':     (el, e) => toggleReportSelect(Number(el.dataset.idx), e.target.checked),
   'report-select-all':        () => reportSelectVisibleAll(),
   'report-select-invert':     () => reportSelectInvert(),

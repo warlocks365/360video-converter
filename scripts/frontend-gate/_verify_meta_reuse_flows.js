@@ -251,6 +251,43 @@ const check = (name, cond, detail) => {
     check('场景8: 真实产物标签核验', false, e.message.slice(0, 120));
   }
 
+  // ══ 场景9（v3.13.9）：报告多条件筛选叠加 + 值集合下拉 + 加入元数据队列 ══
+  dom.window.eval(`reportData = [
+    { filename: 'A.mp4', path: 'G:/x/A.mp4', size: 100, moov: { has_moov: true, moov_position: 'front' },
+      probeData: { format: { tags: {}, duration: '10' }, streams: [ { codec_type: 'video', codec_name: 'h264', width: 4096, height: 2048, r_frame_rate: '30/1', bit_rate: '5000000', pix_fmt: 'yuv420p' }, { codec_type: 'audio', codec_name: 'aac', sample_rate: '48000', channels: 2 } ] } },
+    { filename: 'B.mp4', path: 'G:/x/B.mp4', size: 200, moov: { has_moov: true, moov_position: 'end' },
+      probeData: { format: { tags: {}, duration: '20' }, streams: [ { codec_type: 'video', codec_name: 'hevc', width: 4096, height: 2048, r_frame_rate: '30/1', bit_rate: '8000000', pix_fmt: 'yuv420p' } ] } },
+    { filename: 'C.mp4', path: 'G:/x/C.mp4', size: 300, moov: { has_moov: false },
+      probeData: { format: { tags: {}, duration: '30' }, streams: [ { codec_type: 'video', codec_name: 'h264', width: 1920, height: 1080, r_frame_rate: '30/1', bit_rate: '3000000', pix_fmt: 'yuv420p' } ] } },
+  ];`);
+  dom.window.eval(`reportFilterList = [ { field: 'vcodec', value: 'h264' }, { field: 'resolution', value: '4096x2048' } ]; renderReportFilterRows(); renderReport();`);
+  check('场景9: 双条件 AND 叠加（vcodec=h264 且 4096x2048 → 仅 A）',
+    dom.window.eval('getVisibleReportItems().length') === 1
+    && dom.window.eval("getVisibleReportItems()[0].item.filename") === 'A.mp4',
+    `visible=${dom.window.eval('getVisibleReportItems().length')}`);
+  check('场景9: 值集合下拉收集（vcodec 去重值 h264/hevc）',
+    dom.window.eval("JSON.stringify(collectReportFieldValues('vcodec'))") === '["h264","hevc"]',
+    dom.window.eval("JSON.stringify(collectReportFieldValues('vcodec'))"));
+  check('场景9: 筛选行渲染出值下拉（report-filter-value）',
+    $('reportFilterRows').innerHTML.split('report-filter-value').length - 1 === 2,
+    `值下拉数=${$('reportFilterRows').innerHTML.split('report-filter-value').length - 1}`);
+  // 加入元数据批量队列（目标选择器 = meta）
+  dom.window.eval(`reportSelectedPaths = new Set(['G:/x/A.mp4', 'G:/x/B.mp4']); document.getElementById('reportQueueTarget').value = 'meta';`);
+  const before9 = dom.window.eval('metaBatchItems.length');
+  dom.window.addSelectedReportToQueue();
+  check('场景9: 加入元数据批量队列（新增 2 项）',
+    dom.window.eval('metaBatchItems.length') === before9 + 2,
+    `metaBatchItems=${dom.window.eval('metaBatchItems.length')} (was ${before9})`);
+  check('场景9: 自动切换到元数据模式',
+    dom.window.eval('currentMode') === 'metadata',
+    `currentMode=${dom.window.eval('currentMode')}`);
+  // 目标=convert 回归：重复文件跳过
+  dom.window.eval(`document.getElementById('reportQueueTarget').value = 'convert'; reportSelectedPaths = new Set(['G:/x/A.mp4']);`);
+  dom.window.addSelectedReportToQueue();
+  check('场景9: 目标=convert 回归（加入转换批量队列）',
+    dom.window.eval('typeof batchTasks') !== 'undefined' && dom.window.eval('batchTasks.length') >= 1,
+    `batchTasks=${dom.window.eval('batchTasks.length')}`);
+
   // ══ 收尾 ══
   check('页面无 JS 错误', errors.length === 0, errors.slice(0, 3).join(' | '));
 

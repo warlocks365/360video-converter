@@ -169,15 +169,57 @@ function moovBadgeHtml(item) {
 
 // ══ C2: 批量结果筛选（纯前端，对 reportData 过滤后重渲染）═════════
 
-function getReportFilterState() {
-  const fEl = document.getElementById('reportFilterField');
-  const bEl = document.getElementById('reportFilterBool');
-  const kEl = document.getElementById('reportFilterKeyword');
-  return {
-    field: fEl ? fEl.value : '',
-    boolVal: bEl ? bEl.value : '',
-    kw: kEl ? kEl.value.trim().toLowerCase() : ''
-  };
+// FIX (v3.13.9): 多条件筛选叠加 —— reportFilterList 为条件数组 [{field, value}]，
+// 行间 AND 叠加；值下拉的选项 = 当前数据在该字段上的去重值集合（无需手动输入）。
+let reportFilterList = [];   // [{field, value}]；value 为空 = 该行不参与过滤
+
+const REPORT_FILTER_GROUPS = [
+  { label: '容器', fields: [['moov', 'moov 状态'], ['container_format', '封装格式'], ['file_size', '文件大小'], ['duration', '时长']] },
+  { label: '视频流', fields: [['vcodec', '编码器'], ['resolution', '分辨率'], ['fps', '帧率'], ['vbitrate', '码率'], ['pix_fmt', 'pix_fmt']] },
+  { label: '音频流', fields: [['acodec', '音频编码'], ['sample_rate', '采样率'], ['channels', '声道数']] },
+  { label: '球面元数据', fields: [['gspherical', '是否 GSpherical'], ['pano_type', 'pano 类型（360/180）'], ['stereo_mode', '立体模式']] },
+  { label: '时间', fields: [['creation_time', 'creation_time']] },
+  { label: '位置 GPS', fields: [['gps_coord', '经纬度'], ['location_name', '地点名称'], ['location_address', '详细地址']] },
+];
+
+// 收集当前数据在指定字段上的去重值集合（值下拉的数据源）
+function collectReportFieldValues(field) {
+  const set = new Set();
+  reportData.forEach(it => {
+    const v = reportItemFilterValue(it, field);
+    if (v) set.add(String(v));
+  });
+  return [...set].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+}
+
+function renderReportFilterRows() {
+  const box = document.getElementById('reportFilterRows');
+  if (!box) return;
+  box.innerHTML = reportFilterList.map((f, i) => {
+    const fieldSel = '<select class="input report-filter-field" data-action="report-filter-row-change" data-row="' + i + '" data-part="field">' +
+      '<option value="">— 选择筛选字段 —</option>' +
+      REPORT_FILTER_GROUPS.map(g => '<optgroup label="' + esc(g.label) + '">' +
+        g.fields.map(([v, l]) => '<option value="' + esc(v) + '"' + (f.field === v ? ' selected' : '') + '>' + esc(l) + '</option>').join('') +
+        '</optgroup>').join('') +
+      '</select>';
+    const isBool = REPORT_BOOL_FIELDS.includes(f.field);
+    let valueCtl;
+    if (!f.field) {
+      valueCtl = '<select class="input report-filter-value" data-action="report-filter-row-change" data-row="' + i + '" data-part="value" disabled><option value="">先选字段</option></select>';
+    } else if (isBool) {
+      valueCtl = '<select class="input report-filter-value" data-action="report-filter-row-change" data-row="' + i + '" data-part="value">' +
+        ['是', '否'].map(v => '<option value="' + v + '"' + (f.value === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>';
+    } else {
+      const vals = collectReportFieldValues(f.field);
+      valueCtl = '<select class="input report-filter-value" data-action="report-filter-row-change" data-row="' + i + '" data-part="value">' +
+        '<option value="">（全部）</option>' +
+        vals.map(v => '<option value="' + esc(v) + '"' + (f.value === v ? ' selected' : '') + '>' + esc(v) + '</option>').join('') +
+        '</select>';
+    }
+    return '<div class="report-filter-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">' +
+      fieldSel + valueCtl +
+      '<button class="btn btn-sm" type="button" data-action="report-filter-remove" data-row="' + i + '" title="删除此条件">&#10005;</button></div>';
+  }).join('') || '<div style="color:var(--text-muted);font-size:0.75rem;">尚未添加筛选条件，全部条目可见</div>';
 }
 
 
@@ -238,39 +280,46 @@ function reportItemFilterValue(item, field) {
 // （reportData 顺序不会因筛选改变，故 idx 可安全用作复选框的 data-idx）
 function getVisibleReportItems() {
   const all = reportData.map((item, idx) => ({ item, idx }));
-  const st = getReportFilterState();
-  if (!st.field) return all;
-  return all.filter(({ item }) => {
-    const val = reportItemFilterValue(item, st.field);
-    if (REPORT_BOOL_FIELDS.includes(st.field)) {
-      if (st.boolVal === 'yes') return val === '是';
-      if (st.boolVal === 'no') return val === '否';
-      return true; // 全部
-    }
-    if (!st.kw) return true;
-    return String(val).toLowerCase().includes(st.kw);
-  });
-}
-
-
-function onReportFilterChange() {
-  const st = getReportFilterState();
-  const isBool = REPORT_BOOL_FIELDS.includes(st.field);
-  setDisplay('reportFilterKeyword', isBool ? 'none' : '');
-  setDisplay('reportFilterBool', isBool ? '' : 'none');
-  renderReport();
+  const conds = reportFilterList.filter(f => f.field && f.value);
+  if (conds.length === 0) return all;
+  // 多条件 AND 叠加；值下拉选项来自数据本身 → 精确匹配（大小写不敏感）
+  return all.filter(({ item }) => conds.every(f => {
+    const val = reportItemFilterValue(item, f.field);
+    if (REPORT_BOOL_FIELDS.includes(f.field)) return val === f.value;
+    return String(val).toLowerCase() === String(f.value).toLowerCase();
+  }));
 }
 
 
 function wireReportFilterEvents() {
   if (reportFilterWired) return;
-  const kw = document.getElementById('reportFilterKeyword');
-  if (kw) {
-    // 中央委托只覆盖 click/change（change 需失焦才触发），文本框"输入即筛选"
-    // 用本地 addEventListener 实现（非内联事件，符合事件规范）
-    kw.addEventListener('input', () => renderReport());
-    reportFilterWired = true;
+  reportFilterWired = true;
+  // 多条件筛选行（动态生成）→ 行内 change/click 走 00-core 中央委托
+  // （report-filter-row-change / report-filter-remove）；添加按钮走本地监听。
+  const addBtn = document.getElementById('reportFilterAddBtn');
+  if (addBtn) addBtn.addEventListener('click', () => {
+    reportFilterList.push({ field: '', value: '' });
+    renderReportFilterRows();
+  });
+}
+
+// 中央委托 handler：行内字段/值下拉变更
+function onReportFilterRowChange(el) {
+  const f = reportFilterList[parseInt(el.dataset.row, 10)];
+  if (!f) return;
+  if (el.dataset.part === 'field') {
+    if (f.field !== el.value) { f.field = el.value; f.value = ''; renderReportFilterRows(); renderReport(); }
+  } else {
+    f.value = el.value;
+    renderReport();
   }
+}
+
+// 中央委托 handler：删除一行筛选条件
+function removeReportFilterRow(row) {
+  reportFilterList.splice(parseInt(row, 10), 1);
+  renderReportFilterRows();
+  renderReport();
 }
 
 
@@ -317,12 +366,39 @@ function addSelectedReportToQueue() {
     showToast('请先勾选要加入队列的文件', 'warning');
     return;
   }
+  // FIX (v3.13.9): 队列目标可选 —— convert（原行为）/ meta（元数据批量列表）
+  const targetEl = document.getElementById('reportQueueTarget');
+  const target = targetEl ? targetEl.value : 'convert';
   const files = reportData
     .filter(it => it.path && reportSelectedPaths.has(it.path))
     .map(it => ({
       path: it.path, name: it.filename,
       size_mb: it.size || 0, size_str: it.size ? `${it.size} MB` : '--'
     }));
+
+  if (target === 'meta') {
+    // 加入元数据批量列表：条目结构对齐 addToMetaBatchList，加入后逐个探测
+    const addedIdx = [];
+    let added = 0, skipped = 0;
+    files.forEach(f => {
+      if (metaBatchItems.some(m => m.path === f.path)) { skipped++; return; }
+      metaBatchItems.push({
+        path: f.path, name: f.name, size_mb: f.size_mb, date_in_name: '',
+        selected: true, status: 'pending', statusMsg: '', duration: '',
+        settings: getDefaultMetaSettings(), probed: false
+      });
+      addedIdx.push(metaBatchItems.length - 1);
+      added++;
+    });
+    renderMetaBatchTable();
+    addedIdx.forEach(i => probeMetaFile(i));
+    showToast(added > 0
+      ? `已加入元数据批量队列 ${added} 个（跳过 ${skipped} 个重复），正在探测元数据...`
+      : `未添加任何文件：${skipped} 个已在元数据批量队列中`, added > 0 ? 'success' : 'warning', 4000);
+    if (added > 0) switchMode('metadata');
+    return;
+  }
+
   // 复用 40-files.js 的任务构造逻辑（makeTask + buildTaskConfig 快照当前参数）
   const r = addMediaToBatchQueue(files);
   if (r.added === 0) {
@@ -338,6 +414,7 @@ function addSelectedReportToQueue() {
 
 function updateReportToolbars() {
   wireReportFilterEvents();
+  renderReportFilterRows();
   const hasData = reportData.length > 0;
   const fbar = document.getElementById('reportFilterBar');
   if (fbar) fbar.classList.toggle('hidden', !hasData);
@@ -350,7 +427,7 @@ function updateReportCounts(visibleCount) {
   setText('reportFilterCount', `筛选后 ${visibleCount != null ? visibleCount : reportData.length} / 共 ${reportData.length} 个`);
   setText('reportSelectCount', `已选 ${reportSelectedPaths.size} 个`);
   const btn = document.getElementById('reportAddToQueueBtn');
-  if (btn) btn.textContent = `加入批量转换队列（已选 ${reportSelectedPaths.size}）`;
+  if (btn) btn.textContent = `加入队列（已选 ${reportSelectedPaths.size}）`;
 }
 
 

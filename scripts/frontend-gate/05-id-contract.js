@@ -24,6 +24,8 @@ const EXPECTED_REMOVED = new Set([
   'metaCurrentFileLabel', 'metaFileProgressPercent', 'metaFileProgress',
   'metaTimeInfo', 'metaElapsed', 'metaRemaining', 'metaTotal',
   'metaPauseBtn', 'metaCancelBtn',
+  // v3.13.9 报告筛选重构：单条件三控件 → 多条件行容器（reportFilterRows）
+  'reportFilterField', 'reportFilterKeyword', 'reportFilterBool',
 ]);
 const EXPECTED_ADDED = new Set([
   'mainActionBar', 'testEncodeLabel',
@@ -37,6 +39,8 @@ const EXPECTED_ADDED = new Set([
   'reportFilterCount', 'reportSelectBar', 'reportSelectCount', 'reportAddToQueueBtn',
   // v3.13.4 元数据工具复用修复：弹窗内复用按钮容器 + 弹窗信息框（GPS/时间）
   'metaEditReuse', 'me_location_info', 'me_date_info',
+  // v3.13.9 报告筛选重构：单条件行（旧三控件）→ 多条件行容器 + 添加按钮 + 队列目标
+  'reportFilterRows', 'reportFilterAddBtn', 'reportQueueTarget',
 ]);
 
 if (MODE === 'baseline') {
