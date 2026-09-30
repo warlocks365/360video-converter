@@ -176,6 +176,35 @@ function getDefaultMetaSettings() {
   return collectMetaSettings('m');
 }
 
+// FIX (v3.13.4 场景4): probe 返回的 creation_time 是 UTC（带 Z 后缀）。旧链路把它
+// 原样塞进 manual_date，后端 fromisoformat 得到 aware-UTC：FS 时间用绝对时刻（本地
+// 显示 +8h）、tag 把 UTC 墙钟当本地写（-8h）——两处都与队列设定不一致。
+// 现在在"进入设置"的入口统一归一化为本地 naive 字符串，保证复用/设定时间全链路一致。
+function utcToLocalNaive(s) {
+  if (!s) return s;
+  const str = String(s).trim().replace(' ', 'T');
+  const m = str.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?$/i);
+  if (!m) return s;                       // EXIF 等非 ISO 形态：交由后续解析处理
+  if (!m[2]) return m[1];                 // 已是 naive：原样保留
+  const dt = new Date(m[1] + (m[2].toUpperCase() === 'Z' ? 'Z' : m[2]));
+  if (isNaN(dt.getTime())) return s;
+  const p = n => String(n).padStart(2, '0');
+  return `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}` +
+         `T${p(dt.getHours())}:${p(dt.getMinutes())}:${p(dt.getSeconds())}`;
+}
+
+// FIX (v3.13.4 场景3): 「手动指定日期」与「从文件名提取日期」互斥。
+// 旧链路：探测/复用把拍摄时间写进 manual_date 后，用户勾选"从文件名提取"并不会
+// 清掉 manual_date，而后端优先级 manual > 文件名 → 文件名日期永远不生效。
+// 勾选"从文件名提取"时清空手动框，让用户意图真实下传。
+function onMetaDateFromNameChange(prefix) {
+  const ids = META_FIELD_IDS;
+  const fromName = document.getElementById(ids.dateFromName[prefix]);
+  const manual = document.getElementById(ids.manualDate[prefix]);
+  if (fromName && fromName.checked && manual) manual.value = '';
+  if (prefix === 'm') updateMetaDatePreview();
+}
+
 // Probe existing metadata for a file and update its settings accordingly
 
 async function probeMetaFile(idx) {
@@ -185,6 +214,9 @@ async function probeMetaFile(idx) {
     const r = await fetch('/api/probe_metadata?path=' + encodeURIComponent(f.path));
     const data = await r.json();
     if (data.error) { f.probed = true; renderMetaBatchTable(); return; }
+
+    // FIX (v3.13.4 场景1): 保留探测结果，供单行编辑弹窗内的「复用」按钮使用
+    f.probeData = data;
 
     // Update file info
     if (data.file_size_mb) f.size_mb = data.file_size_mb;
@@ -200,7 +232,8 @@ async function probeMetaFile(idx) {
     if (data.has_date) {
       s.apply_date = true;
       // Use existing creation_time as manual_date so it's preserved
-      if (data.creation_time) s.manual_date = data.creation_time;
+      // FIX (v3.13.4 场景4): 归一化为本地 naive（源值是 UTC Z 字符串）
+      if (data.creation_time) s.manual_date = utcToLocalNaive(data.creation_time);
       s.date_from_filename = false; // prefer existing date over filename
     }
     if (data.has_gps && data.gps) {
@@ -337,7 +370,9 @@ function renderMetaBatchTable() {
         const lon = parseFloat(s.location_lon);
         const latStr = Math.abs(lat).toFixed(1) + '°' + (lat >= 0 ? 'N' : 'S');
         const lonStr = Math.abs(lon).toFixed(1) + '°' + (lon >= 0 ? 'E' : 'W');
-        taskBadges.push(`<span class="meta-badge meta-badge-gps" title="GPS ${esc(s.location_name || '')}">&#128205; ${esc(latStr)} ${esc(lonStr)}</span>`);
+        // FIX (v3.13.4 场景2): 队列徽章此前只显示坐标，地名（拍摄地点）不可见
+        const nameStr = s.location_name ? ` · ${esc(s.location_name)}` : '';
+        taskBadges.push(`<span class="meta-badge meta-badge-gps" title="GPS ${esc(s.location_name || '')}">&#128205; ${esc(latStr)} ${esc(lonStr)}${nameStr}</span>`);
       }
       if (taskBadges.length === 0) {
         taskBadges.push('<span style="color:var(--text-muted);font-size:0.7rem;">无任务（点击编辑设置）</span>');
@@ -420,6 +455,22 @@ function editMetaFileSettings(idx) {
     `<strong>${esc(f.name)}</strong><br><small style="color:var(--text-muted);">${esc(f.path)}</small>` +
     (f.size_mb ? `<br><small>大小: ${f.size_mb} MB</small>` : '') +
     (f.date_in_name ? `<br><small>文件名日期: ${esc(f.date_in_name)}</small>` : '');
+
+  // FIX (v3.13.4 场景1): 弹窗内提供「复用」入口（此前复用按钮只存在于全局面板，
+  // 弹窗用户点不到，导致"复用后详细设置不更新"）。数据来源 = 该文件自己的探测结果。
+  const reuseEl = document.getElementById('metaEditReuse');
+  if (reuseEl) {
+    const pd = f.probeData;
+    if (pd && (pd.has_gps || pd.has_time)) {
+      reuseEl.classList.remove('hidden');
+      reuseEl.innerHTML =
+        `<button class="si-btn" data-action="reuse-source-gps" data-target="me" ${(!pd.has_gps) ? 'disabled' : ''}>&#128205; 复用素材 GPS 及地名</button>` +
+        `<button class="si-btn" data-action="reuse-source-time" data-target="me" ${(!pd.has_time) ? 'disabled' : ''}>&#128197; 复用拍摄时间</button>`;
+    } else {
+      reuseEl.classList.add('hidden');
+      reuseEl.innerHTML = '';
+    }
+  }
 
   // 值回填（统一入口，替代原先逐字段手写）
   applyMetaSettings('me', s);
@@ -509,51 +560,89 @@ async function probeSourceVideo(path, target) {
 }
 
 
+// FIX (v3.13.4 场景1): 复用处理器表格化 —— 新增 me（批量编辑弹窗）目标，弹窗内
+// 也能一键复用；同时回填详细地址（此前只填坐标与地名），地名缺失时用地址首段兜底。
+const REUSE_TARGETS = {
+  p:  { lat: 'p_location_lat', lon: 'p_location_lon', name: 'p_location_name',
+        address: 'p_location_address', master: 'p_set_location',
+        masterDate: 'p_date_from_filename', manual: 'p_manual_date', fromName: 'p_date_from_filename',
+        showSection: () => toggleLocation(), showDateSection: () => updateDatePreview(),
+        infoGps: 'locationInfo', infoTime: null, afterTime: () => updateDatePreview() },
+  m:  { lat: 'm_location_lat', lon: 'm_location_lon', name: 'm_location_name',
+        address: 'm_location_address', master: 'm_apply_location',
+        masterDate: 'm_apply_date', manual: 'm_manual_date', fromName: 'm_date_from_filename',
+        showSection: () => toggleMetaLocation(),
+        showDateSection: () => { if (typeof toggleMetaDate === 'function') toggleMetaDate(); },
+        infoGps: 'metaLocationInfo', infoTime: null, afterTime: () => updateMetaDatePreview() },
+  me: { lat: 'me_location_lat', lon: 'me_location_lon', name: 'me_location_name',
+        address: 'me_location_address', master: 'me_apply_location',
+        masterDate: 'me_apply_date', manual: 'me_manual_date', fromName: 'me_date_from_filename',
+        showSection: () => setMetaSectionVisible('me', 'location', document.getElementById('me_apply_location').checked),
+        showDateSection: () => setMetaSectionVisible('me', 'date', document.getElementById('me_apply_date').checked),
+        infoGps: 'me_location_info', infoTime: 'me_date_info', afterTime: null },
+};
+
+function probeForTarget(target) {
+  if (target === 'me') {
+    const f = metaBatchItems[_metaEditIndex];
+    return (f && f.probeData) ? f.probeData : null;
+  }
+  return _lastSourceProbe;
+}
+
+// probe-source 返回 has_time；probe_metadata（批量列表探测）没有该字段，
+// 只有 has_date + creation_time。兼容两种形状。
+function probeHasTime(probe) {
+  if (!probe) return false;
+  if (probe.has_time !== undefined) return !!probe.has_time;
+  return !!(probe.has_date && probe.creation_time);
+}
+
 function reuseSourceGPS(target) {
-  if (!_lastSourceProbe || !_lastSourceProbe.has_gps) return;
-  const gps = _lastSourceProbe.gps;
-  const locName = _lastSourceProbe.location_name || '';
-  if (target === 'm') {
-    document.getElementById('m_location_lat').value = gps.lat.toFixed(6);
-    document.getElementById('m_location_lon').value = gps.lon.toFixed(6);
-    if (locName) document.getElementById('m_location_name').value = locName;
-    document.getElementById('m_apply_location').checked = true;
-    toggleMetaLocation();
-    const info = document.getElementById('metaLocationInfo');
+  const t = REUSE_TARGETS[target];
+  const probe = probeForTarget(target);
+  if (!t || !probe || !probe.has_gps || !probe.gps) return;
+  const gps = probe.gps;
+  const locName = probe.location_name || '';
+  const locAddr = probe.location_address || '';
+  document.getElementById(t.lat).value = gps.lat.toFixed(6);
+  document.getElementById(t.lon).value = gps.lon.toFixed(6);
+  // FIX (v3.13.4 场景2): 地名缺失时用地址首段兜底，保证「拍摄地点」始终有内容
+  const nameVal = locName || (locAddr ? locAddr.split(/[,,]/)[0].trim() : '');
+  document.getElementById(t.name).value = nameVal;
+  if (locAddr && document.getElementById(t.address)) {
+    document.getElementById(t.address).value = locAddr;
+  }
+  document.getElementById(t.master).checked = true;
+  t.showSection();
+  const info = document.getElementById(t.infoGps);
+  if (info) {
     info.classList.remove('hidden');
-    info.innerHTML = `已复用源视频 GPS: <strong>${gps.lat.toFixed(4)}, ${gps.lon.toFixed(4)}</strong>` + (locName ? ` (${locName})` : '');
-  } else {
-    document.getElementById('p_location_lat').value = gps.lat.toFixed(6);
-    document.getElementById('p_location_lon').value = gps.lon.toFixed(6);
-    if (locName) document.getElementById('p_location_name').value = locName;
-    document.getElementById('p_set_location').checked = true;
-    toggleLocation();
-    const info = document.getElementById('locationInfo');
-    info.classList.remove('hidden');
-    info.innerHTML = `已复用源视频 GPS: <strong>${gps.lat.toFixed(4)}, ${gps.lon.toFixed(4)}</strong>` + (locName ? ` (${locName})` : '');
+    info.innerHTML = `已复用素材 GPS 及地名: <strong>${gps.lat.toFixed(4)}, ${gps.lon.toFixed(4)}</strong>` +
+      (nameVal ? ` (${nameVal})` : '');
   }
 }
 
 
 function reuseSourceTime(target) {
-  if (!_lastSourceProbe || !_lastSourceProbe.has_time) return;
-  let ct = _lastSourceProbe.creation_time;
-  // Normalize: "2024-01-15T10:30:00.000000Z" → "2024-01-15T10:30:00"
-  // Also handle EXIF format "2024:01:15 10:30:00" → "2024-01-15T10:30:00"
-  ct = ct.replace(/^(\d{4}):(\d{2}):(\d{2})\s/, '$1-$2-$3T');
-  ct = ct.replace(/\.(\d+)Z?$/, '').replace('Z', '');
-  // Truncate to seconds precision
-  const m = ct.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/);
-  const dateStr = m ? m[1] : ct.match(/^(\d{4}-\d{2}-\d{2})/)?.[1] || ct;
-
-  if (target === 'm') {
-    document.getElementById('m_manual_date').value = dateStr;
-    document.getElementById('m_date_from_filename').checked = false;
-    updateMetaDatePreview();
-  } else {
-    document.getElementById('p_manual_date').value = dateStr;
-    document.getElementById('p_date_from_filename').checked = false;
-    updateDatePreview();
+  const t = REUSE_TARGETS[target];
+  const probe = probeForTarget(target);
+  if (!t || !probeHasTime(probe)) return;
+  // FIX (v3.13.4 场景4): 归一化为本地 naive（源值是 UTC Z 字符串；旧实现剥掉 Z
+  // 把 UTC 当本地，产生 8 小时偏差）
+  const dateStr = utcToLocalNaive(probe.creation_time);
+  document.getElementById(t.manual).value = dateStr;
+  const fromName = document.getElementById(t.fromName);
+  if (fromName) fromName.checked = false;
+  // 复用时间意味着要写日期 → 顺带启用日期总开关（此前 m_ 侧总开关关闭时复用无效）
+  const masterDate = document.getElementById(t.masterDate);
+  if (masterDate && !masterDate.checked) masterDate.checked = true;
+  t.showDateSection();
+  if (t.afterTime) t.afterTime();
+  const info = document.getElementById(t.infoTime);
+  if (info) {
+    info.classList.remove('hidden');
+    info.innerHTML = `已复用拍摄时间: <strong>${dateStr.replace('T', ' ')}</strong>`;
   }
 }
 

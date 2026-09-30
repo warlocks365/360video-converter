@@ -35,6 +35,8 @@ const EXPECTED_ADDED = new Set([
   // v3.x 元数据报告：批量结果筛选 / 多选工具栏 / 加入批量转换队列
   'reportFilterBar', 'reportFilterField', 'reportFilterKeyword', 'reportFilterBool',
   'reportFilterCount', 'reportSelectBar', 'reportSelectCount', 'reportAddToQueueBtn',
+  // v3.13.4 元数据工具复用修复：弹窗内复用按钮容器 + 弹窗信息框（GPS/时间）
+  'metaEditReuse', 'me_location_info', 'me_date_info',
 ]);
 
 if (MODE === 'baseline') {

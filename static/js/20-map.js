@@ -497,24 +497,44 @@ function confirmMapSelection() {
     return;
   }
   const addr = mapSelectedLocation.address || '';
+  // FIX (v3.13.4 场景2): 名称兜底 —— 直接点击地图且逆地理失败/无 POI 时，name 可能
+  // 是纯坐标串或空；拍摄地点必须始终有可用内容，此时从地址首段推导。
+  let nameVal = mapSelectedLocation.name || '';
+  if (!nameVal.trim() || /^-?\d+(\.\d+)?,\s*-?\d+(\.\d+)?$/.test(nameVal.trim())) {
+    nameVal = (addr && addr !== '') ? addr.split(/[,,]/)[0].trim() : nameVal;
+  }
   if (mapPickerTarget === 'meta') {
-    document.getElementById('m_location_name').value = mapSelectedLocation.name;
+    document.getElementById('m_location_name').value = nameVal;
     document.getElementById('m_location_address').value = addr;
     document.getElementById('m_location_lat').value = mapSelectedLocation.lat.toFixed(6);
     document.getElementById('m_location_lon').value = mapSelectedLocation.lon.toFixed(6);
     const info = document.getElementById('metaLocationInfo');
     info.classList.remove('hidden');
-    info.innerHTML = `已选择: <strong>${esc(mapSelectedLocation.name)}</strong>` +
+    info.innerHTML = `已选择: <strong>${esc(nameVal)}</strong>` +
       (addr ? `<br><span style="opacity:0.7">地址: ${esc(addr)}</span>` : '') +
       `<br>纬度 ${mapSelectedLocation.lat.toFixed(4)}, 经度 ${mapSelectedLocation.lon.toFixed(4)}`;
+  } else if (mapPickerTarget === 'me') {
+    // FIX (v3.13.4 场景1): 批量编辑弹窗内支持地图选点
+    document.getElementById('me_location_name').value = nameVal;
+    document.getElementById('me_location_address').value = addr;
+    document.getElementById('me_location_lat').value = mapSelectedLocation.lat.toFixed(6);
+    document.getElementById('me_location_lon').value = mapSelectedLocation.lon.toFixed(6);
+    document.getElementById('me_apply_location').checked = true;
+    setMetaSectionVisible('me', 'location', true);
+    const info = document.getElementById('me_location_info');
+    if (info) {
+      info.classList.remove('hidden');
+      info.innerHTML = `已选择: <strong>${esc(nameVal)}</strong>` +
+        (addr ? `<br><span style="opacity:0.7">地址: ${esc(addr)}</span>` : '');
+    }
   } else {
-    document.getElementById('p_location_name').value = mapSelectedLocation.name;
+    document.getElementById('p_location_name').value = nameVal;
     document.getElementById('p_location_address').value = addr;
     document.getElementById('p_location_lat').value = mapSelectedLocation.lat.toFixed(6);
     document.getElementById('p_location_lon').value = mapSelectedLocation.lon.toFixed(6);
     const info = document.getElementById('locationInfo');
     info.classList.remove('hidden');
-    info.innerHTML = `已选择: <strong>${esc(mapSelectedLocation.name)}</strong>` +
+    info.innerHTML = `已选择: <strong>${esc(nameVal)}</strong>` +
       (addr ? `<br><span style="opacity:0.7">地址: ${esc(addr)}</span>` : '') +
       `<br>纬度 ${mapSelectedLocation.lat.toFixed(4)}, 经度 ${mapSelectedLocation.lon.toFixed(4)}`;
   }

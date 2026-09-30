@@ -857,7 +857,7 @@
       </div>
       <div id="metaDateOptions" class="toggle-options hidden">
         <label class="check">
-          <input type="checkbox" id="m_date_from_filename" checked onchange="updateMetaDatePreview()">
+          <input type="checkbox" id="m_date_from_filename" checked onchange="onMetaDateFromNameChange('m')">
           从文件名提取日期
         </label>
         <label class="check">
@@ -1248,6 +1248,7 @@
     </div>
     <div class="modal-body" style="padding:20px;max-height:60vh;overflow-y:auto;">
       <div id="metaEditFileInfo" class="info-box" style="margin-bottom:16px;"></div>
+      <div id="metaEditReuse" class="si-actions hidden" style="margin:-8px 0 14px;"></div>
 
       <!-- Spherical -->
       <div class="toggle-row" style="padding:10px 0;">
@@ -1280,7 +1281,7 @@
           <strong>&#128197; 日期元数据</strong>
           <div id="me_date_opts" style="margin-top:6px;">
             <label class="check" style="font-size:0.78rem;">
-              <input type="checkbox" id="me_date_from_filename"> 从文件名提取日期
+              <input type="checkbox" id="me_date_from_filename" onchange="onMetaDateFromNameChange('me')"> 从文件名提取日期
             </label>
             <label class="check" style="font-size:0.78rem;">
               <input type="checkbox" id="me_set_creation_time" checked> 写入 creation_time 标签
@@ -1294,6 +1295,7 @@
             <div class="field" style="margin-top:6px;">
               <label class="field-label" style="font-size:0.75rem;">手动指定日期 (留空 = 自动提取)</label>
               <input class="input" id="me_manual_date" type="text" placeholder="格式: 2024-01-15 或 2024-01-15T14:30:00" style="font-size:0.8rem;">
+              <div id="me_date_info" class="info-box hidden" style="margin-top:6px;"></div>
             </div>
           </div>
         </div>
@@ -1325,6 +1327,7 @@
             <div class="field">
               <label class="field-label" style="font-size:0.75rem;">详细地址</label>
               <input class="input" id="me_location_address" type="text" placeholder="详细地址..." style="font-size:0.8rem;">
+              <div id="me_location_info" class="info-box hidden" style="margin-top:6px;"></div>
             </div>
           </div>
         </div>

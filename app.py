@@ -2234,6 +2234,9 @@ def convert_one(jid, inp, out, params):
                     effective_dt = datetime.fromisoformat(manual)
                 else:
                     effective_dt = datetime.fromisoformat(manual + 'T12:00:00')
+                # FIX (v3.13.4 场景4): aware 输入（UTC Z）统一转本地 naive，见元数据链路
+                if effective_dt.tzinfo is not None:
+                    effective_dt = effective_dt.astimezone().replace(tzinfo=None)
                 effective_ct = effective_dt.strftime('%Y-%m-%dT%H:%M:%S')
             except ValueError:
                 log_line(jid, f'Invalid manual date format: {manual}', 'warn')
@@ -2803,6 +2806,11 @@ def apply_metadata_one(jid, inp, out, params):
                     effective_dt = datetime.fromisoformat(manual)
                 else:
                     effective_dt = datetime.fromisoformat(manual + 'T12:00:00')
+                # FIX (v3.13.4 场景4): probe 的 creation_time 是 UTC（带 Z）。aware 输入
+                # 若不转换：FS 时间取绝对时刻（本地显示 +8h）、tag 把 UTC 墙钟当本地写
+                # （-8h）。统一转为本地 naive，保证"设定值 = 产出墙钟"。
+                if effective_dt.tzinfo is not None:
+                    effective_dt = effective_dt.astimezone().replace(tzinfo=None)
                 effective_ct = effective_dt.strftime('%Y-%m-%dT%H:%M:%S')
             except ValueError:
                 log_line(jid, f'Invalid manual date: {manual}', 'warn')
