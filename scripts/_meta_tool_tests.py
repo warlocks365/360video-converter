@@ -11,7 +11,7 @@
   其他：faststart(moov 前置) / test_duration(_test 后缀+截短) / 原地覆盖 / 输出新目录。
   批量：per-item params 整体替换 global（item.get('params') or job_params）；skip；paused。
 """
-import json, os, subprocess, sys, time, urllib.request, urllib.error
+import json, os, shutil, subprocess, sys, time, urllib.request, urllib.error
 from datetime import datetime
 
 BASE_OUT = r'G:/264/_acceptance_v3132'
@@ -189,7 +189,7 @@ c = record('M03', '文件名日期提取（Insta360/GoPro 紧凑格式）')
 c['intent'] = 'date_from_filename=true，文件名 VID_20260526_103000.mp4 命中 datetime_compact 模式'
 c['params'] = 'manual_date 空, date_from_filename=true, set_creation_time=true, FS 均关'
 c['expected'] = 'tag creation_time = 2026-05-26T10:30:00 本地(UTC 02:30)'
-inp = os.path.join(BASE_OUT, 'VID_20260526_103000.mp4'); out = out_path('out_m03.mp4')
+inp = os.path.join(BASE_OUT, 'VID_20260526_103000.mp4'); shutil.copy(CLEAN, inp); out = out_path('out_m03.mp4')
 jid, d = run_meta(c, {'apply_date': True, 'manual_date': '', 'date_from_filename': True,
                       'set_creation_time': True, 'set_file_created': False, 'set_file_modified': False,
                       'apply_location': False, 'apply_spherical': False, 'faststart': True},
@@ -205,7 +205,7 @@ c = record('M04', '优先级：manual_date 与 date_from_filename 同开 → man
 c['intent'] = '源码语义 manual_date 优先；文件名日期 2026-01-01T08:00 不得覆盖 manual 2026-03-15T09:00'
 c['params'] = 'manual_date=2026-03-15T09:00:00, date_from_filename=true, 输入文件名含 20260101_080000'
 c['expected'] = 'tag = 2026-03-15T09:00 本地(UTC 01:30)，而非 01-01T08:00'
-inp = os.path.join(BASE_OUT, 'VID_20260101_080000.mp4'); out = out_path('out_m04.mp4')
+inp = os.path.join(BASE_OUT, 'VID_20260101_080000.mp4'); shutil.copy(CLEAN, inp); out = out_path('out_m04.mp4')
 jid, d = run_meta(c, {'apply_date': True, 'manual_date': '2026-03-15T09:00:00', 'date_from_filename': True,
                       'set_creation_time': True, 'set_file_created': False, 'set_file_modified': False,
                       'apply_location': False, 'apply_spherical': False, 'faststart': True},
