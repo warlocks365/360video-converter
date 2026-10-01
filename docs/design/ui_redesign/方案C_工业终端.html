@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>方案 C · 工业终端 — 360 Video Converter UI 重设计</title>
+<style>
+/* 方案 C「工业终端」: 炭黑直角(0 圆角) + 琥珀单强调 + 等宽字体主导 + 双线框 + 终端语汇
+   密度 9/10 · 变化 6/10 · 动效 1/10 —— 硬核工程工具取向, monospace-first */
+:root{
+  --bg:#141517; --panel:#191a1d; --panel2:#1e2023; --line:#2b2d31; --line2:#3a3d42;
+  --text:#dcdcd4; --text2:#8f9088; --text3:#5c5d58;
+  --acc:#f0a832; --acc-dk:#8a6215; --ok:#9ccc62; --err:#e06060;
+  --mono:'Cascadia Mono','Consolas',monospace;
+  --r:0;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0e0f10;color:var(--text);font-family:var(--mono);font-size:12px;
+  display:flex;justify-content:center;padding:24px}
+.frame{width:1440px;height:900px;background:var(--bg);border:1px solid var(--line2);
+  overflow:hidden;display:flex;flex-direction:column}
+/* 顶栏: 状态条式 */
+.hdr{height:40px;flex:none;display:flex;align-items:stretch;border-bottom:2px solid var(--acc);background:var(--panel)}
+.hdr .idt{padding:0 16px;display:flex;align-items:center;gap:10px;border-right:1px solid var(--line)}
+.hdr .idt b{color:var(--acc);letter-spacing:1px;font-size:13px}
+.hdr .idt span{color:var(--text3);font-size:10px}
+.tabs{display:flex;flex:1}
+.tab{padding:0 16px;display:flex;align-items:center;gap:6px;color:var(--text2);
+  border-right:1px solid var(--line);cursor:default;font-size:11.5px}
+.tab .k{color:var(--text3);font-size:9px}
+.tab.on{background:var(--acc);color:#141517;font-weight:700}
+.tab.on .k{color:#141517}
+.hstat{display:flex;align-items:center;gap:14px;padding:0 14px;border-left:1px solid var(--line);
+  font-size:10.5px;color:var(--text2)}
+.hstat b{color:var(--acc)}
+/* 三栏 */
+.ws{flex:1;display:grid;grid-template-columns:290px 1fr 310px;min-height:0}
+.col{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.col:last-child{border-right:none}
+.col-h{height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;
+  padding:0 12px;border-bottom:1px solid var(--line);background:var(--panel2);font-size:10px;
+  letter-spacing:2px;color:var(--text2)}
+.col-b{flex:1;overflow:hidden;padding:8px 10px}
+/* 文件行: 终端表格式 */
+.frow{display:flex;align-items:center;gap:8px;padding:6px 8px;border-left:2px solid transparent;margin-bottom:2px}
+.frow:hover{background:var(--panel2)}
+.frow.on{background:var(--panel2);border-left-color:var(--acc)}
+.frow .st{font-size:9px;width:44px;color:var(--acc)}
+.frow .st.q{color:var(--text3)}
+.frow .fn{flex:1;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.frow .sz{color:var(--text3);font-size:10.5px}
+/* 参数区: 键值对齐 + ASCII 感 */
+.pg{border:1px solid var(--line);margin-bottom:8px}
+.pg-h{padding:5px 10px;background:var(--panel2);font-size:10px;letter-spacing:2px;
+  color:var(--acc);display:flex;justify-content:space-between}
+.pg-h .tg{color:var(--ok)}
+.pg-b{padding:7px 10px}
+.row{display:flex;align-items:center;margin-bottom:6px}
+.row:last-child{margin-bottom:0}
+.lab{width:96px;flex:none;color:var(--text2);font-size:11px}
+.dots{flex:1;border-bottom:1px dotted var(--line2);margin:0 8px;height:12px}
+.val{color:var(--text);font-size:11.5px;display:flex;align-items:center;gap:6px}
+.val .ar{color:var(--acc)}
+.seg{display:flex;gap:2px}
+.seg span{padding:3px 10px;border:1px solid var(--line2);color:var(--text2);font-size:10.5px;margin-right:-1px}
+.seg span.on{background:var(--acc);color:#141517;border-color:var(--acc);font-weight:700}
+.chk{color:var(--ok)}
+/* 监控: ASCII 条 */
+.mon{margin-bottom:9px}
+.mon .ml{display:flex;justify-content:space-between;font-size:10.5px;color:var(--text2);margin-bottom:3px}
+.mon .ml b{color:var(--acc)}
+.abar{font-family:var(--mono);font-size:10px;letter-spacing:0px;color:var(--acc);white-space:nowrap}
+.abar .off{color:var(--line)}
+.log{font-size:10.5px;line-height:1.85;color:var(--text2)}
+.log .t{color:var(--text3)}
+.log .g{color:var(--acc)}
+.log .w{color:var(--warn)}
+.log .ok{color:var(--ok)}
+/* 底部动作栏 */
+.act{height:52px;flex:none;border-top:2px solid var(--acc);background:var(--panel);
+  display:flex;align-items:center;padding:0 14px;gap:10px}
+.btn{padding:8px 24px;font-family:var(--mono);font-size:12px;cursor:default;border:1px solid var(--line2)}
+.btn.pri{background:var(--acc);color:#141517;font-weight:700;border-color:var(--acc)}
+.btn.ghost{color:var(--text2)}
+.btn:active{transform:translateY(1px)}
+.prog{flex:1}
+.prog .pt{display:flex;justify-content:space-between;font-size:10px;color:var(--text2);margin-bottom:4px}
+.prog .pt b{color:var(--acc)}
+.abar .off{color:var(--line2)}
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="hdr">
+    <div class="idt"><b>360VC</b><span>v3.13</span></div>
+    <div class="tabs">
+      <div class="tab">单文件<span class="k">[F1]</span></div>
+      <div class="tab">合并<span class="k">[F2]</span></div>
+      <div class="tab on">批量<span class="k">[F3]</span></div>
+      <div class="tab">元数据<span class="k">[F4]</span></div>
+      <div class="tab">报告<span class="k">[F5]</span></div>
+      <div class="tab">VR合成<span class="k">[F6]</span></div>
+    </div>
+    <div class="hstat"><span>GPU <b>RTX 3090</b></span><span>NVENC <b>READY</b></span><span>VRAM <b>24G</b></span></div>
+  </div>
+  <div class="ws">
+    <div class="col">
+      <div class="col-h"><span>转换队列</span><span>4 项 / 161.8 GB</span></div>
+      <div class="col-b">
+        <div class="frow on"><span class="st">ENC</span><span class="fn">20260503 凤凰岭爬山.mp4</span><span class="sz">41.5G</span></div>
+        <div class="frow"><span class="st">RDY</span><span class="fn">20260504 超级飞侠乐园.mp4</span><span class="sz">38.2G</span></div>
+        <div class="frow"><span class="st q">QUE</span><span class="fn">20260523 极地海洋世界.mp4</span><span class="sz">52.7G</span></div>
+        <div class="frow"><span class="st q">QUE</span><span class="fn">20260529 青岛54广场.mp4</span><span class="sz">29.4G</span></div>
+        <div class="frow"><span class="st q">QUE</span><span class="fn">20260602 环海路夜景.mp4</span><span class="sz">18.9G</span></div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="col-h"><span>编码参数</span><span>预设: PANORAMA_H265_HIGH</span></div>
+      <div class="col-b">
+        <div class="pg"><div class="pg-h"><span>CODEC / 编码器</span><span class="tg">[ON]</span></div>
+          <div class="pg-b">
+            <div class="row"><div class="lab">视频编码</div><div class="dots"></div><div class="seg"><span class="on">H265_NVENC</span><span>H264</span><span>COPY</span></div></div>
+            <div class="row"><div class="lab">质量预设</div><div class="dots"></div><div class="val">slow · 最佳质量<span class="ar">▾</span></div></div>
+            <div class="row"><div class="lab">码率控制</div><div class="dots"></div><div class="val">CRF 18<span class="ar">▾</span></div></div>
+            <div class="row"><div class="lab">B帧/参考帧</div><div class="dots"></div><div class="val">自动 (NVENC 默认)<span class="ar">▾</span></div></div>
+          </div>
+        </div>
+        <div class="pg"><div class="pg-h"><span>OUTPUT / 输出</span></div>
+          <div class="pg-b">
+            <div class="row"><div class="lab">分辨率</div><div class="dots"></div><div class="val">保持原始 7680×3600<span class="ar">▾</span></div></div>
+            <div class="row"><div class="lab">输出目录</div><div class="dots"></div><div class="val">G:\360_output\<span class="ar">···</span></div></div>
+            <div class="row"><div class="lab">文件名规则</div><div class="dots"></div><div class="val">{原名}_360<span class="ar">▾</span></div></div>
+            <div class="row"><div class="lab">容器</div><div class="dots"></div><div class="val">MP4 (faststart)<span class="ar">▾</span></div></div>
+          </div>
+        </div>
+        <div class="pg"><div class="pg-h"><span>SPHERICAL / 全景元数据</span><span class="tg">[ON]</span></div>
+          <div class="pg-b">
+            <div class="row"><div class="lab">投影方式</div><div class="dots"></div><div class="val">equirect 360°<span class="ar">▾</span></div></div>
+            <div class="row"><div class="lab">立体模式</div><div class="dots"></div><div class="val">mono<span class="ar">▾</span></div></div>
+            <div class="row"><div class="lab">StereoMode tag</div><div class="dots"></div><div class="chk">✓ 已启用</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="col-h"><span>系统监控</span><span>2s REFRESH</span></div>
+      <div class="col-b">
+        <div class="mon"><div class="ml"><span>GPU ENC</span><b>87%</b></div><div class="abar">████████████████░░░░ 87%</div></div>
+        <div class="mon"><div class="ml"><span>GPU DEC</span><b>42%</b></div><div class="abar" style="color:var(--text2)">████████░░░░░░░░░░░░ 42%</div></div>
+        <div class="mon"><div class="ml"><span>CPU</span><b>23%</b></div><div class="abar" style="color:var(--text2)">████░░░░░░░░░░░░░░░░ 23%</div></div>
+        <div class="mon"><div class="ml"><span>RAM 18.4/96G</span><b>19%</b></div><div class="abar" style="color:var(--text2)">███░░░░░░░░░░░░░░░░░ 19%</div></div>
+        <div class="mon"><div class="ml"><span>DISK W 412MB/s</span><b>41%</b></div><div class="abar" style="color:var(--text2)">███████░░░░░░░░░░░░░ 41%</div></div>
+        <div class="col-h" style="margin:12px -10px 8px;border-left:none;border-right:none"><span>任务日志</span></div>
+        <div class="log">
+          <div><span class="t">17:41:02</span> job #24 start · 3 items</div>
+          <div><span class="t">17:41:05</span> <span class="g">[1/3]</span> 凤凰岭爬山.mp4</div>
+          <div><span class="t">17:41:09</span> nvenc h265 crf18 preset slow</div>
+          <div><span class="t">17:52:33</span> 62 fps · 8.2%</div>
+          <div><span class="t">18:14:20</span> 64 fps · 21.7%</div>
+          <div><span class="t">18:36:02</span> <span class="w">disk free 1.2 TB</span></div>
+          <div><span class="t">18:36:03</span> <span class="ok">chunk offsets verified</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="act">
+    <div class="btn pri">▶ 开始转换</div>
+    <div class="btn ghost">暂停</div>
+    <div class="btn ghost">取消</div>
+    <div class="prog">
+      <div class="pt"><span>[1/3] 凤凰岭爬山.mp4 · NVENC H265 · CRF18</span><span><b>21.7%</b> · 62 fps · ETA 01:24:33</span></div>
+      <div class="abar">████░░░░░░░░░░░░░░░░ 21.7%</div>
+    </div>
+    <div class="btn ghost">ETA 01:24:33</div>
+  </div>
+</div>
+</body>
+</html>

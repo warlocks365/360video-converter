@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>方案 B · 晨纸工作室 — 360 Video Converter UI 重设计</title>
+<style>
+/* 方案 B「晨纸工作室」: 冷调纸白 + 墨黑文字 + 电光钴蓝单强调 + 14px 软圆角 + 疏朗留白
+   密度 4/10 · 变化 5/10 · 动效 2/10 —— 安静、轻盈、专注 */
+:root{
+  --bg:#f4f5f7; --surface:#ffffff; --line:#e4e7ec; --line2:#d5dae2;
+  --text:#16181d; --text2:#5c6470; --text3:#9aa1ab;
+  --acc:#1f5eff; --acc-soft:#e8eeff; --warn:#b45309;
+  --sans:'Segoe UI','Microsoft YaHei',system-ui,sans-serif;
+  --mono:'Cascadia Mono','Consolas',monospace;
+  --r:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#e9ebee;color:var(--text);font-family:var(--sans);font-size:13px;
+  display:flex;justify-content:center;padding:24px}
+.frame{width:1440px;height:900px;background:var(--bg);border-radius:16px;overflow:hidden;
+  display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(20,30,60,.14)}
+/* 顶栏 */
+.hdr{height:60px;flex:none;display:flex;align-items:center;padding:0 20px;gap:8px;
+  background:var(--surface);border-bottom:1px solid var(--line)}
+.logo{display:flex;align-items:center;gap:10px;margin-right:14px}
+.logo .mk{width:28px;height:28px;border-radius:9px;background:var(--acc);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-family:var(--mono);
+  font-weight:700;font-size:11px}
+.logo .nm{font-weight:600;font-size:14px}
+.tabs{display:flex;gap:4px;background:var(--bg);border-radius:10px;padding:4px}
+.tab{padding:6px 16px;border-radius:8px;font-size:13px;color:var(--text2);cursor:default}
+.tab.on{background:var(--surface);color:var(--text);font-weight:600;
+  box-shadow:0 1px 3px rgba(20,30,60,.1)}
+.spacer{flex:1}
+.gpill{font-family:var(--mono);font-size:11px;color:var(--text2);background:var(--acc-soft);
+  color:#1f4ed8;padding:5px 12px;border-radius:99px}
+.avatar{width:30px;height:30px;border-radius:50%;background:var(--line2);
+  display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:12px;margin-left:12px}
+/* 三栏 */
+.ws{flex:1;display:grid;grid-template-columns:320px 1fr 312px;gap:16px;padding:16px 20px;min-height:0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.p-h{padding:14px 16px 10px;display:flex;justify-content:space-between;align-items:baseline}
+.p-h .t{font-weight:600;font-size:13px}
+.p-h .s{font-family:var(--mono);font-size:10.5px;color:var(--text3)}
+.p-b{flex:1;padding:0 12px 12px;overflow:hidden}
+/* 文件卡 */
+.fcard{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:default}
+.fcard.on{border-color:var(--acc);background:var(--acc-soft)}
+.fcard .fn{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fcard .fm{font-family:var(--mono);font-size:10.5px;color:var(--text3);margin-top:4px;
+  display:flex;gap:10px;align-items:center}
+.fcard .fm .st{margin-left:auto;padding:1px 8px;border-radius:99px;font-size:10px}
+.st.done{background:#e5f3eb;color:#177a48}
+.st.wait{background:#fdf1e2;color:var(--warn)}
+/* 参数卡 */
+.grp{margin-bottom:14px}
+.grp-t{font-size:11px;color:var(--text3);letter-spacing:1.5px;margin-bottom:8px;
+  display:flex;align-items:center;gap:8px}
+.grp-t::after{content:'';flex:1;height:1px;background:var(--line)}
+.row{display:flex;align-items:center;margin-bottom:9px}
+.lab{width:92px;flex:none;font-size:12.5px;color:var(--text2)}
+.ctl{flex:1;height:34px;background:var(--bg);border:1px solid var(--line2);border-radius:10px;
+  display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:12.5px}
+.ctl .ar{color:var(--text3)}
+.seg{display:flex;background:var(--bg);border-radius:10px;padding:3px;gap:2px}
+.seg span{padding:5px 13px;border-radius:8px;font-size:12px;color:var(--text2);cursor:default}
+.seg span.on{background:var(--surface);color:var(--acc);font-weight:600;
+  box-shadow:0 1px 3px rgba(20,30,60,.12)}
+.tog{width:38px;height:22px;border-radius:11px;background:var(--acc);position:relative}
+.tog::after{content:'';position:absolute;width:18px;height:18px;border-radius:50%;
+  background:#fff;top:2px;right:2px;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+/* 监控 */
+.mon{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--line)}
+.mon:last-child{border-bottom:none}
+.mon .ic{width:30px;height:30px;border-radius:8px;background:var(--acc-soft);flex:none;
+  display:flex;align-items:center;justify-content:center;font-family:var(--mono);
+  font-size:10px;color:#1f4ed8;font-weight:700}
+.mon .ml{flex:1}
+.mon .ml .k{font-size:11.5px;color:var(--text2)}
+.mon .ml .bar{height:3px;background:var(--line);border-radius:2px;margin-top:5px;overflow:hidden}
+.mon .ml .bar i{display:block;height:100%;background:var(--acc);border-radius:2px}
+.mon .vv{font-family:var(--mono);font-size:12px;font-weight:600}
+/* 日志 */
+.logcard{background:var(--bg);border-radius:10px;padding:10px 12px;font-family:var(--mono);
+  font-size:10.5px;line-height:1.9;color:var(--text2)}
+.logcard .t{color:var(--text3)}
+.logcard .g{color:#1f4ed8;font-weight:600}
+/* 底栏 */
+.act{height:72px;flex:none;background:var(--surface);border-top:1px solid var(--line);
+  display:flex;align-items:center;padding:0 20px;gap:14px}
+.btn{height:40px;padding:0 26px;border-radius:12px;font-size:13.5px;display:flex;
+  align-items:center;cursor:default}
+.btn.pri{background:var(--acc);color:#fff;font-weight:600;box-shadow:0 4px 14px rgba(31,94,255,.28)}
+.btn.ghost{border:1px solid var(--line2);color:var(--text2);background:var(--surface)}
+.btn:active{transform:scale(.985)}
+.prog{flex:1}
+.prog .pt{display:flex;justify-content:space-between;font-size:11.5px;color:var(--text2);margin-bottom:6px}
+.prog .pt b{color:var(--acc)}
+.prog .bar{height:5px;background:var(--line);border-radius:3px;overflow:hidden}
+.prog .bar i{display:block;height:100%;background:var(--acc);border-radius:3px}
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="hdr">
+    <div class="logo"><div class="mk">360</div><div class="nm">Video Converter</div></div>
+    <div class="tabs">
+      <div class="tab">单文件</div><div class="tab">合并</div><div class="tab on">批量</div>
+      <div class="tab">元数据</div><div class="tab">报告</div><div class="tab">VR 合成</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="gpill">RTX 3090 · NVENC</div>
+    <div class="avatar">设置</div>
+  </div>
+  <div class="ws">
+    <div class="panel">
+      <div class="p-h"><span class="t">转换队列</span><span class="s">4 项 · 161.8 GB</span></div>
+      <div class="p-b">
+        <div class="fcard on"><div class="fn">20260503 凤凰岭爬山.mp4</div><div class="fm"><span>41.5 GB</span><span>109:54</span><span class="st done">编码中</span></div></div>
+        <div class="fcard"><div class="fn">20260504 超级飞侠乐园.mp4</div><div class="fm"><span>38.2 GB</span><span>96:12</span><span class="st done">排队</span></div></div>
+        <div class="fcard"><div class="fn">20260523 极地海洋世界.mp4</div><div class="fm"><span>52.7 GB</span><span>124:31</span><span class="st wait">排队</span></div></div>
+        <div class="fcard"><div class="fn">20260529 青岛54广场.mp4</div><div class="fm"><span>29.4 GB</span><span>78:05</span><span class="st wait">排队</span></div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="p-h"><span class="t">编码参数</span><span class="s">预设: 全景 H.265 高质量</span></div>
+      <div class="p-b">
+        <div class="grp"><div class="grp-t">编码器</div>
+          <div class="row"><div class="lab">视频编码</div><div class="seg"><span class="on">H.265 NVENC</span><span>H.264</span><span>拷贝</span></div></div>
+          <div class="row"><div class="lab">质量预设</div><div class="ctl">慢速 · 最佳质量<span class="ar">▾</span></div></div>
+          <div class="row"><div class="lab">码率控制</div><div class="ctl">CRF 18<span class="ar">▾</span></div></div>
+        </div>
+        <div class="grp"><div class="grp-t">输出</div>
+          <div class="row"><div class="lab">分辨率</div><div class="ctl">保持原始 7680×3600<span class="ar">▾</span></div></div>
+          <div class="row"><div class="lab">输出目录</div><div class="ctl">G:\360_output\<span class="ar">···</span></div></div>
+          <div class="row"><div class="lab">文件名规则</div><div class="ctl">{原名}_360<span class="ar">▾</span></div></div>
+        </div>
+        <div class="grp"><div class="grp-t">全景元数据</div>
+          <div class="row"><div class="lab">注入开关</div><div class="tog"></div></div>
+          <div class="row"><div class="lab">投影方式</div><div class="ctl">360° 等距柱状<span class="ar">▾</span></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="p-h"><span class="t">系统监控</span><span class="s">2s 刷新</span></div>
+      <div class="p-b" style="padding-top:4px">
+        <div class="mon"><div class="ic">ENC</div><div class="ml"><div class="k">GPU 编码器</div><div class="bar"><i style="width:87%"></i></div></div><div class="vv">87%</div></div>
+        <div class="mon"><div class="ic">DEC</div><div class="ml"><div class="k">GPU 解码器</div><div class="bar"><i style="width:42%"></i></div></div><div class="vv">42%</div></div>
+        <div class="mon"><div class="ic">CPU</div><div class="ml"><div class="k">处理器</div><div class="bar"><i style="width:23%"></i></div></div><div class="vv">23%</div></div>
+        <div class="mon"><div class="ic">RAM</div><div class="ml"><div class="k">内存 18.4/96 GB</div><div class="bar"><i style="width:19%"></i></div></div><div class="vv">19%</div></div>
+      </div>
+      <div class="p-h" style="border-top:1px solid var(--line)"><span class="t">任务日志</span></div>
+      <div class="p-b" style="padding-top:8px">
+        <div class="logcard">
+          <div><span class="t">17:41</span> 任务 #24 启动</div>
+          <div><span class="t">17:41</span> <span class="g">[1/3]</span> 凤凰岭爬山.mp4</div>
+          <div><span class="t">17:52</span> 62 fps · 8.2%</div>
+          <div><span class="t">18:14</span> 64 fps · 21.7%</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="act">
+    <div class="btn pri">开始转换</div>
+    <div class="btn ghost">暂停</div>
+    <div class="btn ghost">取消</div>
+    <div class="prog">
+      <div class="pt"><span>[1/3] 凤凰岭爬山.mp4 · H.265 NVENC · CRF 18</span><span><b>21.7%</b> · 62 fps · 剩余 01:24:33</span></div>
+      <div class="bar"><i style="width:21.7%"></i></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

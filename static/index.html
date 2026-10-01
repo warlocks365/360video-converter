@@ -8,6 +8,7 @@
 <meta http-equiv="Expires" content="0">
 <title>360° Video Converter</title>
 <link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/theme-cobalt.css">
 <link rel="stylesheet" href="/leaflet/leaflet.css">
 <script src="/leaflet/leaflet.js"></script>
 </head>
@@ -18,12 +19,12 @@
     <h1><span>360</span>&deg; Video Converter <span id="appVersionTag" style="font-size:0.6em;font-weight:400;color:var(--text-muted);"></span></h1>
     <div class="header-actions">
       <button class="btn btn-sm" onclick="openSettings()" id="settingsBtn">API Key</button>
-      <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">&#127769;</button>
+      <button class="theme-btn" onclick="toggleTheme()" id="themeBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
       <div class="dropdown">
         <button class="btn btn-sm" onclick="toggleAboutMenu(event)">&#8505; 关于</button>
         <div class="dropdown-menu" id="aboutMenu">
-          <div class="dropdown-item" onclick="openAbout('version')">&#128225; 版本号</div>
-          <div class="dropdown-item" onclick="openAbout('help')">&#128218; 使用说明</div>
+          <div class="dropdown-item" onclick="openAbout('version')"> 版本号</div>
+          <div class="dropdown-item" onclick="openAbout('help')"> 使用说明</div>
         </div>
       </div>
     </div>
@@ -31,12 +32,12 @@
 
   <!-- Mode Selection -->
   <div class="mode-tabs">
-    <div class="mode-tab active" data-mode="single" onclick="switchMode('single')">&#128249; 单文件转换</div>
-    <div class="mode-tab" data-mode="merge" onclick="switchMode('merge')">&#128279; 合并转换</div>
-    <div class="mode-tab" data-mode="batch" onclick="switchMode('batch')">&#128194; 批量转换</div>
-    <div class="mode-tab" data-mode="metadata" onclick="switchMode('metadata')">&#128295; 元数据工具</div>
-    <div class="mode-tab" data-mode="report" onclick="switchMode('report')">&#128202; 元数据报告</div>
-    <div class="mode-tab" data-mode="vr3d" onclick="switchMode('vr3d')">&#127957; VR 3D合成</div>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M22 8.5v7L16 12z"/></svg>  单文件转换</div>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><path d="M8 12h8"/></svg>  合并转换</div>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 12l10 5 10-5"/><path d="M2 17l10 5 10-5"/></svg>  批量转换</div>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>  元数据工具</div>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 15v2"/><path d="M11 11v6"/><path d="M15 13v4"/><path d="M19 8v9"/></svg>  元数据报告</div>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05"/><path d="M12 22.08V12"/></svg>  VR 3D合成</div>
   </div>
 
   <!-- ══ 三栏工作台：配置 / 工作区 / 监控 ══ -->
@@ -49,8 +50,8 @@
       <div class="card-title">
         目录批量导入 <span class="badge" id="scanCountSrc"></span>
         <div style="margin-left:auto;display:flex;gap:6px;">
-          <button class="btn btn-sm" onclick="saveCurrentTasks()">&#128190; 保存任务</button>
-          <button class="btn btn-sm" onclick="loadSavedTasks()">&#128194; 加载任务</button>
+          <button class="btn btn-sm" onclick="saveCurrentTasks()"> 保存任务</button>
+          <button class="btn btn-sm" onclick="loadSavedTasks()"> 加载任务</button>
         </div>
       </div>
 
@@ -607,7 +608,7 @@
             <label class="field-label">拍摄地点<span class="tip-icon" data-tip="点击右侧按钮在地图上选取，或直接手动输入地点名称（如「故宫博物院」「马尔代夫」）。支持国内外地址搜索。">?</span></label>
             <div class="input-group">
               <input class="input" id="p_location_name" placeholder="点击右侧按钮在地图选取，或直接输入...">
-              <button class="btn btn-accent" onclick="openMapPicker()">&#128205; 选取位置</button>
+              <button class="btn btn-accent" onclick="openMapPicker()"> 选取位置</button>
             </div>
           </div>
           <div class="grid-2">
@@ -666,9 +667,9 @@
   <div id="mergeMode" class="hidden">
     <div class="card">
       <div class="card-title">
-        &#128279; 合并转换 &mdash; 多文件按序合并为一个
+         合并转换 &mdash; 多文件按序合并为一个
         <div style="margin-left:auto;display:flex;gap:6px;">
-          <button class="btn btn-sm" onclick="addMergeFiles()">&#128193; 添加文件</button>
+          <button class="btn btn-sm" onclick="addMergeFiles()"> 添加文件</button>
           <button class="btn btn-sm" onclick="clearMergeList()">&#10005; 清空</button>
         </div>
       </div>
@@ -699,7 +700,7 @@
   <div id="vr3dMode" class="hidden">
     <div class="card">
       <div class="card-title">
-        &#127957; VR 3D 360° 合成 &mdash; 左右眼视频合成为3D全景
+         VR 3D 360° 合成 &mdash; 左右眼视频合成为3D全景
       </div>
       <div class="info-box" style="margin-bottom:12px;padding:10px;background:var(--surface-2);border-radius:8px;font-size:0.82rem;color:var(--text-muted);">
         选择左眼和右眼两个360°全景视频，合成为一个带3D视差的VR 360°视频。输出为Top-Bottom格式，适合VR头显播放。
@@ -760,9 +761,9 @@
           <button class="btn btn-sm" onclick="selectAllBatch(false)">全不选</button>
           <button class="btn btn-sm" onclick="removeSelectedTasks()">移除选中</button>
           <button class="btn btn-sm btn-danger" onclick="removeUnselectedBatch()">仅保留选中</button>
-          <button class="btn btn-sm btn-primary" onclick="applySettingsToSelected()">&#9881; 应用设置到选中任务</button>
-          <button class="btn btn-sm" onclick="exportTasksToFile()" title="将当前任务列表导出为 JSON 文件">&#128190; 保存到文件</button>
-          <button class="btn btn-sm" onclick="importTasksFromFile()" title="从 JSON 文件导入任务列表">&#128194; 从文件导入</button>
+          <button class="btn btn-sm btn-primary" onclick="applySettingsToSelected()"> 应用设置到选中任务</button>
+          <button class="btn btn-sm" onclick="exportTasksToFile()" title="将当前任务列表导出为 JSON 文件"> 保存到文件</button>
+          <button class="btn btn-sm" onclick="importTasksFromFile()" title="从 JSON 文件导入任务列表"> 从文件导入</button>
         </div>
       </div>
       <div class="info-box" style="margin-bottom:8px;font-size:0.78rem;">
@@ -787,7 +788,7 @@
   <!-- Metadata Tool Mode -->
   <div id="metadataMode" class="hidden">
     <div class="card">
-      <div class="card-title">&#128295; 元数据工具 &mdash; 无需重编码</div>
+      <div class="card-title"> 元数据工具 &mdash; 无需重编码</div>
       <div class="info-box">
         直接为视频文件添加元数据，不重新编码（使用 ffmpeg <code>-c copy</code> 流复制）。可独立使用以下功能，也可组合使用。
       </div>
@@ -798,7 +799,7 @@
         <div class="input-group">
           <input class="input" id="metaInput" placeholder="选择或输入视频文件路径..." onchange="probeSourceVideo(this.value, 'm')">
           <button class="btn" type="button" data-action="open-path-dialog" data-path-target="metaInput" data-path-mode="open" data-path-dir="false" data-path-filter="video">浏览...</button>
-          <button class="btn btn-primary" onclick="addToMetaBatchList()">&#128203; 加入批量列表</button>
+          <button class="btn btn-primary" onclick="addToMetaBatchList()"> 加入批量列表</button>
         </div>
         <div id="metaSourceInfo" class="source-info hidden"></div>
         <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">选择文件 → 设置下方元数据选项 → 点击「加入批量列表」→ 重复添加多个文件 → 点击「应用元数据」批量处理</div>
@@ -851,7 +852,7 @@
           <span class="toggle-slider"></span>
         </label>
         <div class="toggle-label">
-          <strong>&#128197; 日期元数据 <span class="tip-icon" data-tip="从视频文件名中自动提取拍摄日期（支持 YYYYMMDD 等格式），写入视频 creation_time 标签和文件系统属性。处理速度极快（不重编码）。">?</span></strong>
+          <strong> 日期元数据 <span class="tip-icon" data-tip="从视频文件名中自动提取拍摄日期（支持 YYYYMMDD 等格式），写入视频 creation_time 标签和文件系统属性。处理速度极快（不重编码）。">?</span></strong>
           <small>从文件名提取日期，写入拍摄日期标签 / 文件创建时间 / 修改时间</small>
         </div>
       </div>
@@ -886,7 +887,7 @@
           <span class="toggle-slider"></span>
         </label>
         <div class="toggle-label">
-          <strong>&#128205; 拍摄位置 GPS <span class="tip-icon" data-tip="通过地图选取位置（支持国内外地址搜索），将 GPS 经纬度以 ISO 6709 格式写入视频元数据。也可直接手动填写。处理速度极快（不重编码）。">?</span></strong>
+          <strong> 拍摄位置 GPS <span class="tip-icon" data-tip="通过地图选取位置（支持国内外地址搜索），将 GPS 经纬度以 ISO 6709 格式写入视频元数据。也可直接手动填写。处理速度极快（不重编码）。">?</span></strong>
           <small>通过全球地图选取位置，写入 GPS 经纬度标签</small>
         </div>
       </div>
@@ -895,7 +896,7 @@
           <label class="field-label">拍摄地点</label>
           <div class="input-group">
             <input class="input" id="m_location_name" placeholder="点击右侧按钮在地图选取，或直接输入...">
-            <button class="btn btn-accent" onclick="openMapPicker('meta')">&#128205; 选取位置</button>
+            <button class="btn btn-accent" onclick="openMapPicker('meta')"> 选取位置</button>
           </div>
         </div>
         <div class="grid-2">
@@ -922,7 +923,7 @@
           <span class="toggle-slider"></span>
         </label>
         <div class="toggle-label">
-          <strong>&#127760; GSpherical 全景元数据 <span class="tip-icon" data-tip="注入 Spherical / Equirectangular 等 GSpherical 标签到 MP4 容器，使群晖 Photos、YouTube 等平台识别为 360° 全景视频。这是全景视频播放的关键标记。">?</span></strong>
+          <strong> GSpherical 全景元数据 <span class="tip-icon" data-tip="注入 Spherical / Equirectangular 等 GSpherical 标签到 MP4 容器，使群晖 Photos、YouTube 等平台识别为 360° 全景视频。这是全景视频播放的关键标记。">?</span></strong>
           <small>注入全景映射元数据（群晖 Photos 识别必需）</small>
           <div id="m_spherical_options" style="margin-top:8px;">
             <label class="field-label" style="font-size:0.75rem;">全景模式<span class="tip-icon" data-tip="选择视频的投影类型和立体模式组合：&#10;&#10;180°（单目全景）：VR180格式，2D画面&#10;360°（单目全景）：完整360°全景，2D画面&#10;180°（双目VR左右）：VR180格式，左右眼画面左右并排&#10;180°（双目VR上下）：VR180格式，左右眼画面上下排列&#10;360°（双目VR左右）：完整360°全景，左右眼画面左右并排&#10;360°（双目VR上下）：完整360°全景，左右眼画面上下排列">?</span></label>
@@ -951,7 +952,7 @@
   <!-- Metadata Report Mode -->
   <div id="reportMode" class="hidden">
     <div class="card">
-      <div class="card-title">&#128202; 视频元数据与编码信息报告</div>
+      <div class="card-title"> 视频元数据与编码信息报告</div>
       <div class="field">
         <label class="check">
           <input type="radio" name="reportMode" value="single" checked onchange="toggleReportMode()">
@@ -967,7 +968,7 @@
         <div class="input-group">
           <input class="input" id="reportInput" placeholder="选择或输入视频文件路径...">
           <button class="btn" type="button" data-action="open-path-dialog" data-path-target="reportInput" data-path-mode="open" data-path-dir="false" data-path-filter="video">浏览...</button>
-          <button class="btn btn-primary" onclick="generateReport()">&#128269; 读取元数据</button>
+          <button class="btn btn-primary" onclick="generateReport()"> 读取元数据</button>
         </div>
       </div>
       <div id="reportBatchFile" class="hidden">
@@ -976,7 +977,7 @@
           <div class="input-group">
             <input class="input" id="reportBatchDir" placeholder="选择或输入源路径（支持网络映射盘符）..." onkeydown="if(event.key==='Enter')generateBatchReport()">
             <button class="btn" type="button" data-action="open-path-dialog" data-path-target="reportBatchDir" data-path-mode="open" data-path-dir="true" data-path-filter="">浏览...</button>
-            <button class="btn btn-primary" onclick="generateBatchReport()">&#128269; 批量读取</button>
+            <button class="btn btn-primary" onclick="generateBatchReport()"> 批量读取</button>
           </div>
         </div>
       </div>
@@ -984,10 +985,10 @@
 
     <div class="card">
       <div class="card-title">
-        &#128203; 报告结果
+         报告结果
         <div style="margin-left:auto;display:flex;gap:6px;">
-          <button class="btn btn-sm" id="exportReportLogBtn" onclick="exportReportLog()" style="display:none;">&#128196; 导出日志</button>
-          <button class="btn btn-sm" onclick="saveReport()">&#128190; 保存报告</button>
+          <button class="btn btn-sm" id="exportReportLogBtn" onclick="exportReportLog()" style="display:none;"> 导出日志</button>
+          <button class="btn btn-sm" onclick="saveReport()"> 保存报告</button>
           <button class="btn btn-sm" onclick="clearReport()">&#10005; 清除</button>
         </div>
       </div>
@@ -1086,8 +1087,8 @@
   <!-- 唯一操作栏（吸底常驻）：转换族与元数据族共用同一套进度 DOM -->
   <div class="action-bar" id="mainActionBar">
     <button class="btn btn-primary btn-lg" id="startBtn" onclick="startConversion()">&#9654; 开始转换</button>
-    <button class="btn btn-primary btn-lg" id="metaApplyBtn" onclick="startMetadataApply()" style="display:none">&#9889; 应用元数据</button>
-    <button class="btn btn-lg" id="addToBatchBtn" onclick="addToBatchQueue()" style="white-space:nowrap;">&#128203; 加入批量队列</button>
+    <button class="btn btn-primary btn-lg" id="metaApplyBtn" onclick="startMetadataApply()" style="display:none"> 应用元数据</button>
+    <button class="btn btn-lg" id="addToBatchBtn" onclick="addToBatchQueue()" style="white-space:nowrap;"> 加入批量队列</button>
     <button class="btn btn-warning" id="pauseBtn" onclick="togglePause()" style="display:none">&#9208; 暂停</button>
     <button class="btn btn-danger" id="cancelBtn" onclick="cancelConversion()" style="display:none">&#9209; 取消</button>
     <label class="check" id="testEncodeLabel" style="white-space:nowrap;">
@@ -1126,7 +1127,7 @@
 <div class="modal-overlay" id="mapModal">
   <div class="modal large">
     <div class="modal-header">
-      <h3>&#128205; 选取拍摄位置 (全球地图)</h3>
+      <h3> 选取拍摄位置 (全球地图)</h3>
       <button class="btn btn-sm" onclick="closeMapPicker()">&#10005;</button>
     </div>
     <div class="map-search-bar">
@@ -1226,7 +1227,7 @@
           <span class="toggle-slider"></span>
         </label>
         <div class="toggle-label">
-          <strong>&#127760; 全景元数据注入</strong>
+          <strong> 全景元数据注入</strong>
           <div id="me_spherical_opts" style="margin-top:6px;">
             <select class="input" id="me_spherical_mode" style="width:auto;padding:4px 8px;font-size:0.8rem;">
               <option value="180-mono">180°（单目全景）</option>
@@ -1247,7 +1248,7 @@
           <span class="toggle-slider"></span>
         </label>
         <div class="toggle-label">
-          <strong>&#128197; 日期元数据</strong>
+          <strong> 日期元数据</strong>
           <div id="me_date_opts" style="margin-top:6px;">
             <label class="check" style="font-size:0.78rem;">
               <input type="checkbox" id="me_date_from_filename" onchange="onMetaDateFromNameChange('me')"> 从文件名提取日期
@@ -1277,7 +1278,7 @@
           <span class="toggle-slider"></span>
         </label>
         <div class="toggle-label">
-          <strong>&#128205; 拍摄位置 GPS</strong>
+          <strong> 拍摄位置 GPS</strong>
           <div id="me_location_opts" style="margin-top:6px;">
             <div class="grid-2">
               <div class="field">

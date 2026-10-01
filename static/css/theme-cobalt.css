@@ -1,0 +1,184 @@
+/* ============================================================
+   theme-cobalt.css — 方案 D「深海钴蓝」主题覆盖层 (v3.13.12)
+   加载于 app.css 之后：仅覆盖视觉令牌与组件外观，
+   布局栅格 / 交互逻辑 / 断点行为零改动。
+   ============================================================ */
+
+/* ── 深海钴蓝 · 暗色令牌（默认主题）────────────── */
+:root[data-theme="dark"] {
+  --bg: #0d1220;
+  --surface: #131a2c;
+  --surface-hover: #182136;
+  --border: #223048;
+  --border-strong: #2e4062;
+  --text: #e6ecf7;
+  --text-secondary: #8b9ab5;
+  --text-muted: #566380;
+  --primary: #4d8dff;
+  --primary-hover: #6ba1ff;
+  --primary-light: rgba(77, 141, 255, 0.14);
+  --success: #34d399;
+  --success-light: rgba(52, 211, 153, 0.14);
+  --warning: #e5b567;
+  --warning-light: rgba(229, 181, 103, 0.14);
+  --error: #f87171;
+  --error-light: rgba(248, 113, 113, 0.14);
+  --accent: #37d6c3;
+  --accent-light: rgba(55, 214, 195, 0.13);
+  --on-primary: #06101f;
+  --shadow: 0 8px 24px rgba(5, 10, 30, 0.35);
+  --shadow-lg: 0 12px 32px rgba(5, 10, 30, 0.45);
+  --grad-brand: linear-gradient(135deg, #4d8dff, #37d6c3);
+}
+
+/* ── 浅色伴生主题（切换后保持同一色彩家族）──────── */
+:root[data-theme="light"] {
+  --bg: #eef1f7;
+  --surface: #ffffff;
+  --surface-hover: #f3f6fc;
+  --border: #dde4f0;
+  --border-strong: #c6d2e6;
+  --text: #131a2c;
+  --text-secondary: #4d5c78;
+  --text-muted: #8b9ab5;
+  --primary: #2f6fe0;
+  --primary-hover: #4d8dff;
+  --primary-light: rgba(47, 111, 224, 0.12);
+  --success: #149a6e;
+  --success-light: rgba(20, 154, 110, 0.12);
+  --warning: #b47b1b;
+  --warning-light: rgba(180, 123, 27, 0.12);
+  --error: #d9534f;
+  --error-light: rgba(217, 83, 79, 0.12);
+  --accent: #14907f;
+  --accent-light: rgba(20, 144, 127, 0.12);
+  --on-primary: #fff;
+  --grad-brand: linear-gradient(135deg, #2f6fe0, #14907f);
+}
+
+/* ── 页面底：深海径向渐变 ─────────────────────── */
+body {
+  background: radial-gradient(1200px 500px at 70% -10%, #16203a 0%, var(--bg) 60%) fixed,
+              var(--bg);
+  background-color: var(--bg);
+}
+
+/* ── 滚动条 ───────────────────────────────────── */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 5px;
+  border: 2px solid transparent; background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--primary); border: 2px solid transparent; background-clip: content-box; }
+
+/* ── 顶栏与标题 ───────────────────────────────── */
+.header { border-bottom: 1px solid var(--border); }
+.header h1 span { background: var(--grad-brand); -webkit-background-clip: text;
+  background-clip: text; -webkit-text-fill-color: transparent; color: var(--primary); }
+
+.theme-btn {
+  border-radius: 10px;
+}
+.theme-btn svg { display: block; }
+
+/* ── 模式导航 → 胶囊分段 ─────────────────────── */
+.mode-tabs {
+  gap: 3px; margin-bottom: 18px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 13px; padding: 4px;
+}
+.mode-tab {
+  flex: 1; padding: 10px 14px; text-align: center;
+  background: transparent; border: 1px solid transparent; border-radius: 10px;
+  font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 7px;
+}
+.mode-tab svg { flex: none; opacity: 0.85; }
+.mode-tab:hover { border-color: transparent; background: var(--surface-hover); }
+.mode-tab.active {
+  background: var(--grad-brand); color: #06101f;
+  border-color: transparent;
+  box-shadow: 0 4px 14px rgba(77, 141, 255, 0.30);
+}
+.mode-tab.active svg { opacity: 1; }
+
+/* ── 卡片 → 深海面板 ─────────────────────────── */
+.card {
+  border-radius: 16px;
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface) 100%);
+  border-color: var(--border);
+  box-shadow: 0 8px 24px rgba(5, 10, 30, 0.35);
+}
+.card:hover { border-color: var(--border-strong); }
+[data-theme="dark"] .card {
+  background: linear-gradient(180deg, #151d31 0%, #131a2c 100%);
+}
+
+/* ── 输入控件 ─────────────────────────────────── */
+.input, .select {
+  border-radius: 10px;
+  border-color: var(--border-strong);
+  background: var(--bg);
+}
+.input:focus, .select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-light);
+  outline: none;
+}
+.check input[type="checkbox"] { accent-color: var(--primary); border-radius: 4px; }
+.check-group { border-radius: 10px; }
+
+/* ── 按钮 ─────────────────────────────────────── */
+.btn { border-radius: 10px; }
+.btn-primary {
+  background: linear-gradient(135deg, #4d8dff, #37d6c3);
+  color: #06101f; font-weight: 700;
+  border-color: transparent;
+  box-shadow: 0 4px 14px rgba(77, 141, 255, 0.30);
+}
+.btn-primary:hover {
+  background: linear-gradient(135deg, #6ba1ff, #4de0cd);
+  border-color: transparent;
+  box-shadow: 0 6px 18px rgba(77, 141, 255, 0.40);
+}
+.btn-accent {
+  background: linear-gradient(135deg, #37d6c3, #2bb8a8);
+  color: #06101f; font-weight: 700; border-color: transparent;
+}
+.btn-accent:hover { background: linear-gradient(135deg, #4de0cd, #33c4b4); border-color: transparent; }
+.btn:disabled { opacity: 0.45; }
+
+/* ── 进度条 → 钴蓝→青渐变 ─────────────────────── */
+.progress-bar { border-radius: 3px; background: var(--border); }
+.progress-fill {
+  background: linear-gradient(90deg, #4d8dff, #37d6c3);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+.progress-fill.success { background: linear-gradient(90deg, #34d399, #37d6c3); }
+
+/* ── 系统监控 ─────────────────────────────────── */
+.sysmon-cell {
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.sysmon-cell .sm-label { color: var(--text-secondary); }
+
+/* ── 模式页签激活态 glow（非 active 态由上方胶囊规则接管）── */
+.mode-tab.active { text-shadow: none; }
+
+/* ── 下拉菜单 / 弹窗 ─────────────────────────── */
+.dropdown-item { border-radius: 8px; }
+.modal-content, .modal {
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+}
+
+/* ── 表格行 hover ────────────────────────────── */
+tr:hover { background: var(--surface-hover); }
+
+/* ── 日志 ────────────────────────────────────── */
+.log-line { border-radius: 6px; }
+.log-line:hover { background: var(--surface-hover); }
+.log-msg.ok { color: var(--success); }

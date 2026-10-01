@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>UI 重设计 · 四套方案选择页 — 360 Video Converter</title>
+<style>
+:root{--bg:#0e1013;--panel:#15181c;--line:#262b30;--text:#e8ecef;--text2:#9aa4ad;
+  --mono:'Cascadia Mono','Consolas',monospace;--sans:'Segoe UI','Microsoft YaHei',sans-serif}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);padding:40px}
+h1{font-size:22px;margin-bottom:6px}
+.sub{color:var(--text2);font-size:13px;margin-bottom:28px;line-height:1.7}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:1280px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;cursor:pointer}
+.card:hover{border-color:#4a5560}
+.card .bar{height:6px}
+.card .bd{padding:20px 22px}
+.card .nm{font-size:16px;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:10px}
+.tag{font-family:var(--mono);font-size:10px;padding:2px 8px;border-radius:4px;letter-spacing:1px}
+.card .ds{color:var(--text2);font-size:12.5px;line-height:1.8;min-height:66px}
+.card .kw{margin-top:10px;display:flex;gap:6px;flex-wrap:wrap}
+.card .kw span{font-family:var(--mono);font-size:10px;padding:3px 8px;border:1px solid var(--line);
+  border-radius:4px;color:var(--text2)}
+.hint{margin-top:26px;color:var(--text2);font-size:12.5px;line-height:1.8;max-width:1280px}
+</style>
+</head>
+<body>
+<h1>360 Video Converter · UI 重设计提案（4 选 1）</h1>
+<div class="sub">信息架构与功能保持不变，仅替换视觉世界。每套方案均为 1440×900 批量转换界面的完整效果图，点击 HTML 文件预览。</div>
+<div class="grid">
+  <div class="card" onclick="location.href='方案A_石墨驾驶舱.html'">
+    <div class="bar" style="background:linear-gradient(90deg,#101214,#34d399)"></div>
+    <div class="bd">
+      <div class="nm">方案 A · 石墨驾驶舱<span class="tag" style="background:#1f7a58;color:#34d399">DARK</span></div>
+      <div class="ds">近黑石墨底 + 翡翠单强调。等宽数字、发丝线分隔、密度拉满的专业监控台。
+      编码参数与系统监控并列为主角，信息一目了然，适合长时间盯进度的重负载场景。</div>
+      <div class="kw"><span>深色</span><span>密度 8</span><span>等宽数字</span><span>8px 圆角</span><span>翡翠 #34d399</span></div>
+    </div>
+  </div>
+  <div class="card" onclick="location.href='方案B_晨纸工作室.html'">
+    <div class="bar" style="background:linear-gradient(90deg,#f4f5f7,#1f5eff)"></div>
+    <div class="bd">
+      <div class="nm">方案 B · 晨纸工作室<span class="tag" style="background:#e8eeff;color:#1f5eff">LIGHT</span></div>
+      <div class="ds">冷调纸白 + 墨黑文字 + 电光钴蓝。疏朗留白、软圆角卡片、胶囊导航，安静轻盈不抢戏。
+      适合白天办公环境、偏好浅色界面的日常使用场景。</div>
+      <div class="kw"><span>浅色</span><span>密度 4</span><span>疏朗留白</span><span>14px 圆角</span><span>钴蓝 #1f5eff</span></div>
+    </div>
+  </div>
+  <div class="card" onclick="location.href='方案C_工业终端.html'">
+    <div class="bar" style="background:linear-gradient(90deg,#141517,#f0a832)"></div>
+    <div class="bd">
+      <div class="nm">方案 C · 工业终端<span class="tag" style="background:#8a6215;color:#f0a832">DARK</span></div>
+      <div class="ds">炭黑直角 + 琥珀单强调 + 等宽字体主导。ASCII 进度条、键值点线对齐、[F1] 快捷键标注，
+      终端语汇的硬核工程工具。参数即命令行，信息密度最高。</div>
+      <div class="kw"><span>深色</span><span>密度 9</span><span>直角 0px</span><span>mono-first</span><span>琥珀 #f0a832</span></div>
+    </div>
+  </div>
+  <div class="card" onclick="location.href='方案D_深海钴蓝.html'">
+    <div class="bar" style="background:linear-gradient(90deg,#0d1220,#4d8dff,#37d6c3)"></div>
+    <div class="bd">
+      <div class="nm">方案 D · 深海钴蓝<span class="tag" style="background:#1f3a6e;color:#4d8dff">DARK</span></div>
+      <div class="ds">深海蓝灰 + 钴蓝/青双色渐变层级 + 悬浮胶囊导航与操作坞。卡片化分组、16px 大圆角、
+      辉光层级，现代 Pro App 语汇（Linear/Raycast 一族但蓝色系独占）。</div>
+      <div class="kw"><span>深色</span><span>密度 6</span><span>16px 大圆角</span><span>胶囊导航</span><span>钴蓝→青</span></div>
+    </div>
+  </div>
+</div>
+<div class="hint">
+  <b>通用承诺（四套共同遵守）</b>：信息架构与交互流程不变（六模式页签 / 三栏工作台 / 底部动作栏）；
+  无 emoji 图标（统一 SVG 描边图标）；无紫粉渐变；无 AI 模板味文案；字色对比满足 WCAG AA；
+  兼容 1440×900 与 1024×640 最小窗口；<b>所有数字/文件大小/时间戳统一等宽字体渲染</b>。
+  <br><br>选定方案后：先出该方案的全模式（6 个页签）+ 弹窗/空态/错误态完整设计稿供二轮确认，确认后再进入开发
+  （CSS 令牌层重写，交互逻辑零改动，全部 9 道门禁回归）。
+</div>
+</body>
+</html>
