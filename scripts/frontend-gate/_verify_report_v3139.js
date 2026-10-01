@@ -87,13 +87,13 @@ const check = (name, cond, detail) => {
   const rowSel = d.querySelector('#reportFilterRows select[data-part="field"]');
   rowSel.value = 'resolution';
   rowSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-  const valOpts = [...d.querySelectorAll('#reportFilterRows select[data-part="value"] option')].map(o => o.value).filter(Boolean);
-  check('R1.2: 字段切换 → 值集合重建为 resolution 的去重集',
+  const valOpts = [...d.querySelectorAll('#reportFilterRows select[data-part="value"] option')].map(o => o.value).filter(v => Boolean(v) && v !== '__EMPTY__');
+  check('R1.2: 字段切换 → 值集合重建为 resolution 的去重集（含空值选项）',
     JSON.stringify(valOpts.sort()) === JSON.stringify(['1920x1080', '4096x2048']),
     valOpts.join(' | '));
   // R1.3: 空值剔除 —— location_name 仅 A 有
   dom.window.eval(`reportFilterList = [{ field: 'location_name', value: '' }]; renderReportFilterRows();`);
-  const locOpts = [...d.querySelectorAll('#reportFilterRows select[data-part="value"] option')].map(o => o.value).filter(Boolean);
+  const locOpts = [...d.querySelectorAll('#reportFilterRows select[data-part="value"] option')].map(o => o.value).filter(v => Boolean(v) && v !== '__EMPTY__');
   check('R1.3: location_name 值集合不含空串（仅凤凰岭景区）',
     locOpts.length === 1 && locOpts[0] === '凤凰岭景区', locOpts.join(' | '));
   // R1.4: 布尔字段 是/否
@@ -108,7 +108,7 @@ const check = (name, cond, detail) => {
   check('R1.5: reportData 清空后收集/渲染不崩', !threw, threw ? '异常' : 'ok');
   dom.window.eval('reportData = ' + JSON.stringify([
     { filename: 'A.mp4', path: 'G:/x/A.mp4', size: 100, moov: { has_moov: true, moov_position: 'front' },
-      probeData: { format: { tags: { comment: 'GSpherical equirectangular' }, duration: '10' }, streams: [ { codec_type: 'video', codec_name: 'h264', width: 4096, height: 2048, r_frame_rate: '30/1', bit_rate: '5000000', pix_fmt: 'yuv420p', tags: { location: '+36.7458+116.8331/' } }, { codec_type: 'audio', codec_name: 'aac', tags: {} } ] } },
+      probeData: { format: { tags: { comment: 'GSpherical equirectangular' }, duration: '10' }, streams: [ { codec_type: 'video', codec_name: 'h264', width: 4096, height: 2048, r_frame_rate: '30/1', bit_rate: '5000000', pix_fmt: 'yuv420p', tags: { location: '+36.7458+116.8331/', location_name: '凤凰岭景区' } }, { codec_type: 'audio', codec_name: 'aac', tags: {} } ] } },
     { filename: 'B.mp4', path: 'G:/x/B.mp4', size: 200, moov: { has_moov: true, moov_position: 'end' },
       probeData: { format: { tags: {}, duration: '20' }, streams: [ { codec_type: 'video', codec_name: 'hevc', width: 4096, height: 2048, r_frame_rate: '30/1', bit_rate: '8000000', pix_fmt: 'yuv420p' } ] } },
     { filename: 'C.mp4', path: 'G:/x/C.mp4', size: 300, moov: { has_moov: false },
@@ -202,6 +202,23 @@ const check = (name, cond, detail) => {
   const selInv = dom.window.eval('reportSelectedPaths.size');
   check('R4.3: 反选只作用于可见（B 被移除 → 勾选集为空）',
     selInv === 0, `size=${selInv}`);
+
+  // ══ R5（v3.13.11）：空值筛选 —— 筛出该元数据项无内容的文件 ══
+  dom.window.eval(`reportFilterList = [{ field: 'location_name', value: '__EMPTY__' }]; renderReportFilterRows(); renderReport();`);
+  const locOpts5 = [...d.querySelectorAll('#reportFilterRows select[data-part="value"] option')].map(o => ({ v: o.value, t: o.textContent }));
+  check('R5.1: 值下拉含（空值）选项',
+    locOpts5.some(o => o.v === '__EMPTY__' && o.t === '（空值）'), JSON.stringify(locOpts5));
+  check('R5.2: location_name 选空值 → 仅无地名条目可见（B、C）',
+    dom.window.eval("JSON.stringify(getVisibleReportItems().map(v => v.item.filename))") === '["B.mp4","C.mp4"]',
+    dom.window.eval("JSON.stringify(getVisibleReportItems().map(v => v.item.filename))"));
+  dom.window.eval(`reportFilterList = [{ field: 'location_name', value: '__EMPTY__' }, { field: 'vcodec', value: 'h264' }]; renderReport();`);
+  check('R5.3: 空值 AND 编码器=h264 → 仅 C（B 是 hevc）',
+    dom.window.eval("JSON.stringify(getVisibleReportItems().map(v => v.item.filename))") === '["C.mp4"]',
+    dom.window.eval("JSON.stringify(getVisibleReportItems().map(v => v.item.filename))"));
+  dom.window.eval(`reportFilterList = [{ field: 'vcodec', value: '__EMPTY__' }]; renderReport();`);
+  check('R5.4: 全部条目都有值的字段选空值 → 0 结果不崩溃',
+    dom.window.eval('getVisibleReportItems().length') === 0,
+    `visible=${dom.window.eval('getVisibleReportItems().length')}`);
 
   // ══ 收尾 ══
   check('页面无 JS 错误', errors.length === 0, errors.slice(0, 3).join(' | '));

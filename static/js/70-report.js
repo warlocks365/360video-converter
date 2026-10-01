@@ -213,6 +213,7 @@ function renderReportFilterRows() {
       const vals = collectReportFieldValues(f.field);
       valueCtl = '<select class="input report-filter-value" data-action="report-filter-row-change" data-row="' + i + '" data-part="value">' +
         '<option value="">（全部）</option>' +
+        '<option value="' + REPORT_FILTER_EMPTY + '"' + (f.value === REPORT_FILTER_EMPTY ? ' selected' : '') + '>（空值）</option>' +
         vals.map(v => '<option value="' + esc(v) + '"' + (f.value === v ? ' selected' : '') + '>' + esc(v) + '</option>').join('') +
         '</select>';
     }
@@ -278,14 +279,19 @@ function reportItemFilterValue(item, field) {
 
 // 返回当前筛选下可见的条目：[{item, idx}]，idx 是 reportData 中的固定下标
 // （reportData 顺序不会因筛选改变，故 idx 可安全用作复选框的 data-idx）
+// 空值筛选哨兵：值下拉固定提供「（空值）」选项，用于筛出该元数据项无内容的文件
+const REPORT_FILTER_EMPTY = '__EMPTY__';
+
 function getVisibleReportItems() {
   const all = reportData.map((item, idx) => ({ item, idx }));
   const conds = reportFilterList.filter(f => f.field && f.value);
   if (conds.length === 0) return all;
-  // 多条件 AND 叠加；值下拉选项来自数据本身 → 精确匹配（大小写不敏感）
+  // 多条件 AND 叠加；值下拉选项来自数据本身 → 精确匹配（大小写不敏感）；
+  // 哨兵值 = 匹配"该字段无内容"的条目
   return all.filter(({ item }) => conds.every(f => {
     const val = reportItemFilterValue(item, f.field);
     if (REPORT_BOOL_FIELDS.includes(f.field)) return val === f.value;
+    if (f.value === REPORT_FILTER_EMPTY) return String(val).trim() === '';
     return String(val).toLowerCase() === String(f.value).toLowerCase();
   }));
 }
