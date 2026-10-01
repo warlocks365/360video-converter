@@ -297,6 +297,133 @@ def inject_uuid(input_path, output_path, pano_type='360', stereo_mode='mono'):
     return True
 
 
+def inject_uuid_inplace(path, pano_type='360', stereo_mode='mono'):
+    """v3.13.10: 就地注入 —— 要求 moov 位于文件尾部（moov 在 mdat 之后）。
+
+    GSpherical UUID 盒插入视频 trak 内（mdia 之后），插入点之后的字节仅为 moov
+    的剩余部分——全部媒体数据（mdat，含 stco 指向的 chunk）位于插入点之前、
+    不受影响，因此只需重写 moov 尾区（≈几十 KB 级 IO），不产生第二个全量文件。
+
+    返回 True=成功；False=不满足就地条件（调用方回退到两文件路径）。
+    """
+    import mmap
+
+    file_size = os.path.getsize(path)
+    if file_size <= 0:
+        return False
+    f = open(path, 'rb')
+    try:
+        data = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_COPY)
+    except Exception:
+        f.close()
+        return False
+    try:
+        moov_start, moov_size = find_top_level_box(data, b'moov', file_size)
+        mdat_start, _ = find_top_level_box(data, b'mdat', file_size)
+        if moov_start is None or mdat_start is None or moov_start < mdat_start:
+            return False   # moov 在前（faststart 形态）→ 不支持就地，调用方回退
+        moov_end = moov_start + moov_size
+        if data.find(SPHERICAL_UUID, moov_start, moov_end) >= 0:
+            return True    # 已注入（幂等）
+        # 只把 moov 区读入内存（moov 通常仅几 MB）
+        buf = bytearray(data[moov_start:moov_end])
+    finally:
+        data.close()
+        f.close()
+
+    # 在 moov 缓冲内定位视频 trak（坐标相对 buf）
+    trak_start, trak_size, mdia_end, width, height = find_video_trak_mdia_end(buf, 0, len(buf))
+    if mdia_end is None:
+        return False
+
+    uuid_box = build_uuid_box(build_spherical_xml(width or 4096, height or 2048, pano_type, stereo_mode))
+    # 就地写回：trak/moov 尺寸补丁位于 buf[0]/trak_start（插入点之前），因此必须
+    # 写入【完整补丁后 moov 区】（buf[:mdia_end] + uuid + buf[mdia_end:]），只写
+    # uuid+尾区会漏掉头部尺寸补丁，导致 UUID 盒游离在 moov 之外（v3.13.10 首版 BUG）。
+    struct.pack_into('>I', buf, trak_start, trak_size + len(uuid_box))
+    struct.pack_into('>I', buf, 0, len(buf) + len(uuid_box))
+    new_buf = bytes(buf[:mdia_end]) + uuid_box + bytes(buf[mdia_end:])
+    with open(path, 'r+b') as wf:
+        wf.seek(moov_start)
+        wf.write(new_buf)   # 写后文件长度 = moov_start + 新 moov 大小，恰好吻合
+    print('In-place UUID injection OK (+%d bytes, moov region rewrite only)' % len(uuid_box))
+    return True
+
+
+def relocate_moov_front(input_path, output_path):
+    """v3.13.10: faststart 重排 —— 把尾部 moov 移到文件头部（一次全量流式写）。
+
+    新布局 [ftyp][moov'][X 自由盒][mdat][Y 其余盒]：mdat 位置后移恰好
+    moov_new_size 字节，因此 stco/co64 统一 +delta（复用 update_stco_co64）。
+    64MB 分块流式拷贝，内存占用恒定。返回 True/False。
+    """
+    CHUNK = 64 * 1024 * 1024
+    fsize = os.path.getsize(input_path)
+    if fsize <= 0:
+        return False
+    f_in = open(input_path, 'rb')
+    try:
+        # 顺序扫描顶层 box（只读头）
+        boxes = []
+        off = 0
+        while off + 8 <= fsize:
+            f_in.seek(off)
+            hdr = f_in.read(8)
+            if len(hdr) < 8:
+                break
+            size = struct.unpack('>I', hdr[:4])[0]
+            btype = hdr[4:8]
+            if size == 1:
+                ext = f_in.read(8)
+                if len(ext) < 8:
+                    return False
+                size = struct.unpack('>Q', ext)[0]
+            elif size == 0:
+                size = fsize - off
+            if size < 8 or off + size > fsize:
+                return False
+            boxes.append((btype, off, size))
+            off += size
+        ftyp = next((b for b in boxes if b[0] == b'ftyp'), None)
+        moov = next((b for b in boxes if b[0] == b'moov'), None)
+        mdat = next((b for b in boxes if b[0] == b'mdat'), None)
+        if not ftyp or ftyp[1] != 0 or not moov or not mdat:
+            return False
+        if moov[1] < mdat[1]:
+            return False   # 已是 faststart 形态
+
+        f_in.seek(moov[1])
+        moov_buf = bytearray(f_in.read(moov[2]))
+        # mdat 新位置 = ftyp_end + moov_new_size + (旧 mdat_start - ftyp_end)
+        #            = 旧 mdat_start + moov_new_size → delta = +moov_new_size
+        delta = moov[2]
+        update_stco_co64(moov_buf, 0, len(moov_buf), delta)
+
+        with open(output_path, 'wb') as out_f:
+            f_in.seek(0)
+            remaining = ftyp[2]                      # ftyp 原样
+            while remaining > 0:
+                chunk = f_in.read(min(CHUNK, remaining))
+                if not chunk:
+                    return False
+                out_f.write(chunk)
+                remaining -= len(chunk)
+            out_f.write(bytes(moov_buf))             # moov 前置
+            # [旧 ftyp_end, 旧 moov_start) = X 自由盒 + mdat + Y，原样流式拷贝
+            f_in.seek(ftyp[2])
+            remaining = moov[1] - ftyp[2]
+            while remaining > 0:
+                chunk = f_in.read(min(CHUNK, remaining))
+                if not chunk:
+                    return False
+                out_f.write(chunk)
+                remaining -= len(chunk)
+        print(f'faststart relocation OK: moov moved to front ({moov[2]} bytes), stco +{delta}')
+        return True
+    finally:
+        f_in.close()
+
+
 def _parse_gsph_xml(xml_bytes):
     """Parse GSpherical XML bytes into a metadata dict."""
     import re

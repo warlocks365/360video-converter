@@ -189,7 +189,7 @@ if not os.path.isfile(FFPROBE_PATH):
 
 # Import the metadata injection module
 try:
-    from inject_spherical_metadata import inject_uuid, read_gspherical
+    from inject_spherical_metadata import inject_uuid, read_gspherical, inject_uuid_inplace, relocate_moov_front
 except ImportError:
     inject_uuid = None
     read_gspherical = None
@@ -2837,8 +2837,16 @@ def apply_metadata_one(jid, inp, out, params):
         temp_out = out
         replace_original = False
 
-    if need_ffmpeg:
-        # Use ffmpeg -c copy to add metadata without re-encoding
+    if need_ffmpeg or need_spherical:
+        # v3.13.10 统一单临时文件流水线
+        # 旧行为（全景视频）：ffmpeg mux（含 +faststart，moov 前置）→ 注入器对
+        # moov 前置文件插盒必须全量重写 → 产生第二个全量临时文件，磁盘全量 IO 3 遍。
+        # 新流水线：
+        #   第 1 遍  ffmpeg -c copy 写元数据（不带 +faststart，moov 留在尾部）
+        #   第 2 步  注入器就地插 GSpherical（IO 仅 moov 尾区，mdat 与全部 chunk
+        #            偏移位于插入点之前、不受影响）
+        #   第 3 步  faststart 开启时一次全量重排（moov 移到头部，直达最终输出名）
+        # 效果：全量临时文件 2 -> 1；全量 IO 3 -> 2（faststart 开）/ 2 -> 1（关）。
         cmd = [FFMPEG_PATH, '-y', '-i', inp]
 
         # Test mode: limit duration
@@ -2849,35 +2857,25 @@ def apply_metadata_one(jid, inp, out, params):
 
         # Metadata: creation_time
         if effective_ct and params.get('set_creation_time', True):
-            cmd += ['-metadata', f'creation_time={effective_ct}']
-            log_line(jid, f'  creation_time={effective_ct}')
+            cmd += ['-metadata', 'creation_time=' + effective_ct]
+            log_line(jid, '  creation_time=' + effective_ct)
 
-        # Metadata: location (ISO 6709) + location.name + comment (address)
-        # FIX BUG: MP4 muxer stores location (©xyz atom) at FORMAT level only.
-        # Using -metadata:s:v:0 silently drops the location tag. Must use -metadata.
+        # Metadata: location (ISO 6709) + 地名(description) + 地址(comment)
         if apply_location and params.get('location_lat') and params.get('location_lon'):
             iso6709 = format_location_iso6709(params['location_lat'], params['location_lon'])
             if iso6709:
-                cmd += ['-metadata', f'location={iso6709}']
+                cmd += ['-metadata', 'location=' + iso6709]
             loc_name = params.get('location_name', '')
             if loc_name:
-                # FIX (v3.13.3 BUG-1): the MP4 mov muxer only maps a whitelist of udta
-                # keys — 'location.name' (and underscore variants) are silently dropped,
-                # so the place name never landed in the output. 'description' IS a
-                # whitelisted key (verified against the bundled ffmpeg build) and is the
-                # standard free-form tag closest to a place name.
-                cmd += ['-metadata', f'description={loc_name}']
+                cmd += ['-metadata', 'description=' + loc_name]
             loc_addr = params.get('location_address', '')
             if loc_addr:
-                cmd += ['-metadata', f'comment={loc_addr}']
-            log_line(jid, f'  location={iso6709} name={loc_name} addr={loc_addr}')
+                cmd += ['-metadata', 'comment=' + loc_addr]
+            log_line(jid, '  location=%s name=%s addr=%s' % (iso6709, loc_name, loc_addr))
 
-        if params.get('faststart', True):
-            cmd += ['-movflags', '+faststart']
-
+        # 不带 +faststart：moov 留在尾部供就地注入；faststart 由第 3 步重排实现。
         cmd.append(temp_out)
         log_line(jid, '  Running ffmpeg (stream copy, no re-encode)...')
-        # Use test_duration for progress if in test mode, otherwise 0 (no progress tracking)
         progress_dur = test_dur if test_dur and test_dur > 0 else 0
         rc = run_ffmpeg(cmd, jid, progress_dur)
 
@@ -2889,109 +2887,93 @@ def apply_metadata_one(jid, inp, out, params):
                 _j = jobs.get(jid)
                 if _j: _el = _j.pop('_ffmpeg_last_err', [])
             _fe = parse_ffmpeg_error(_el, rc)
-            return False, _fe or f'ffmpeg stream copy failed (rc={rc})', out
+            return False, _fe or 'ffmpeg stream copy failed (rc=%d)' % rc, out
 
-        # Inject spherical metadata if needed
+        # GSpherical 注入 —— 优先就地（无第二全量文件）
         if need_spherical:
             pano_type = params.get('pano_type', '360')
             stereo_mode = params.get('stereo_mode', 'mono')
-            log_line(jid, f'  Injecting GSpherical metadata (pano={pano_type}, stereo={stereo_mode})...')
-            # FIX (v3.13.2 P0-3): final_out must never alias temp_out. When the
-            # output goes to a new directory, temp_out IS out (the destination),
-            # so the old `final_out = temp_out` made inject_uuid(out, out)
-            # mmap-read and 'wb'-write the same file → ERROR_USER_MAPPED_FILE,
-            # and the exception fallback shutil.copy2(out, out) raised
-            # SameFileError. Always inject into a separate sibling temp file,
-            # then move it onto the destination below (covers both the
-            # replace-original and the new-directory paths).
-            final_out = out + '.spherical_tmp.mp4'
+            log_line(jid, '  Injecting GSpherical metadata (pano=%s, stereo=%s)...' % (pano_type, stereo_mode))
+            ok = False
             try:
-                ok = inject_uuid(temp_out, final_out, pano_type, stereo_mode)
+                ok = inject_uuid_inplace(temp_out, pano_type, stereo_mode)
                 if ok:
-                    log_line(jid, '  Spherical injection: OK')
-                else:
-                    log_line(jid, '  Spherical injection: FAILED (non-fatal)', 'warn')
+                    log_line(jid, '  Spherical injection: OK (in-place, no extra temp file)')
+            except Exception as e:
+                log_line(jid, '  In-place injection error: ' + str(e), 'error')
+                ok = False
+            if not ok:
+                # 兜底：moov 在前的形态 / 就地失败 -> 旧两文件注入路径
+                log_line(jid, '  Falling back to two-file injection', 'warn')
+                final_out = out + '.spherical_tmp.mp4'
+                try:
+                    ok = inject_uuid(temp_out, final_out, pano_type, stereo_mode)
+                    if ok:
+                        log_line(jid, '  Spherical injection: OK (two-file fallback)')
+                    else:
+                        log_line(jid, '  Spherical injection: FAILED (non-fatal)', 'warn')
+                        import shutil
+                        shutil.copy2(temp_out, final_out)
+                except Exception as e:
+                    log_line(jid, '  Injection error: ' + str(e), 'error')
                     import shutil
                     shutil.copy2(temp_out, final_out)
-            except Exception as e:
-                log_line(jid, f'  Injection error: {e}', 'error')
-                import shutil
-                shutil.copy2(temp_out, final_out)
-            finally:
-                # temp_out is only disposable when it is a genuine temp file —
-                # never when it aliases the destination (new-directory path):
-                # out is re-populated by os.replace(final_out, out) below.
-                if temp_out not in (final_out, out):
-                    try: os.remove(temp_out)
-                    except Exception: pass
-        else:
-            final_out = temp_out
+                if os.path.exists(final_out):
+                    os.replace(final_out, temp_out)   # 内容归一回 temp_out
 
-        # Move the result onto the destination: spherical always (final_out is
-        # a separate temp), plain copy only when overwriting the source.
-        if need_spherical or replace_original:
-            if not os.path.exists(final_out):
-                # Injection and its copy fallback both failed — keep whatever
-                # is already at out (muxed file / untouched original).
-                log_line(jid, '  Injected file missing; keeping non-spherical output', 'warn')
-            else:
-                try:
-                    os.replace(final_out, out)
-                except Exception as e:
-                    log_line(jid, f'  Failed to replace original: {e}', 'error')
-                    return False, str(e), out
-
-    elif need_spherical:
-        # Only spherical metadata requested: mirror the single-file conversion
-        # container by (re)muxing with ffmpeg stream copy + faststart, then
-        # injecting GSpherical — so the output container structure matches exactly.
-        pano_type = params.get('pano_type', '360')
-        stereo_mode = params.get('stereo_mode', 'mono')
-        log_line(jid, f'  Injecting GSpherical metadata (pano={pano_type}, stereo={stereo_mode})...')
-        cmd = [FFMPEG_PATH, '-y', '-i', inp, '-c', 'copy']
+        # faststart 重排（moov 移到头部 —— 一次全量流式写，直达最终输出名）
         if params.get('faststart', True):
-            cmd += ['-movflags', '+faststart']
-        cmd.append(temp_out)
-        log_line(jid, '  Running ffmpeg (stream copy, no re-encode)...')
-        rc = run_ffmpeg(cmd, jid, 0)
-        if rc != 0:
-            try: os.remove(temp_out)
-            except Exception: pass
-            _el = []
-            with job_lock:
-                _j = jobs.get(jid)
-                if _j: _el = _j.pop('_ffmpeg_last_err', [])
-            _fe = parse_ffmpeg_error(_el, rc)
-            return False, _fe or f'ffmpeg stream copy failed (rc={rc})', out
-        # FIX (v3.13.2 P0-3): same aliasing hazard as the need_ffmpeg branch —
-        # always inject into a separate sibling temp file. This branch only
-        # runs when spherical injection was requested, so the destination move
-        # below is unconditional.
-        final_out = out + '.spherical_tmp.mp4'
-        try:
-            ok = inject_uuid(temp_out, final_out, pano_type, stereo_mode)
-            if ok:
-                log_line(jid, '  Spherical injection: OK')
-            else:
-                log_line(jid, '  Spherical injection: FAILED (non-fatal)', 'warn')
-                import shutil
-                shutil.copy2(temp_out, final_out)
-        except Exception as e:
-            log_line(jid, f'  Injection error: {e}', 'error')
-            import shutil
-            shutil.copy2(temp_out, final_out)
-        finally:
-            if temp_out not in (final_out, out):
-                try: os.remove(temp_out)
-                except Exception: pass
-        if not os.path.exists(final_out):
-            log_line(jid, '  Injected file missing; keeping non-spherical output', 'warn')
-        else:
+            fs_ok = False
             try:
-                os.replace(final_out, out)
+                if replace_original:
+                    # 覆盖源文件场景：relocate(meta_tmp → out)，meta_tmp 是全量保底
+                    fs_ok = relocate_moov_front(temp_out, out)
+                    if fs_ok:
+                        log_line(jid, '  faststart relocation: OK (moov moved to front)')
+                        # 重排产物是新建文件 —— 继承 mux 产物的 FS 时间（旧 os.replace 语义）
+                        try:
+                            st_t = os.stat(temp_out)
+                            set_file_dates(out, datetime.fromtimestamp(st_t.st_ctime), set_created=True, set_modified=False)
+                            set_file_dates(out, datetime.fromtimestamp(st_t.st_mtime), set_created=False, set_modified=True)
+                        except Exception:
+                            pass
+                        try: os.remove(temp_out)
+                        except Exception: pass
+                else:
+                    # temp_out == out（新目录）：重排结果落临时文件后用 'r+b' 截断
+                    # 回写 out 自身 —— 文件对象不变，创建时间谱系与旧流水线（ffmpeg
+                    # 'wb' 截断）完全一致；不用 os.replace（会换文件对象、重置创建时间）
+                    fs_tmp = out + '.faststart_tmp.mp4'
+                    fs_ok = relocate_moov_front(temp_out, fs_tmp)
+                    if fs_ok:
+                        log_line(jid, '  faststart relocation: OK (moov moved to front)')
+                        with open(fs_tmp, 'rb') as rf, open(out, 'r+b') as wf:
+                            wf.truncate(0)
+                            while True:
+                                chunk = rf.read(64 * 1024 * 1024)
+                                if not chunk:
+                                    break
+                                wf.write(chunk)
+                        try: os.remove(fs_tmp)
+                        except Exception: pass
             except Exception as e:
-                log_line(jid, f'  Failed to replace original: {e}', 'error')
-                return False, str(e), out
+                log_line(jid, '  faststart relocation error: ' + str(e), 'error')
+                fs_ok = False
+            if not fs_ok:
+                log_line(jid, '  faststart relocation failed; keeping tail-moov output (non-fatal)', 'warn')
+                if replace_original:
+                    try: os.replace(temp_out, out)
+                    except Exception as e:
+                        log_line(jid, '  Failed to replace original: ' + str(e), 'error')
+                        return False, str(e), out
+        else:
+            if replace_original:
+                try: os.replace(temp_out, out)
+                except Exception as e:
+                    log_line(jid, '  Failed to replace original: ' + str(e), 'error')
+                    return False, str(e), out
+        # 新目录场景：temp_out == out，第 1 遍 ffmpeg 已直写目的地
+
     else:
         # FIX (v3.13.3): distinguish "nothing enabled at all" from "enabled but
         # ineffective" (e.g. an unparseable date, or location missing its lon) —
@@ -5671,10 +5653,24 @@ if __name__ == '__main__':
         # 预览等重绘负载，CPU 渲染绰绰有余。如需恢复 GPU 加速，设环境变量 360VC_ENABLE_GPU=1。
         # 说明：WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS 是 WebView2 运行时自带的环境变量，
         # pywebview 不经手，因此在 import webview 之前设置即可生效。
+        # FIX (v3.13.10): 不再整体覆盖该环境变量——用户附加的参数此前会被静默丢弃；
+        # GPU 开关仍由 360VC_ENABLE_GPU 独立控制，其余参数追加保留。
         if os.environ.get('360VC_ENABLE_GPU') != '1':
-            os.environ['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = '--disable-gpu'
+            user_args = os.environ.get('WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS', '')
+            if '--disable-gpu' not in user_args:
+                os.environ['WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'] = (
+                    '--disable-gpu' + (' ' + user_args if user_args else '')).strip()
 
         import webview
+        # FIX (v3.13.10): 诊断开关 —— 设置 360VC_REMOTE_DEBUGGING_PORT 即开启 WebView2
+        # CDP 远程调试（Runtime.exceptionThrown 可捕获前端未捕获异常，即"JS错误"弹窗的
+        # 根源定位通道）。注意必须经 webview.settings 传入：pywebview 6 会以自身 options
+        # 覆盖 WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS 环境变量，环境变量路径不可靠。
+        if os.environ.get('360VC_REMOTE_DEBUGGING_PORT'):
+            try:
+                webview.settings['REMOTE_DEBUGGING_PORT'] = int(os.environ['360VC_REMOTE_DEBUGGING_PORT'])
+            except (ValueError, KeyError, TypeError):
+                pass
         webview.create_window(
             '360° Video Converter',
             f'http://127.0.0.1:{PORT}',
