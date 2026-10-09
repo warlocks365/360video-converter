@@ -21,6 +21,13 @@ function toggleTheme() {
 
 // ── Mode Switching ─────────────────────────────────
 
+// 转换族主按钮的两枚图标（v3.13.14 P0：替换 🚀 / 🎬 emoji）。
+// 24 网格 / stroke=currentColor / round 端点，与页签图标同源。
+// ⚠ 必须用 innerHTML 而非 textContent —— SVG 元素无法塞进 textContent。
+const ICON_SVG_BASE = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"';
+const ICON_ROCKET_SVG = `<svg width="16" height="16" ${ICON_SVG_BASE}><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></svg>`;
+const ICON_PLAY_SVG = `<svg width="16" height="16" ${ICON_SVG_BASE}><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+
 function switchMode(mode) {
   currentMode = mode;
   document.querySelectorAll('.mode-tab').forEach(t => {
@@ -51,6 +58,10 @@ function switchMode(mode) {
   const isReportMode = mode === 'report';
   setDisplay('startBtn', (isMetaMode || isReportMode) ? 'none' : '');
   setDisplay('metaApplyBtn', isMetaMode ? '' : 'none');
+  // v3.13.14「加入批量列队」：与 #metaApplyBtn 同属一组（配队 → 执行），
+  // 必须在 setDisplay 里显隐 —— 否则会在单文件/合并/批量/报告/VR3D 模式漏出，
+  // 与转换族自己的 #addToBatchBtn（「加入批量队列」）同屏出现造成同名不同义。
+  setDisplay('metaAddQueueBtn', isMetaMode ? '' : 'none');
   // 转换专属控件在元数据 / 报告模式下隐藏
   setDisplay('addToBatchBtn', (mode === 'single' || mode === 'merge') ? '' : 'none');
   setDisplay('testEncodeLabel', (isMetaMode || isReportMode) ? 'none' : '');
@@ -58,8 +69,12 @@ function switchMode(mode) {
   else toggleTestEncode();      // 按复选框当前状态恢复显隐
 
   // VR 3D 模式：主按钮文案
+  // FIX (v3.13.14 P0): 原为 textContent = '🎬 开始合成' / '🚀 开始转换'，
+  // 两枚 emoji 命中 P0 正则。SVG 无法塞进 textContent，必须改用 innerHTML。
   const startBtn = document.getElementById('startBtn');
-  if (startBtn) startBtn.textContent = mode === 'vr3d' ? '🎬 开始合成' : '🚀 开始转换';
+  if (startBtn) {
+    startBtn.innerHTML = (mode === 'vr3d' ? ICON_PLAY_SVG + ' 开始合成' : ICON_ROCKET_SVG + ' 开始转换');
+  }
 
   if (mode === 'single') updateSingleDatePreview();
 }

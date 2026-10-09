@@ -206,7 +206,13 @@ const check = (name, cond, detail) => {
 
   // ── 6. 路径按钮（item 4）──
   const pathBtns = d.querySelectorAll('[data-action="open-path-dialog"]');
-  check('路径输入：14 个浏览按钮已改为 data-action', pathBtns.length === 14, `实际 ${pathBtns.length} 个`);
+  // v3.13.14：编辑弹窗的 #me_out_dir 浏览按钮按设计文档 4.3 / ADR-004 D-10
+  // 复用既有 open-path-dialog 范式（选目录 → 回填路径），按钮数 14 → 15。
+  // 本断言的意图是「没有游离在委托体系外的路径浏览按钮」，故改为下界断言 + 点名新增项：
+  // 既能守住回归（少一个就红），又不因合法的同类新增而误报。
+  check('路径输入：浏览按钮全部走 open-path-dialog 委托（≥14）', pathBtns.length >= 14, `实际 ${pathBtns.length} 个`);
+  check('路径输入：新增 #me_out_dir 浏览按钮已接入委托',
+    !!d.querySelector('[data-action="open-path-dialog"][data-path-target="me_out_dir"]'), 'me_out_dir');
   check('路径输入：浏览按钮均带 data-path-target',
     [...pathBtns].every(b => b.dataset.pathTarget), '');
 

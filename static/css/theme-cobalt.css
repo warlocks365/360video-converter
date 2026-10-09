@@ -182,3 +182,190 @@ tr:hover { background: var(--surface-hover); }
 .log-line { border-radius: 6px; }
 .log-line:hover { background: var(--surface-hover); }
 .log-msg.ok { color: var(--success); }
+
+/* ══════════════════════════════════════════════════════════════
+   v3.13.14 元数据队列：状态前景令牌
+   暗色下直接别名既有令牌（实测 5.16:1 ~ 9.55:1，全部 AA 通过）；
+   浅色下把语义色向 --text 收拢。
+
+   混色比例的取值依据（WCAG 2.1 实测，非目测）：
+   浅色主题下这些令牌有「两种承载体」——表格的 --surface（白）与
+   各类 *-light 浅色底（如 .scope-notice 的 --warning-light 复合底）。
+   实测在 80-84% 区间时，白底达标（4.9-5.1:1）但浅色底不达标
+   （4.18-4.45:1）。故统一收拢至 72%，使两种载体同时通过：
+     running  72% -> 白底 5.99 / 浅底 5.20
+     done     72% -> 白底 5.56 / 浅底 4.85
+     failed   72% -> 白底 6.13 / 浅底 5.26
+     caution  72% -> 白底 5.64 / 浅底 4.94
+   [注意] 勿为了「更鲜艳」把比例调回 80%+：那会只在白底成立，
+     一旦放进任何 *-light 容器即跌破 AA。
+   全程 color-mix 派生，无硬编码色值。
+   ══════════════════════════════════════════════════════════════ */
+:root[data-theme="dark"] {
+  --state-pending-fg: var(--text-secondary);   /* 白底 6.10 / 浅底 5.90 */
+  --state-running-fg: var(--accent);           /* 白底 9.55 / 浅底 7.20 */
+  --state-done-fg:    var(--success);          /* 白底 9.01 / 浅底 6.86 */
+  --state-failed-fg:  var(--error);            /* 白底 6.26 / 浅底 5.16 */
+  --state-caution-fg: var(--warning);          /* 白底 9.19 / 浅底 6.97 */
+}
+:root[data-theme="light"] {
+  --state-pending-fg: var(--text-secondary);   /* 白底 6.74 */
+  --state-running-fg: color-mix(in srgb, var(--accent) 72%, var(--text));
+  --state-done-fg:    color-mix(in srgb, var(--success) 72%, var(--text));
+  --state-failed-fg:  color-mix(in srgb, var(--error) 72%, var(--text));
+  --state-caution-fg: color-mix(in srgb, var(--warning) 72%, var(--text));
+}
+
+/* 芯片描边：中性/状态色按 34% 透明度派生，不引入新色 */
+:root {
+  --chip-border: color-mix(in srgb, var(--text-secondary) 34%, transparent);
+  --chip-border-accent: color-mix(in srgb, var(--primary) 42%, transparent);
+  --chip-border-caution: color-mix(in srgb, var(--state-caution-fg) 46%, transparent);
+  --chip-border-neutral: color-mix(in srgb, var(--text-secondary) 26%, transparent);
+  --chip-radius: 4px;
+  --chip-font: 0.7rem;      /* 11.2px，与既有 .meta-badge 同级 */
+  --chip-pad-y: 2px;
+  --chip-pad-x: 6px;
+  --chip-gap: 4px;
+  --row-done-fg: var(--text-secondary);
+  --row-active-fg: var(--text);
+  --focus-ring: 0 0 0 3px var(--primary-light);
+}
+
+/* ── 队列行：任务栏芯片容器（有界高度，防徽标无限换行）───── */
+.metaq-tasks {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--chip-gap);
+  max-height: 44px;            /* 2 行上限，超出由 title 兜底 */
+  overflow: hidden;
+}
+.metaq-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  flex: none;
+  padding: var(--chip-pad-y) var(--chip-pad-x);
+  border-radius: var(--chip-radius);
+  border: 1px solid var(--chip-border);
+  background: transparent;          /* 见 2.4：不用填充，保证对比度按 surface 实测 */
+  color: var(--text-secondary);
+  font-size: var(--chip-font);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.metaq-chip svg { flex: none; }
+/* 输出归属芯片：三态 */
+.metaq-chip-out-global    { border-style: dashed; border-color: var(--chip-border-neutral); color: var(--text-secondary); }
+.metaq-chip-out-snapshot  { border-color: var(--chip-border-accent); color: var(--primary); }
+.metaq-chip-out-inplace   { border-color: var(--chip-border-caution); color: var(--state-caution-fg); }
+
+/* ── 队列行状态差异（不改列宽、不改表格结构）──────────── */
+tr.metaq-done td { color: var(--row-done-fg); }
+tr.metaq-done td.col-idx,
+tr.metaq-done td.col-name { color: var(--row-done-fg); }
+tr.metaq-failed td.col-name { color: var(--row-done-fg); }
+tr.metaq-running td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+
+/* ── 状态列文案 ───────────────────────────────────── */
+.metaq-state {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.75rem; line-height: 1.4; font-weight: 600;
+  white-space: nowrap;
+}
+.metaq-state-pending { color: var(--state-pending-fg); font-weight: 400; }
+.metaq-state-running { color: var(--state-running-fg); }
+.metaq-state-done    { color: var(--state-done-fg); }
+.metaq-state-failed  { color: var(--state-failed-fg); }
+.metaq-state-detail  { display: block; font-size: 0.68rem; font-weight: 400; color: var(--text-secondary); }
+
+/* ── 徽标计数 ─────────────────────────────────────── */
+#metaQueueCount { display: inline-flex; align-items: center; gap: 5px; max-width: 320px; }
+#metaQueueCount .metaq-count-text {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ── 三段式分段控件（编辑弹窗「输出位置」）────────────── */
+.seg {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 3px;
+  padding: 3px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface);
+}
+.seg-item { position: relative; display: flex; }
+.seg-item input { position: absolute; opacity: 0; width: 0; height: 0; }
+.seg-item span {
+  flex: 1; text-align: center; padding: 6px 8px; border-radius: 8px;
+  font-size: 0.8rem; color: var(--text-secondary); cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+.seg-item input:checked + span {
+  background: var(--primary-light); color: var(--primary); font-weight: 600;
+}
+.seg-item input:focus-visible + span { box-shadow: var(--focus-ring); }
+.out-hint { margin-top: 6px; font-size: 0.75rem; color: var(--text-secondary); }
+
+/* ── 「读创建时间」来源溯源条 ───────────────────────── */
+.date-source {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-top: 6px; font-size: 0.75rem; color: var(--text-secondary);
+}
+.date-source .ds-time { font-family: 'Cascadia Mono', Consolas, monospace; }
+.date-source button {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--primary); font-size: 0.75rem; font-weight: 600;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.date-source.is-error { color: var(--state-failed-fg); }
+.date-source button:focus-visible,
+.path-btn:focus-visible,
+#metaAddQueueBtn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* ── 界面设置惰性化（复用 .pg-inert 语义，app.css:454）──── */
+.meta-form-inert { opacity: 0.55; pointer-events: none; user-select: none; }
+.scope-notice {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 12px; padding: 8px 12px;
+  /* 文字用 --state-caution-fg（72% 收拢值），不用 --warning：
+     浅色主题下 --warning 文字落在 --warning-light 底上仅 4.18:1，跌破 AA。 */
+  border: 1px solid var(--state-caution-fg); border-radius: 10px;
+  background: var(--warning-light); color: var(--state-caution-fg);
+  font-size: 0.8rem;
+}
+.scope-notice button {
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: inherit; font-weight: 700; font-size: 0.8rem;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+
+/* ── 动效收敛：只声明被改动的属性 + 尊重 reduced-motion ── */
+.btn, .seg-item span, .metaq-chip { transition: background-color 0.15s, border-color 0.15s, color 0.15s; }
+#metaAddQueueBtn { display: inline-flex; align-items: center; gap: 6px; }
+#metaAddQueueBtn svg { flex: none; }
+#metaAddQueueBtn[data-busy="1"] { pointer-events: none; }
+
+/* 元数据队列操作列：三按钮紧凑排布
+   预算：列宽 104px - td padding 24px = 80px 可用；实际占用 78px。
+   按钮 24px = padding 6px 4px + icon 14px + border 2px。 */
+#metaBatchTableBody td.col-actions { white-space: nowrap; }
+#metaBatchTableBody td.col-actions .btn-sm { padding: 6px 4px; }
+#metaBatchTableBody td.col-actions .btn-sm + .btn-sm { margin-left: 3px; }
+
+/* 重复行闪烁：用 CSS 动画而非 JS 循环，reduced-motion 下退化为描边 */
+@keyframes metaq-flash {
+  0%, 100% { background: transparent; }
+  50% { background: var(--primary-light); }
+}
+tr.metaq-flash td { animation: metaq-flash 0.6s ease-out 1; }
+
+/* 窄容器内让「视频文件」行的按钮换行，保住输入框的最小可读宽度
+   （既存缺陷：1440px 默认窗口的三栏下该行已把输入框压到约 108px） */
+#metadataMode .input-group { flex-wrap: wrap; }
+#metadataMode .input-group .input { min-width: 180px; }
+
+/* 「读创建时间」按钮与 .input 等高 */
+.date-btn { padding: 6px 12px; white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  /* 进度指示必须持续运动（WCAG 2.3.3），故降速而非冻结 */
+  .spinner { animation-duration: 2.4s; }
+  .btn, .seg-item span, .metaq-chip { transition: none; }
+  .metaq-state-running svg { animation-duration: 2.4s; }
+  tr.metaq-flash td { animation: none; outline: 2px solid var(--primary); outline-offset: -2px; }
+}

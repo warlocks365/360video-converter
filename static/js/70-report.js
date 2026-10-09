@@ -383,25 +383,17 @@ function addSelectedReportToQueue() {
     }));
 
   if (target === 'meta') {
-    // 加入元数据批量列表：条目结构对齐 addToMetaBatchList，加入后逐个探测
-    const addedIdx = [];
-    let added = 0, skipped = 0;
-    files.forEach(f => {
-      if (metaBatchItems.some(m => m.path === f.path)) { skipped++; return; }
-      metaBatchItems.push({
-        path: f.path, name: f.name, size_mb: f.size_mb, date_in_name: '',
-        selected: true, status: 'pending', statusMsg: '', duration: '',
-        settings: getDefaultMetaSettings(), probed: false
-      });
-      addedIdx.push(metaBatchItems.length - 1);
-      added++;
-    });
+    // 加入元数据批量列队：统一走 snapshotToMetaBatch，保证 outDir 字段结构一致
+    // （漏写会让 startMetadataApply 读 f.outDir 时遇到 undefined 而依赖假值巧合分支）。
+    // 该入口不冻结界面输出目录 → global 语义，执行时读 #metaBatchOutDir 当前值。
+    const added = snapshotToMetaBatch(files.map(f => f.path), null, { mode: 'global', value: '' });
+    const skipped = files.length - added.length;
     renderMetaBatchTable();
-    addedIdx.forEach(i => probeMetaFile(i));
-    showToast(added > 0
-      ? `已加入元数据批量队列 ${added} 个（跳过 ${skipped} 个重复），正在探测元数据...`
-      : `未添加任何文件：${skipped} 个已在元数据批量队列中`, added > 0 ? 'success' : 'warning', 4000);
-    if (added > 0) switchMode('metadata');
+    added.forEach(i => probeMetaFile(i));
+    showToast(added.length > 0
+      ? `已加入元数据批量列队 ${added.length} 个（跳过 ${skipped} 个重复），正在探测元数据...`
+      : `未添加任何文件：${skipped} 个已在元数据批量列队中`, added.length > 0 ? 'success' : 'warning', 4000);
+    if (added.length > 0) switchMode('metadata');
     return;
   }
 

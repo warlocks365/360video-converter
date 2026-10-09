@@ -231,6 +231,15 @@ const DELEGATED_ACTIONS = {
   'toggle-meta-file-selection': (el, e) => toggleMetaFileSelection(Number(el.dataset.idx), e.target.checked),
   'edit-meta-file-settings':    el => editMetaFileSettings(Number(el.dataset.idx)),
   'remove-meta-file':           el => removeMetaFile(Number(el.dataset.idx)),
+  // v3.13.14 元数据队列：加入列队 / 显式重排队 / 一次性忽略队列按界面跑 / 输出位置三态
+  'meta-enqueue':               () => addToMetaBatchList(),
+  'reset-meta-item':            el => resetMetaItem(Number(el.dataset.idx)),
+  'meta-force-form-run':        () => forceFormRunOnce(),
+  'meta-out-mode':              el => applyMetaOutModeUI(el.value),
+  // v3.13.14「读创建时间」：与 14 处「填路径」的 open-path-dialog 是两件事，
+  // 故独立成条（ADR-004 D-7）；溯源条上的清除/手动输入按钮也走这一条。
+  'browse-date':                el => browseDateFromFile(el.dataset.dateTarget, el.dataset.datePrefix),
+  'meta-date-from-file':        el => metaDateFromFileAction(el.dataset.dateTarget, el.dataset.dateMode),
   'reuse-source-gps':         el => reuseSourceGPS(el.dataset.target),
   'reuse-source-time':        el => reuseSourceTime(el.dataset.target),
   // 任务进度行

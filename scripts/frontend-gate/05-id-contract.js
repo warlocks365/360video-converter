@@ -41,6 +41,14 @@ const EXPECTED_ADDED = new Set([
   'metaEditReuse', 'me_location_info', 'me_date_info',
   // v3.13.9 报告筛选重构：单条件行（旧三控件）→ 多条件行容器 + 添加按钮 + 队列目标
   'reportFilterRows', 'reportFilterAddBtn', 'reportQueueTarget',
+  // v3.13.14 元数据队列：加入列队按钮 / 执行范围说明条 / 编辑弹窗输出目录 /
+  //   三处「读创建时间」按钮 / m_ 侧日期溯源条。
+  // 其余新增 DOM 一律不加 id：p_ 与 me_ 的溯源条用 [data-date-source-for] 定位，
+  // 输出位置分段用原生 radio[name=me_out_mode]，快照路径行/提示用 class 定位 ——
+  // 纯展示或可由结构推导的元素不扩大 id 契约面。
+  'metaAddQueueBtn', 'metaScopeNotice', 'me_out_dir',
+  'p_manual_date_browse', 'm_manual_date_browse', 'me_manual_date_browse',
+  'm_manual_date_source',
 ]);
 
 if (MODE === 'baseline') {

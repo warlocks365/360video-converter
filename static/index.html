@@ -584,7 +584,11 @@
           </label>
           <div class="field" style="margin-top:8px;">
             <label class="field-label">手动指定日期<span class="tip-icon" data-tip="手动输入日期将覆盖文件名自动提取的结果。留空则使用文件名提取。支持格式：2024-01-15（仅日期）或 2024-01-15T14:30:00（日期+时间）。适用于文件名无日期或需要修正的场景。">?</span> (覆盖文件名提取, 留空则自动提取)</label>
-            <input class="input" id="p_manual_date" type="text" placeholder="格式: 2024-01-15 或 2024-01-15T14:30:00">
+            <div class="input-group">
+              <input class="input" id="p_manual_date" type="text" placeholder="格式: 2024-01-15 或 2024-01-15T14:30:00">
+              <button class="btn date-btn" type="button" id="p_manual_date_browse" data-action="browse-date" data-date-target="p_manual_date" data-date-prefix="p" title="从所选文件读取 Windows 创建时间并回填"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> 读创建时间</button>
+            </div>
+            <div class="date-source hidden" data-date-source-for="p_manual_date" data-source="none" aria-live="polite"></div>
           </div>
           <div id="datePreviewContainer"></div>
         </div>
@@ -799,10 +803,10 @@
         <div class="input-group">
           <input class="input" id="metaInput" placeholder="选择或输入视频文件路径..." onchange="probeSourceVideo(this.value, 'm')">
           <button class="btn" type="button" data-action="open-path-dialog" data-path-target="metaInput" data-path-mode="open" data-path-dir="false" data-path-filter="video">浏览...</button>
-          <button class="btn btn-primary" onclick="addToMetaBatchList()"> 加入批量列表</button>
+          <button class="btn" type="button" data-action="meta-enqueue">加入批量列队</button>
         </div>
         <div id="metaSourceInfo" class="source-info hidden"></div>
-        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">选择文件 → 设置下方元数据选项 → 点击「加入批量列表」→ 重复添加多个文件 → 点击「应用元数据」批量处理</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;">选择文件 → 设置下方元数据选项 → 点「加入批量列队」冻结当前设置 → 重复添加多个文件 → 点「应用元数据」批量处理</div>
       </div>
 
       <!-- Output Directory -->
@@ -818,27 +822,38 @@
       <div style="margin-top:12px;">
         <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
           <strong style="font-size:0.85rem;">批量执行列表</strong>
-          <button class="btn btn-sm" onclick="addMetaFileManual()">&#10133; 添加文件</button>
+          <button class="btn btn-sm" onclick="addMetaFileManual()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg> 添加文件</button>
           <button class="btn btn-sm" onclick="selectAllMetaFiles(true)">全选</button>
           <button class="btn btn-sm" onclick="selectAllMetaFiles(false)">全不选</button>
           <button class="btn btn-sm" onclick="removeSelectedMetaFiles()">移除选中</button>
           <button class="btn btn-sm btn-danger" onclick="clearMetaFiles()">清空列表</button>
-          <span id="metaQueueCount" class="badge"></span>
+          <span id="metaQueueCount" class="badge" aria-live="polite"></span>
         </div>
         <div class="table-wrap" style="max-height:500px;overflow-y:auto;">
           <table>
             <thead>
               <tr>
                 <th style="width:36px;"><input type="checkbox" id="metaSelectAll" onchange="selectAllMetaFiles(this.checked)"></th>
-                <th style="width:30px;">#</th><th>源文件</th><th style="width:70px;">大小</th><th>任务内容</th><th style="width:100px;">状态</th><th style="width:90px;">操作</th>
+                <th style="width:30px;">#</th><th>源文件</th><th style="width:70px;">大小</th><th>任务内容</th><th style="width:100px;">状态</th><th style="width:104px;">操作</th>
               </tr>
             </thead>
             <tbody id="metaBatchTableBody">
-              <tr><td colspan="7" style="text-align:center;color:var(--text-muted)">选择文件后点击「加入批量列表」或「添加文件」按钮添加到队列</td></tr>
+              <tr><td colspan="7" style="text-align:center;color:var(--text-muted)">选择文件后点「加入批量列队」或「添加文件」加入队列</td></tr>
             </tbody>
           </table>
         </div>
       </div>
+    </div>
+
+    <!-- 执行范围说明条（v3.13.14）：有待转换项时出现，说明「本次忽略界面设置」。
+         必须放在惰性子树之外，保证满对比度（设计文档 11.2 陷阱 5）。 -->
+    <div id="metaScopeNotice" class="scope-notice hidden" role="status" aria-live="polite">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      <span class="meta-scope-text">列队有待转换项，本次将忽略上方界面设置。</span>
+      <button type="button" data-action="meta-force-form-run">仍按界面设置执行这一轮</button>
     </div>
 
     <!-- Feature Toggles -->
@@ -857,6 +872,7 @@
         </div>
       </div>
       <div id="metaDateOptions" class="toggle-options hidden">
+        <div class="info-box" style="font-size:0.78rem;">写入视频标签的日期来自「从文件名提取日期」或下面的手动输入；「读创建时间」取的是该文件在 Windows 资源管理器里的创建日期，<strong>不是视频拍摄时间</strong>。拍摄时间请用「从文件名提取日期」。</div>
         <label class="check">
           <input type="checkbox" id="m_date_from_filename" checked onchange="onMetaDateFromNameChange('m')">
           从文件名提取日期
@@ -874,8 +890,12 @@
           修改文件修改日期 (文件系统)
         </label>
         <div class="field" style="margin-top:8px;">
-          <label class="field-label">手动指定日期 (覆盖文件名提取, 留空则自动提取)</label>
-          <input class="input" id="m_manual_date" type="text" placeholder="格式: 2024-01-15 或 2024-01-15T14:30:00">
+          <label class="field-label">手动指定日期 (覆盖文件名提取, 留空则自动提取)<span class="tip-icon" data-tip="「读创建时间」取的是该文件在 Windows 资源管理器「详细信息」里的「创建日期」，不是视频拍摄时间。拍摄时间请用「从文件名提取日期」，或编辑弹窗中的「复用素材拍摄时间」。">?</span></label>
+          <div class="input-group">
+            <input class="input" id="m_manual_date" type="text" placeholder="格式: 2024-01-15 或 2024-01-15T14:30:00">
+            <button class="btn date-btn" type="button" id="m_manual_date_browse" data-action="browse-date" data-date-target="m_manual_date" data-date-prefix="m" title="从所选文件读取 Windows 创建时间并回填"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> 读创建时间</button>
+          </div>
+          <div class="date-source hidden" id="m_manual_date_source" data-date-source-for="m_manual_date" data-source="none" aria-live="polite"></div>
         </div>
         <div id="metaDatePreview"></div>
       </div>
@@ -1088,6 +1108,13 @@
   <div class="action-bar" id="mainActionBar">
     <button class="btn btn-primary btn-lg" id="startBtn" onclick="startConversion()">&#9654; 开始转换</button>
     <button class="btn btn-primary btn-lg" id="metaApplyBtn" onclick="startMetadataApply()" style="display:none"> 应用元数据</button>
+    <button class="btn btn-lg" id="metaAddQueueBtn" data-action="meta-enqueue" type="button" style="white-space:nowrap;display:none" aria-describedby="metaScopeNotice">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
+        <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
+      </svg>
+      加入批量列队
+    </button>
     <button class="btn btn-lg" id="addToBatchBtn" onclick="addToBatchQueue()" style="white-space:nowrap;"> 加入批量队列</button>
     <button class="btn btn-warning" id="pauseBtn" onclick="togglePause()" style="display:none">&#9208; 暂停</button>
     <button class="btn btn-danger" id="cancelBtn" onclick="cancelConversion()" style="display:none">&#9209; 取消</button>
@@ -1213,8 +1240,8 @@
 <div class="modal-overlay" id="metaEditModal" onclick="if(event.target===this)closeMetaEditModal()">
   <div class="modal" style="max-width:560px;">
     <div class="modal-header">
-      <h3 id="metaEditTitle">&#9998; 编辑元数据设置</h3>
-      <button class="btn btn-sm" onclick="closeMetaEditModal()">&#10005;</button>
+      <h3 id="metaEditTitle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false" style="vertical-align:-2px;"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg> 编辑元数据设置</h3>
+      <button class="btn btn-sm" onclick="closeMetaEditModal()" aria-label="关闭"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="modal-body" style="padding:20px;max-height:60vh;overflow-y:auto;">
       <div id="metaEditFileInfo" class="info-box" style="margin-bottom:16px;"></div>
@@ -1263,12 +1290,44 @@
               <input type="checkbox" id="me_set_file_modified" checked> 修改文件修改时间
             </label>
             <div class="field" style="margin-top:6px;">
-              <label class="field-label" style="font-size:0.75rem;">手动指定日期 (留空 = 自动提取)</label>
-              <input class="input" id="me_manual_date" type="text" placeholder="格式: 2024-01-15 或 2024-01-15T14:30:00" style="font-size:0.8rem;">
+              <label class="field-label" style="font-size:0.75rem;">手动指定日期 (留空 = 自动提取)<span class="tip-icon" data-tip="「读创建时间」取的是该文件在 Windows 资源管理器「详细信息」里的「创建日期」，不是视频拍摄时间。要用素材的拍摄时间，请点上方「复用拍摄时间」。">?</span></label>
+              <div class="input-group">
+                <input class="input" id="me_manual_date" type="text" placeholder="格式: 2024-01-15 或 2024-01-15T14:30:00" style="font-size:0.8rem;">
+                <button class="btn date-btn" type="button" id="me_manual_date_browse" data-action="browse-date" data-date-target="me_manual_date" data-date-prefix="me" title="从所选文件读取 Windows 创建时间并回填" style="font-size:0.8rem;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg> 读创建时间</button>
+              </div>
+              <div class="date-source hidden" data-date-source-for="me_manual_date" data-source="none" aria-live="polite"></div>
               <div id="me_date_info" class="info-box hidden" style="margin-top:6px;"></div>
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- Output Location (v3.13.14)：产物落点，与上面的标签内容分离 -->
+      <div class="field">
+        <label class="field-label" style="font-size:0.75rem;">输出位置
+          <span class="tip-icon" data-tip="决定本行元数据写入后，文件被放到哪里。&#10;&#10;全局：执行时读取上方「输出目录」的当前值&#10;快照：使用加入列队那一刻的目录，之后改全局不影响本行&#10;原地：覆盖源文件本身">?</span>
+        </label>
+        <div class="seg" role="radiogroup" aria-label="输出位置">
+          <label class="seg-item">
+            <input type="radio" name="me_out_mode" value="global" data-action="meta-out-mode" data-target="me" checked>
+            <span>全局</span>
+          </label>
+          <label class="seg-item">
+            <input type="radio" name="me_out_mode" value="snapshot" data-action="meta-out-mode" data-target="me">
+            <span>快照</span>
+          </label>
+          <label class="seg-item">
+            <input type="radio" name="me_out_mode" value="inplace" data-action="meta-out-mode" data-target="me">
+            <span>原地</span>
+          </label>
+        </div>
+        <div class="input-group me-out-path hidden" style="margin-top:8px;">
+          <input class="input" id="me_out_dir" placeholder="加入列队时快照的输出目录" style="font-size:0.8rem;">
+          <button class="btn" type="button" data-action="open-path-dialog"
+                  data-path-target="me_out_dir" data-path-mode="open"
+                  data-path-dir="true" data-path-filter="">浏览...</button>
+        </div>
+        <div class="out-hint me-out-hint">全局级：执行时读取上方「输出目录」的当前值</div>
       </div>
 
       <!-- GPS -->

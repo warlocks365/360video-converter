@@ -547,9 +547,14 @@ function renderJobCompletion(data, nowSec) {
   if (pauseBtn) { pauseBtn.disabled = false; pauseBtn.style.display = 'none'; }
   isPaused = false;
 
-  const completedLabel = data.status === 'completed' ? '&#9989; 全部完成'
-    : data.status === 'failed' ? '&#10060; 有失败项'
-    : '&#9209; 已取消';
+  // v3.13.14 P0：进度标签的终态标记由 emoji 改为内联 SVG。
+  // 这是元数据执行的本轮终态显示（用户判断「跑完了没有」的唯一视觉载体），
+  // 与队列状态列的 ico-check / ico-x 属同一列视觉语言，不能只换一半。
+  const completedLabel = data.status === 'completed'
+    ? ico('check', 14) + ' 全部完成'
+    : data.status === 'failed'
+      ? ico('x', 14) + ' 有失败项'
+      : ico('x', 14) + ' 已取消';
   setHTML('progressLabel', completedLabel);
   addClass('overallProgress', 'success');
 
@@ -687,47 +692,69 @@ async function startMetadataApply() {
     faststart: true,
   };
 
-  let items = [];
-  const selectedFiles = metaBatchItems.filter(f => f.selected);
+  const outDir = document.getElementById('metaBatchOutDir').value.trim();
+  const inp = document.getElementById('metaInput').value.trim();
 
-  if (selectedFiles.length > 0) {
-    // Batch mode: send per-item params from each file's settings
-    const outDir = document.getElementById('metaBatchOutDir').value.trim();
+  // ADR-004 D-3：待执行项 = selected && status !== 'done'，与 checkbox AND 关系。
+  // ⚠ 两段过滤不可合成一次：hasAnyFeature 需要区分「有项但都没开功能」（alert 中止）
+  //   与「无可执行项」（兜底到界面），合成一次会把中止误判成兜底。
+  const queue = metaBatchItems.filter(f => f.selected);
+  const runnable = metaBatchItems.filter(f => f.selected && f.status !== 'done');
+  const useFormRun = forceFormRun || runnable.length === 0;
+  // 消费一次性标志：无论本次走哪条分支，都不得残留到下一轮
+  const wasForced = forceFormRun;
+  forceFormRun = false;
+
+  let items = [];
+  if (!useFormRun) {
+    // ── 列队模式：忽略界面设置，按列队顺序（数组下标升序）──
+    let hasAnyFeature = false;
     _metaProcessingIndices = [];
     items = [];
-    let hasAnyFeature = false;
+    // 单次 forEach 同时推进映射数组与 items：两者必须同序同长。
+    // 不可用 filter().map() 两次独立遍历 —— 两次遍历之间若有 DOM 事件插入项，
+    // 映射会错位（表现为「第一行显示第二行的结果」）。
     metaBatchItems.forEach((f, i) => {
-      if (f.selected) {
-        _metaProcessingIndices.push(i);
-        // Use per-file settings if available, otherwise use global params
-        const itemParams = f.settings || globalParams;
-        // Check if at least one feature is enabled for this file
-        if (itemParams.apply_date || itemParams.apply_location || itemParams.apply_spherical) {
-          hasAnyFeature = true;
-        }
-        items.push({
-          input: f.path,
-          output: outDir ? `${outDir}\\${f.name}` : f.path,
-          params: itemParams
-        });
-        f.status = 'pending';
-        f.statusMsg = '';
-        f.duration = '';
+      if (!f.selected || f.status === 'done') return;
+      // 逐项校验功能开关：只统计本次真正要跑的项
+      const itemParams = f.settings || globalParams;
+      if (itemParams.apply_date || itemParams.apply_location || itemParams.apply_spherical) {
+        hasAnyFeature = true;
       }
+      _metaProcessingIndices.push(i);
+      items.push({
+        input: f.path,
+        output: resolveMetaOutputPath(f, outDir),
+        params: itemParams
+      });
+      // 仅重置本次真正要跑的项 —— 旧实现无差别重置全部 selected 项，
+      // 这正是 done 项被重复重跑的根因（ADR D-4）
+      f.status = 'pending';
+      f.statusMsg = '';
+      f.duration = '';
     });
     if (!hasAnyFeature) {
       alert('选中的文件均未启用任何元数据功能，请至少在一个文件中启用一项');
+      _metaProcessingIndices = [];   // 中止时不要留下悬空映射
       return;
     }
+    writeMetaScopeLog(`[列队] 按列队顺序执行 ${items.length} 项（不含已完成项），本次忽略界面设置`, 'info');
     renderMetaBatchTable();
   } else {
-    // Single file mode: process the file in the input field with global params
-    const inp = document.getElementById('metaInput').value.trim();
+    // ── 兜底：界面单文件 ──
+    if (queue.length > 0) {
+      const msg = wasForced
+        ? '[单文件] 用户选择忽略列队，本次按界面设置处理 metaInput'
+        : `[单文件] 列队 ${queue.length} 项已处理完毕，本次按界面设置处理 metaInput`;
+      writeMetaScopeLog(msg, 'warn');
+      if (!wasForced) showToast('列队中无待转换项，已按当前界面设置执行', 'info', 4000);
+    } else {
+      writeMetaScopeLog('[单文件] 列队为空，按界面设置处理 metaInput', 'info');
+    }
     if (!inp) { alert('请选择视频文件，或将文件加入批量列表'); return; }
     if (!globalParams.apply_date && !globalParams.apply_location && !globalParams.apply_spherical) {
       alert('请至少选择一个元数据功能'); return;
     }
-    const outDir = document.getElementById('metaBatchOutDir').value.trim();
     const name = inp.split(/[\/\\]/).pop();
     items = [{input: inp, output: outDir ? `${outDir}\\${name}` : inp}];
   }
@@ -743,6 +770,25 @@ async function startMetadataApply() {
   isPaused = false;
   resetJobButtons();
   setText('progressLabel', '应用中...');
+}
+
+// 执行分派写入日志（设计文档 5.3）：让用户事后能分辨某一行是哪一轮跑的。
+function writeMetaScopeLog(msg, level) {
+  const box = document.getElementById('logBox');
+  if (!box) return;
+  const div = document.createElement('div');
+  div.className = 'log-line';
+  const ts = document.createElement('span');
+  ts.className = 'log-ts';
+  ts.textContent = new Date().toLocaleTimeString();
+  const m = document.createElement('span');
+  m.className = `log-msg ${level === 'warn' ? 'warn' : 'info'}`;
+  m.textContent = msg;
+  div.appendChild(ts);
+  div.appendChild(m);
+  box.appendChild(div);
+  while (box.children.length > 100) box.removeChild(box.firstChild);
+  box.scrollTop = box.scrollHeight;
 }
 
 // ── 已删除：pollStatus 覆盖式补丁（v3.11.0）──────────────────
@@ -864,7 +910,7 @@ function renderItemStatus(cell, actionCell, item, i, data, isPaused) {
       const shortErr = errMsg.length > 20 ? errMsg.substring(0, 20) + '...' : errMsg;
       html = `<span class="status-dot status-fail"></span> <span style="color:var(--error);cursor:help;" title="${errMsg}">${shortErr}</span>`;
     } else {
-      html = '<span class="status-dot status-done"></span> &#10003;';
+      html = '<span class="status-dot status-done"></span> ' + ico('check', 14);
     }
   } else if (i < data.current_index) {
     if (item.ok === false) {
@@ -872,7 +918,7 @@ function renderItemStatus(cell, actionCell, item, i, data, isPaused) {
       const shortErr = errMsg.length > 20 ? errMsg.substring(0, 20) + '...' : errMsg;
       html = `<span class="status-dot status-fail"></span> <span style="color:var(--error);cursor:help;" title="${errMsg}">${shortErr}</span>`;
     } else {
-      html = '<span class="status-dot status-done"></span> &#10003;';
+      html = '<span class="status-dot status-done"></span> ' + ico('check', 14);
     }
   } else if (i === data.current_index && data.status === 'running') {
     html = `<span class="status-dot status-running"></span> ${Math.round(data.file_progress)}%`;
