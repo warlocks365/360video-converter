@@ -117,6 +117,60 @@ function showToast(msg, type, durationMs) {
   }, durationMs || TOAST_DURATION[type] || TOAST_DURATION.info);
 }
 
+// ── 内联 SVG 图标（P0：禁止 emoji / 字符图标作功能图标）──────
+// 统一规格：24 网格 / fill=none / stroke=currentColor / stroke-width=2 / round 端点，
+// 与 index.html 内既有 5 枚页签图标同源。currentColor 随文字色，14px 与 20px 两档。
+//
+// 位置说明（v3.13.14）：本块从 50-meta.js 迁到 00-core.js —— 全域 emoji 清零后
+// 10-ui/30-params/40-files/70-report/80-codec 都要用它，而 00-core.js 是唯一
+// 在这些模块之前加载的文件（原 50-meta.js 排在它们之后）。
+const ICON_SVG_ATTRS = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"';
+const ICON_PATHS = {
+  inbox:     '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  folder:    '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+  check:     '<path d="M20 6 9 17l-5-5"/>',
+  x:         '<path d="M18 6 6 18M6 6l12 12"/>',
+  edit:      '<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
+  trash:     '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  globe:     '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+  calendar:  '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  pin:       '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
+  outSnapshot:'<polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/>',
+  // 「跟随全局」= refresh-cw（跟随上方「输出目录」当前值），设计文档 7.4 的 ico-out-global
+  outGlobal: '<path d="M10 13a5 5 0 0 0 7.07 0"/><path d="M14 11a5 5 0 0 0-7.07 0"/><line x1="17" y1="7" x2="17" y2="11"/><line x1="7" y1="13" x2="7" y2="17"/>',
+  outInplace:'<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  // 链接（合并预处理）：v3.13.14 替换原字符图标。
+  // 注：注释刻意不写该图标的字面字符，避免被 P0 emoji 扫描按字面量误报。
+  link:      '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  reset:     '<path d="M3 2v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L3 8"/>',
+  alert:     '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  // ── v3.13.14 全域 emoji 清零追加 ──
+// 圆圈对勾：用于「聚合成功/通过」语义（区别于裸check 的「单项勾选」）
+  checkCircle: '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>',
+  // 圆圈叉：用于「聚合失败」语义
+  xCircle:   '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>',
+  // 方框加号：批量导入「将选中添加到任务」
+  plusSquare:'<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/>',
+  plus:      '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  // 文档 / 剪贴板：导出日志与诊断报告
+  fileText:  '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
+  clipboard: '<rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>',
+  // 包裹：配对文件检测（双文件成对）
+  package:   '<line x1="16.5" y1="9.4" x2="7.5" y2="4.21"/><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>',
+  // 合并（多路合一）：批量任务里的合并项标记
+  merge:     '<path d="M6 3v6a6 6 0 0 0 6 6h6"/><polyline points="15 12 18 15 15 18"/><path d="M18 9V3"/><path d="M6 21v-6"/>',
+  // 垃圾桶：移除行（批量表/合并表/报告筛选行共用）
+  trash:     '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+};
+// 产出图标 HTML。size 只允许 14 / 20 两档（设计文档 7.1：不提供第三档）。
+function ico(name, size) {
+  const body = ICON_PATHS[name];
+  if (!body) return '';
+  const s = size === 20 ? 20 : 14;
+  return `<svg width="${s}" height="${s}" ${ICON_SVG_ATTRS}>${body}</svg>`;
+}
+
+
 // ── Merge Mode ───────────────────────────────────────
 
 function esc(s) {

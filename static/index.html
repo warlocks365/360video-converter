@@ -133,7 +133,7 @@
         </table>
       </div>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
-        <button class="btn btn-primary" onclick="addSelectedToTasks()">&#10133; 将选中添加到任务</button>
+        <button class="btn btn-primary" onclick="addSelectedToTasks()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> 将选中添加到任务</button>
         <span id="importCount" style="font-size:0.8rem;color:var(--text-muted);"></span>
       </div>
     </div>
@@ -674,7 +674,7 @@
          合并转换 &mdash; 多文件按序合并为一个
         <div style="margin-left:auto;display:flex;gap:6px;">
           <button class="btn btn-sm" onclick="addMergeFiles()"> 添加文件</button>
-          <button class="btn btn-sm" onclick="clearMergeList()">&#10005; 清空</button>
+          <button class="btn btn-sm" onclick="clearMergeList()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg> 清空</button>
         </div>
       </div>
       <div class="field">
@@ -1009,7 +1009,7 @@
         <div style="margin-left:auto;display:flex;gap:6px;">
           <button class="btn btn-sm" id="exportReportLogBtn" onclick="exportReportLog()" style="display:none;"> 导出日志</button>
           <button class="btn btn-sm" onclick="saveReport()"> 保存报告</button>
-          <button class="btn btn-sm" onclick="clearReport()">&#10005; 清除</button>
+          <button class="btn btn-sm" onclick="clearReport()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg> 清除</button>
         </div>
       </div>
       <!-- v3.x 批量结果筛选（纯前端，对已加载的 reportData 过滤后重渲染） -->
@@ -1095,7 +1095,7 @@
   <div class="card">
     <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
       实时日志
-      <button onclick="exportEncodeLog()" id="exportLogBtn" style="font-size:0.7rem;padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted);display:none;">📄 导出日志</button>
+      <button onclick="exportEncodeLog()" id="exportLogBtn" style="font-size:0.7rem;padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted);display:none;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> 导出日志</button>
     </div>
     <div class="log-box" id="logBox">
       <div class="log-line"><span class="log-ts">--:--:--</span><span class="log-msg info">等待开始转换...</span></div>
@@ -1155,7 +1155,7 @@
   <div class="modal large">
     <div class="modal-header">
       <h3> 选取拍摄位置 (全球地图)</h3>
-      <button class="btn btn-sm" onclick="closeMapPicker()">&#10005;</button>
+      <button class="btn btn-sm" onclick="closeMapPicker()" aria-label="关闭"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="map-search-bar">
       <input class="input" id="mapSearchInput" placeholder="输入地点搜索 (国内+全球均可，如: 故宫 / Maldives / Paris)..." onkeydown="if(event.key==='Enter')searchMap()">
@@ -1180,7 +1180,7 @@
   <div class="modal">
     <div class="modal-header">
       <h3>设置 - 地图与位置</h3>
-      <button class="btn btn-sm" onclick="closeSettings()">&#10005;</button>
+      <button class="btn btn-sm" onclick="closeSettings()" aria-label="关闭"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="modal-body" style="padding:20px;">
       <div class="info-box">
@@ -1227,7 +1227,7 @@
   <div class="modal">
     <div class="modal-header">
       <h3 id="aboutTitle">关于</h3>
-      <button class="btn btn-sm" onclick="closeAbout()">&#10005;</button>
+      <button class="btn btn-sm" onclick="closeAbout()" aria-label="关闭"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="modal-body" id="aboutBody" style="padding:20px;line-height:1.7;"></div>
     <div class="modal-footer">

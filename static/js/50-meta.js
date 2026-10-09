@@ -377,39 +377,6 @@ async function updateMetaDatePreview() {
 }
 
 
-// ── 内联 SVG 图标（P0：禁止 emoji / 字符图标作功能图标）──────
-// 统一规格：24 网格 / fill=none / stroke=currentColor / stroke-width=2 / round 端点，
-// 与 index.html 内既有 5 枚页签图标同源。currentColor 随文字色，14px 与 20px 两档。
-const ICON_SVG_ATTRS = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"';
-const ICON_PATHS = {
-  inbox:     '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
-  folder:    '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
-  check:     '<path d="M20 6 9 17l-5-5"/>',
-  x:         '<path d="M18 6 6 18M6 6l12 12"/>',
-  edit:      '<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
-  trash:     '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
-  globe:     '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
-  calendar:  '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
-  pin:       '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
-  outSnapshot:'<polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/>',
-  // 「跟随全局」= refresh-cw（跟随上方「输出目录」当前值），设计文档 7.4 的 ico-out-global
-  outGlobal: '<path d="M10 13a5 5 0 0 0 7.07 0"/><path d="M14 11a5 5 0 0 0-7.07 0"/><line x1="17" y1="7" x2="17" y2="11"/><line x1="7" y1="13" x2="7" y2="17"/>',
-  outInplace:'<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
-  // 链接（合并预处理）：v3.13.14 替换原字符图标。
-  // 注：注释刻意不写该图标的字面字符，避免被 P0 emoji 扫描按字面量误报。
-  link:      '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
-  reset:     '<path d="M3 2v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L3 8"/>',
-  alert:     '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
-};
-// 产出图标 HTML。size 只允许 14 / 20 两档（设计文档 7.1：不提供第三档）。
-function ico(name, size) {
-  const body = ICON_PATHS[name];
-  if (!body) return '';
-  const s = size === 20 ? 20 : 14;
-  return `<svg width="${s}" height="${s}" ${ICON_SVG_ATTRS}>${body}</svg>`;
-}
-
-
 async function addMetaFileManual() {
   try {
     const r = await fetch('/api/native_dialog', {
@@ -1161,8 +1128,9 @@ async function browseDateFromFile(targetId, prefix) {
       showToast(info.msg, 'error', 6000);
       return;   // ⚠ 提前 return：绝不触碰 el.value（设计文档 10.1 铁律）
     }
-    // ctime 已是后端给的**本地 naive 字符串**（ADR D-6）。绝对不要加 Z 或再过
-    // utcToLocalNaive —— 加 Z 会让下游 datetime.fromisoformat() 当 UTC 解释，
+    // ctime 已是后端给的**本地 naive 字符串**（ADR D-6）。绝对不要加 Z 后缀，
+    // 也不要把本就该是本地的值再做一次 UTC→本地转换 ——
+    // 加 Z 会让下游 datetime.fromisoformat() 当 UTC 解释，
     // 重新引入 v3.13.7 修掉的 ±8h 偏差缺陷。
     el.value = d.ctime || '';
     if (prefix) applyManualDateToTarget(prefix, el.value, null);

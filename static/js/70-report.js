@@ -161,9 +161,9 @@ async function exportReportLog() {
 function moovBadgeHtml(item) {
   const m = item.moov;
   if (!m) return ''; // 后端未返回（旧数据/解析异常）：不显示徽章
-  if (!m.has_moov) return '<span class="meta-badge moov-badge-missing">moov &#10007; 缺失</span>';
-  if (m.moov_position === 'front') return '<span class="meta-badge moov-badge-front">moov &#10003; 前置（faststart）</span>';
-  return '<span class="meta-badge moov-badge-end">moov &#10003; 尾部</span>';
+  if (!m.has_moov) return '<span class="meta-badge moov-badge-missing">moov ' + ico("xCircle", 14) + ' 缺失</span>';
+  if (m.moov_position === 'front') return '<span class="meta-badge moov-badge-front">moov ' + ico("check", 14) + ' 前置（faststart）</span>';
+  return '<span class="meta-badge moov-badge-end">moov ' + ico("check", 14) + ' 尾部</span>';
 }
 
 
@@ -219,7 +219,7 @@ function renderReportFilterRows() {
     }
     return '<div class="report-filter-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">' +
       fieldSel + valueCtl +
-      '<button class="btn btn-sm" type="button" data-action="report-filter-remove" data-row="' + i + '" title="删除此条件">&#10005;</button></div>';
+      '<button class="btn btn-sm" type="button" data-action="report-filter-remove" data-row="' + i + '" title="删除此条件" aria-label="删除此条件">' + ico("trash", 14) + '</button></div>';
   }).join('') || '<div style="color:var(--text-muted);font-size:0.75rem;">尚未添加筛选条件，全部条目可见</div>';
 }
 
@@ -439,7 +439,7 @@ function renderReportItem(item, idx) {
       <div class="report-item-header">
         ${cb}
         <span class="fname">${esc(item.filename)}</span>
-        <span style="color:var(--error);">&#9888; 读取失败</span>
+        <span style="color:var(--error);">${ico("alert", 14)} 读取失败</span>
       </div>
       <div class="report-row"><span class="label">路径</span><span class="value">${esc(item.path)}</span></div>
       <div class="report-row"><span class="label">错误</span><span class="value" style="color:var(--error);">${esc(item.error)}</span></div>

@@ -21,7 +21,7 @@ async function onCodecChange() {
     if (group === 'cuda') hint = '未检测到 NVIDIA GPU 或 NVENC 驱动。请确认已安装 NVIDIA 显卡驱动。';
     else if (group === 'qsv') hint = '未检测到 Intel 核显或 QSV 运行时。请确认已安装 Intel 显卡驱动 (含 Media SDK 运行时)。';
     else if (group === 'amf') hint = '未检测到 AMD 显卡或 AMF 驱动。请确认已安装 AMD 显卡驱动。';
-    let warnHtml = '<span style="color:var(--warning);">&#9888; ' + esc(hint);
+    let warnHtml = '<span style="color:var(--warning);">' + ico('alert', 14) + ' ' + esc(hint);
     if (errDetail) {
       warnHtml += ' <span style="font-size:0.7rem;color:var(--text-muted);">(' + esc(errDetail) + ')</span>';
     }
@@ -166,9 +166,9 @@ async function updateSingleDatePreview() {
   const data = await r.json();
   const container = document.getElementById('singleDatePreview');
   if (data.date_str) {
-    container.innerHTML = `<div class="date-preview">&#128197; 从文件名提取日期: <strong>${data.date_str}</strong></div>`;
+    container.innerHTML = `<div class="date-preview">${ico('calendar', 14)} 从文件名提取日期: <strong>${esc(data.date_str)}</strong></div>`;
   } else {
-    container.innerHTML = `<div class="date-preview no-date">&#9888; 文件名中未找到日期信息</div>`;
+    container.innerHTML = `<div class="date-preview no-date">${ico('alert', 14)} 文件名中未找到日期信息</div>`;
   }
 }
 

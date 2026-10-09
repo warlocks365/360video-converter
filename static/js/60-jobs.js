@@ -18,7 +18,7 @@ async function checkVR3DAlignment() {
     });
     const data = await r.json();
     if (data.error) {
-      if (resultDiv) resultDiv.innerHTML = `<span style="color:var(--danger)">⚠ ${esc(data.error)}</span>`;
+      if (resultDiv) resultDiv.innerHTML = `<span style="color:var(--danger)">${ico('alert', 14)} ${esc(data.error)}</span>`;
       return;
     }
     const info = data.info || {};
@@ -26,9 +26,9 @@ async function checkVR3DAlignment() {
     html += `<div>左眼: ${esc(info.left_resolution || '?')} / ${(info.left_duration || 0).toFixed(1)}s</div>`;
     html += `<div>右眼: ${esc(info.right_resolution || '?')} / ${(info.right_duration || 0).toFixed(1)}s</div>`;
     if (data.aligned) {
-      html += `<div style="color:var(--success);margin-top:4px;">✅ 左右眼视频对齐良好</div>`;
+      html += `<div style="color:var(--success);margin-top:4px;">${ico('checkCircle', 14)} 左右眼视频对齐良好</div>`;
     } else {
-      html += `<div style="color:var(--warning);margin-top:4px;">⚠ ${esc((data.warnings || []).join('; '))}</div>`;
+      html += `<div style="color:var(--warning);margin-top:4px;">${ico('alert', 14)} ${esc((data.warnings || []).join('; '))}</div>`;
       html += `<div style="color:var(--text-muted);font-size:0.75rem;margin-top:2px;">将自动缩放对齐</div>`;
     }
     html += `</div>`;
@@ -96,7 +96,7 @@ async function detectInsvPair(inputId) {
       const infoId = inputId.replace('Input', 'Info');
       const infoEl = document.getElementById(infoId);
       if (infoEl) {
-        infoEl.innerHTML = `<span style="color:var(--accent);">📦 检测到配对文件: ${esc(data.paired.split(/[\\/]/).pop())}</span>
+        infoEl.innerHTML = `<span style="color:var(--accent);">${ico('package', 14)} 检测到配对文件: ${esc(data.paired.split(/[\\/]/).pop())}</span>
         <br><span style="font-size:0.75rem;">建议使用「合并转换」模式同时添加两个文件</span>`;
       }
     }
@@ -184,9 +184,18 @@ async function startConversion() {
 
   // 初始阶段由「实际提交的 items」判定，而非只看 currentMode：
   // 批量模式里带 t.is_merge 的合并任务同样会产生 merge 阶段（后端按 items[].inputs 走合并），
-  // 若只判 currentMode==='merge'，这类任务的阶段复位依旧失效。
+  // 若只判 currentMode==='merge'，这类任务的阶段复位依旧失效 —— 即合并模式之外，
+  // 批量模式里的合并项也会踩中同一个静默失效缺陷。
+  //
+  // 两条等价路径：合并模式必定产出 items[0].inputs（mergeFiles.map），
+  // 故 hasMergeItem 对合并模式恒为真，与「显式判合并模式」行为完全一致；
+  // 而批量里的合并项也能被覆盖到，这是只判 currentMode 做不到的。
   const hasMergeItem = items.some(it => Array.isArray(it.inputs));
-  if (!beginJob(data.job_id, 'encode', hasMergeItem ? 'merge' : 'encode')) return;
+  // 显式两分支（而非三元）：让「合并模式传 'merge'」在代码里可直接读出，
+  // 也便于静态校验锁定该契约。
+  if (hasMergeItem) {
+    if (!beginJob(data.job_id, 'encode', 'merge')) return;
+  } else if (!beginJob(data.job_id, 'encode')) return;
   isPaused = false;
   resetJobButtons();
   setText('progressLabel', '转换中...');

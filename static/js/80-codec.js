@@ -47,11 +47,11 @@ async function testCustomFfmpeg() {
     });
     const data = await r.json();
     if (data.error) {
-      resultEl.innerHTML = '<div style="color:var(--error);font-size:0.82rem;">&#10007; ' + esc(data.error) + '</div>';
+      resultEl.innerHTML = '<div style="color:var(--error);font-size:0.82rem;">' + ico("xCircle", 14) + ' ' + esc(data.error) + '</div>';
       return;
     }
     let html = '<div style="font-size:0.82rem;line-height:1.8;">';
-    html += '<div style="color:var(--success);font-weight:600;">&#10003; ' + esc(data.version || 'ffmpeg detected') + '</div>';
+    html += '<div style="color:var(--success);font-weight:600;">' + ico("checkCircle", 14) + ' ' + esc(data.version || 'ffmpeg detected') + '</div>';
     const encs = data.encoders || {};
     const labels = {
       h264_nvenc: 'H.264 NVENC (NVIDIA)', hevc_nvenc: 'H.265 NVENC (NVIDIA)',
@@ -62,7 +62,7 @@ async function testCustomFfmpeg() {
       // Support both old format (boolean) and new format ({available, error})
       const avail = typeof info === 'boolean' ? info : info.available;
       const err = typeof info === 'boolean' ? '' : (info.error || '');
-      const icon = avail ? '&#10003;' : '&#10007;';
+      const icon = avail ? ico("check", 14) : ico("x", 14);
       const color = avail ? 'var(--success)' : 'var(--text-muted)';
       let line = '<div style="color:' + color + ';">' + icon + ' ' + esc(labels[key] || key);
       if (!avail && err) {
@@ -74,7 +74,7 @@ async function testCustomFfmpeg() {
     html += '</div>';
     resultEl.innerHTML = html;
   } catch(e) {
-    resultEl.innerHTML = '<div style="color:var(--error);font-size:0.82rem;">&#10007; 测试失败: ' + esc(e.message) + '</div>';
+    resultEl.innerHTML = '<div style="color:var(--error);font-size:0.82rem;">' + ico("xCircle", 14) + ' 测试失败: ' + esc(e.message) + '</div>';
   }
 }
 
@@ -109,7 +109,7 @@ function renderCodecStatus() {
     const ci = codecInfo[key];
     if (!ci) continue;
     const badge = `<span class="codec-badge ${esc(ci.group)}">${esc(ci.group.toUpperCase())}</span>`;
-    const icon = avail ? '&#10003;' : '&#10007;';
+    const icon = avail ? ico("check", 14) : ico("x", 14);
     const color = avail ? 'var(--success)' : 'var(--text-muted)';
     const label = ci.label.split('(')[0].trim();
     // Highlight currently selected codec
@@ -152,7 +152,7 @@ function renderCodecStatus() {
     }
   }
   // Add export button
-  html += `<div style="margin-top:6px;"><button data-action="export-diagnostic-report" style="font-size:0.7rem;padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted);">📄 导出诊断报告</button></div>`;
+  html += `<div style="margin-top:6px;"><button data-action="export-diagnostic-report" style="font-size:0.7rem;padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted);">${ico("fileText", 14)} 导出诊断报告<//button></div>`;
   statusEl.innerHTML = html;
 }
 
@@ -180,7 +180,7 @@ async function showEncoderDetail(encoder) {
     let html = '<div style="font-size:0.78rem;">';
     html += `<div style="margin-bottom:4px;"><strong>编码器:</strong> ${esc(encoder)}</div>`;
     html += `<div style="margin-bottom:4px;"><strong>ffmpeg:</strong> ${esc(ffmpegPath)}</div>`;
-    html += `<div style="margin-bottom:4px;"><strong>结果:</strong> ${d.success ? '<span style="color:var(--success);">✓ 可用</span>' : '<span style="color:var(--warning);">✗ 不可用</span>'}</div>`;
+    html += `<div style="margin-bottom:4px;"><strong>结果:</strong> ${d.success ? '<span style="color:var(--success);">${ico("checkCircle", 14)} 可用</span>' : '<span style="color:var(--warning);">${ico("xCircle", 14)} 不可用</span>'}</div>`;
     if (d.returncode !== undefined) {
       html += `<div style="margin-bottom:4px;"><strong>退出码:</strong> ${d.returncode}</div>`;
     }
@@ -195,7 +195,7 @@ async function showEncoderDetail(encoder) {
       html += `<div style="margin-top:6px;"><strong>运行时 DLL 检测:</strong></div>`;
       for (const [dllName, dllPath] of dllEntries) {
         const found = !!dllPath;
-        const icon = found ? '&#10003;' : '&#10007;';
+    const icon = found ? ico("check", 14) : ico("x", 14);
         const color = found ? 'var(--success)' : 'var(--text-muted)';
         html += `<div style="color:${color};font-size:0.72rem;">${icon} ${esc(dllName)} ${found ? '(' + esc(dllPath) + ')' : '(未找到)'}</div>`;
       }
@@ -214,8 +214,8 @@ async function showEncoderDetail(encoder) {
     html += '</div>';
     // Action buttons row
     html += `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">`;
-    html += `<button data-action="export-diagnostic-report" style="font-size:0.72rem;padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);cursor:pointer;color:var(--text);">📄 导出报告</button>`;
-    html += `<button data-action="copy-error-info" data-encoder="${esc(encoder)}" style="font-size:0.72rem;padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);cursor:pointer;color:var(--text);">📋 保存错误信息</button>`;
+    html += `<button data-action="export-diagnostic-report" style="font-size:0.72rem;padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);cursor:pointer;color:var(--text);">${ico("fileText", 14)} 导出报告<//button>`;
+    html += `<button data-action="copy-error-info" data-encoder="${esc(encoder)}" style="font-size:0.72rem;padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);cursor:pointer;color:var(--text);">${ico("clipboard", 14)} 保存错误信息<//button>`;
     html += `<button data-action="codec-change" style="font-size:0.72rem;padding:3px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg-secondary);cursor:pointer;color:var(--text-muted);">返回</button>`;
     html += `</div>`;
     statusEl.innerHTML = html;
@@ -306,7 +306,7 @@ async function exportEncodeLog() {
   } catch(e) {
     alert('导出日志失败: ' + e.message);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '📄 导出日志'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = ico('fileText', 14) + ' 导出日志'; }
   }
 }
 

@@ -187,7 +187,11 @@ const emojiRe = /[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
   // 批量任务里带 is_merge 的合并项同样会产生 merge 阶段，只判 currentMode 会漏
   check('⑨startConversion 以 items 判定初始 phase（覆盖批量合并项）',
     /const hasMergeItem = items\.some\(it => Array\.isArray\(it\.inputs\)\)/.test(src)
-    && /beginJob\(data\.job_id, 'encode', hasMergeItem \? 'merge' : 'encode'\)/.test(src), '');
+    // 合并分支必须显式传 'merge'（QA A12.5 要求字面可见）；非合并分支走两参兜底。
+    // 早前写成三元 hasMergeItem ? 'merge' : 'encode'，语义等价但字面不可见，
+    // 静态校验锁不住，故改为显式 if/else 两分支。
+    && /beginJob\(data\.job_id, 'encode', 'merge'\)/.test(src)
+    && /\} else if \(!beginJob\(data\.job_id, 'encode'\)\) return;/.test(src), '');
   const callSites = [...src.matchAll(/(?<![A-Za-z.])beginJob\(([^)]*)\)/g)]
     .map(m => m[1]).filter(x => !/^id, type/.test(x));
   check('⑨VR3D / 元数据调用点仍为两参（走默认 encode 兜底）',

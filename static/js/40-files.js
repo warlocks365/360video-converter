@@ -303,7 +303,7 @@ function renderImportList() {
   }
   tbody.innerHTML = importCandidates.map((c, i) => {
     const escapedPath = (c.dir || '').replace(/</g, '&lt;');
-    const dateInName = c.date_in_name ? `<span style="color:var(--success);">&#128197; ${c.date_in_name.split('T')[0]}</span>` : '<span style="color:var(--text-muted);">&mdash;</span>';
+    const dateInName = c.date_in_name ? `<span style="color:var(--success);">${ico('calendar', 14)} ${c.date_in_name.split('T')[0]}</span>` : '<span style="color:var(--text-muted);">&mdash;</span>';
     const sizeDisplay = c.size_str || c.size_mb || '--';
     return `<tr>
       <td><input type="checkbox" class="import-check" data-idx="${i}" checked data-action="update-import-count"></td>
@@ -367,9 +367,9 @@ function renderBatchTable() {
   }
   tbody.innerHTML = batchTasks.map((t, i) => {
     const escaped = (t.output || '').replace(/</g, '&lt;');
-    const dateInName = t.date_in_name ? `<span style="color:var(--success);">&#128197; ${t.date_in_name.split('T')[0]}</span>` : '<span style="color:var(--text-muted);">&mdash;</span>';
+    const dateInName = t.date_in_name ? `<span style="color:var(--success);">${ico('calendar', 14)} ${t.date_in_name.split('T')[0]}</span>` : '<span style="color:var(--text-muted);">&mdash;</span>';
     const manualBadge = t.is_manual ? ' <span class="badge badge-accent" style="font-size:0.65rem;padding:1px 6px;">手动</span>' : '';
-    const mergeIcon = t.is_merge ? '🔀 ' : '';
+    const mergeIcon = t.is_merge ? ico('merge', 14) + ' ' : '';
     const sizeDisplay = t.size_str || t.size_mb || '--';
     const paramsSummary = summarizeParams(t);
     return `<tr>
@@ -382,7 +382,7 @@ function renderBatchTable() {
       <td style="font-size:0.72rem;line-height:1.4;">${paramsSummary}</td>
       <td class="status-cell"><span class="status-dot status-pending"></span></td>
       <td class="time-cell" style="font-size:0.75rem;color:var(--text-muted);">&mdash;</td>
-      <td><button class="btn btn-sm btn-danger" data-action="remove-batch-item" data-idx="${i}" title="移除">&#10005;</button></td>
+      <td><button class="btn btn-sm btn-danger" data-action="remove-batch-item" data-idx="${i}" title="移除" aria-label="移除">${ico('trash', 14)}</button></td>
     </tr>`;
   }).join('');
   updateQueueCount();
@@ -628,7 +628,7 @@ function addToBatchQueue() {
 
     const inputPaths = mergeFiles.map(f => f.path);
     const inputNames = mergeFiles.map(f => f.name);
-    const displayName = `🔀 合并 ${inputNames.length} 个文件`;
+    const displayName = `${ico('merge', 14)} 合并 ${inputNames.length} 个文件`;
 
     batchTasks.push(makeTask({
       path: inputPaths[0], name: displayName, dir: inputNames.join(' + '),
@@ -698,7 +698,7 @@ function renderMergeTable() {
       <td>
         <button class="btn btn-sm" data-action="move-merge-item" data-idx="${i}" data-dir="-1" title="上移" ${i===0?'disabled':''}>&#8593;</button>
         <button class="btn btn-sm" data-action="move-merge-item" data-idx="${i}" data-dir="1" title="下移" ${i===mergeFiles.length-1?'disabled':''}>&#8595;</button>
-        <button class="btn btn-sm btn-danger" data-action="remove-merge-item" data-idx="${i}" title="移除">&#10005;</button>
+        <button class="btn btn-sm btn-danger" data-action="remove-merge-item" data-idx="${i}" title="移除" aria-label="移除">${ico('trash', 14)}</button>
       </td>
     </tr>`;
   }).join('');
