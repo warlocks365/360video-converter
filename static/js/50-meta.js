@@ -970,7 +970,10 @@ async function reuseSourceGPS(target) {
   if (!nameVal || !locAddr) {
     try {
       const r = await resolveReverseGeo(gps.lat, gps.lon, nameVal, locAddr);
-      const rAddr = (r.address || '').startsWith('(地址获取失败') ? '' : r.address;
+      // v3.13.14: 改用显式失败标志，不再靠 startsWith('(地址获取失败') 嗅探文案。
+      // 嗅探的缺陷：提示文案一改，这里就永远判为真 → 真实地址被吞；
+      // 反之文案被改得不匹配时，错误提示会被当成地址抄进输入框，且不报错。
+      const rAddr = r.addrFailed ? '' : (r.address || '');
       nameVal = r.name || nameVal;
       locAddr = rAddr || locAddr;
       document.getElementById(t.name).value = nameVal;

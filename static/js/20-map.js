@@ -367,6 +367,8 @@ async function resolveReverseGeo(lat, lon, fallbackName, fallbackAddress) {
   let name = fallbackName || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
   let address = '';
   let lastError = '';
+  // v3.13.14: 逆地理是否失败。与错误文案解耦，供消费方判定「这是提示不是地址」。
+  let addrFailed = false;
 
   // Determine source by location: China → AMap regeo, elsewhere → Nominatim
   const inChina = !_outOfChina(lon, lat);
@@ -435,9 +437,18 @@ async function resolveReverseGeo(lat, lon, fallbackName, fallbackAddress) {
   if (!address && lastError) {
     // Surface the underlying failure instead of silently showing "(无地址信息)"
     address = `(地址获取失败 — ${lastError})`;
+    // v3.13.14: 同时给出显式失败标志。
+    // 此前消费方靠 startsWith('(地址获取失败') 嗅探这个文案来决定
+    // 「不要把错误提示抄进地址输入框」—— 文案一改就静默失效
+    // （错误提示会被当成真实地址写进表单，且不报错）。
+    // 标志与文案解耦：文案继续给用户看，判定改走布尔字段。
+    addrFailed = true;
   }
 
-  return { name: mapFieldToStr(name), address: mapFieldToStr(address) };
+  // addrFailed 仅在上面的逆地理失败分支为 true。
+  // 注意：逆地理成功但查不到地址时 address 为空串（消费方 reverseGeocode
+  // 会在显示层补「(无地址信息)」，那是展示兜底、不是失败），故此时为 false。
+  return { name: mapFieldToStr(name), address: mapFieldToStr(address), addrFailed: addrFailed };
 }
 
 
@@ -448,7 +459,11 @@ async function reverseGeocode(lat, lon, fallbackName, fallbackAddress) {
   mapMarker = L.marker([lat, lon]).addTo(mapInstance);
   mapInstance.setView([lat, lon], 15);
   const r = await resolveReverseGeo(lat, lon, fallbackName, fallbackAddress);
-  mapSelectedLocation = { name: r.name, lat, lon, address: r.address };
+  // v3.13.14: 一并带下 addrFailed —— confirmMapSelection 会把 address 写进
+  // 「详细地址」输入框，若不区分「错误提示」与「真实地址」，逆地理失败时
+  // 用户会看到 "(地址获取失败 — ...)" 被当成地址存进拍摄地点。
+  // 地图面板本身仍显示 r.address（错误反馈必须对用户可见，此处不改）。
+  mapSelectedLocation = { name: r.name, lat, lon, address: r.address, addrFailed: r.addrFailed };
   document.getElementById('mapSelectedName').textContent = r.name;
   document.getElementById('mapSelectedCoords').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
   document.getElementById('mapSelectedAddress').textContent = r.address || '(无地址信息)';
@@ -517,7 +532,11 @@ function confirmMapSelection() {
     alert('请先在地图上选择一个位置');
     return;
   }
-  const addr = mapFieldToStr(mapSelectedLocation.address);
+  const addrRaw = mapFieldToStr(mapSelectedLocation.address);
+  // v3.13.14: 逆地理失败时 address 是「(地址获取失败 — ...)」错误提示，
+  // 不是地址 —— 写进「详细地址」输入框会让用户以为那就是拍摄地点。
+  // 地图面板已展示该错误，此处只阻止它流入表单数据。
+  const addr = mapSelectedLocation.addrFailed ? '' : addrRaw;
   // FIX (v3.13.4 场景2): 名称兜底 —— 直接点击地图且逆地理失败/无 POI 时，name 可能
   // 是纯坐标串或空；拍摄地点必须始终有可用内容，此时从地址首段推导。
   let nameVal = mapFieldToStr(mapSelectedLocation.name);
