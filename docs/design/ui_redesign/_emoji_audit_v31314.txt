@@ -1,0 +1,88 @@
+# v3.13.14 emoji 全量审计（权威扫描：HTML 实体解码 + 裸字符）
+# 合计 72 处 / 18 个唯一字形 / 8 个文件
+# 拆分：68 处 UI 渲染点（需替换） + 4 处纯代码注释（保留原字形）
+#
+# ACTION 列：REPLACE = 换 SVG；KEEP_COMMENT = 代码注释，保留原字形不动
+# PRIORITY 列：PHASE_FIRST = 必须先做完 ActiveJob.phase 改造再替换
+#
+# file	line	codepoint	ICO	action	priority	source
+static/index.html	136	U+2795	plus	REPLACE	-	<button class="btn btn-primary" onclick="addSelectedToTasks()">&#10133; 将选中添加到任务</butt
+static/index.html	673	U+2715	x	REPLACE	-	<button class="btn btn-sm" onclick="clearMergeList()">&#10005; 清空</button>
+static/index.html	821	U+2795	plus	REPLACE	-	<button class="btn btn-sm" onclick="addMetaFileManual()">&#10133; 添加文件</button>
+static/index.html	992	U+2715	x	REPLACE	-	<button class="btn btn-sm" onclick="clearReport()">&#10005; 清除</button>
+static/index.html	1078	U+1F4C4	file	REPLACE	-	<button onclick="exportEncodeLog()" id="exportLogBtn" style="font-size:0.7rem;padding:
+static/index.html	1131	U+2715	x	REPLACE	-	<button class="btn btn-sm" onclick="closeMapPicker()">&#10005;</button>
+static/index.html	1156	U+2715	x	REPLACE	-	<button class="btn btn-sm" onclick="closeSettings()">&#10005;</button>
+static/index.html	1203	U+2715	x	REPLACE	-	<button class="btn btn-sm" onclick="closeAbout()">&#10005;</button>
+static/index.html	1216	U+270E	edit	REPLACE	-	<h3 id="metaEditTitle">&#9998; 编辑元数据设置</h3>
+static/index.html	1217	U+2715	x	REPLACE	-	<button class="btn btn-sm" onclick="closeMetaEditModal()">&#10005;</button>
+static/js/10-ui.js	62	U+1F3AC	film	REPLACE	-	if (startBtn) startBtn.textContent = mode === 'vr3d' ? '🎬 开始合成' : '🚀 开始转换';
+static/js/10-ui.js	62	U+1F680	play	REPLACE	-	if (startBtn) startBtn.textContent = mode === 'vr3d' ? '🎬 开始合成' : '🚀 开始转换';
+static/js/10-ui.js	78	U+26A0	alert	KEEP_COMMENT	-	// ⚠️ 折叠实现必须依赖 CSS 的 display:none（`.param-group.collapsed .param-group-body`），
+static/js/10-ui.js	481	U+26A0	alert	KEEP_COMMENT	-	// ⚠️ 决策说明：14 处既有输入框的 id 仍保留在 index.html 的**静态标记**中，
+static/js/30-params.js	24	U+26A0	alert	REPLACE	-	let warnHtml = '<span style="color:var(--warning);">&#9888; ' + esc(hint);
+static/js/30-params.js	169	U+1F4C5	calendar	REPLACE	-	container.innerHTML = `<div class="date-preview">&#128197; 从文件名提取日期: <strong>${data.da
+static/js/30-params.js	171	U+26A0	alert	REPLACE	-	container.innerHTML = `<div class="date-preview no-date">&#9888; 文件名中未找到日期信息</div>`;
+static/js/40-files.js	306	U+1F4C5	calendar	REPLACE	-	const dateInName = c.date_in_name ? `<span style="color:var(--success);">&#128197; ${c
+static/js/40-files.js	370	U+1F4C5	calendar	REPLACE	-	const dateInName = t.date_in_name ? `<span style="color:var(--success);">&#128197; ${t
+static/js/40-files.js	372	U+1F500	shuffle	REPLACE	-	const mergeIcon = t.is_merge ? '🔀 ' : '';
+static/js/40-files.js	385	U+2715	x	REPLACE	-	<td><button class="btn btn-sm btn-danger" data-action="remove-batch-item" data-idx="${
+static/js/40-files.js	631	U+1F500	shuffle	REPLACE	-	const displayName = `🔀 合并 ${inputNames.length} 个文件`;
+static/js/40-files.js	701	U+2715	x	REPLACE	-	<button class="btn btn-sm btn-danger" data-action="remove-merge-item" data-idx="${i}" 
+static/js/50-meta.js	54	U+26A0	alert	REPLACE	-	dateMaster:      { p: 'p_date_from_filename', m: 'm_apply_date',         me: 'me_apply
+static/js/50-meta.js	55	U+26A0	alert	REPLACE	-	dateFromName:    { p: 'p_date_from_filename', m: 'm_date_from_filename',  me: 'me_date
+static/js/50-meta.js	67	U+26A0	alert	KEEP_COMMENT	-	// 子区容器 id 映射。⚠ 三套用了三种命名法，无法用 prefix+固定后缀 推导，必须显式列出：
+static/js/50-meta.js	164	U+26A0	alert	KEEP_COMMENT	-	// ⚠ 不适用于 p_ 球面容器：它由 10-ui.js 的 toggleSphericalOptions() 以内联
+static/js/50-meta.js	277	U+1F4C5	calendar	REPLACE	-	container.innerHTML = `<div class="date-preview">&#128197; 从文件名提取: <strong>${data.date
+static/js/50-meta.js	279	U+26A0	alert	REPLACE	-	container.innerHTML = `<div class="date-preview no-date">&#9888; 文件名中未找到日期</div>`;
+static/js/50-meta.js	351	U+2713	check	REPLACE	-	statusHtml = `<span style="color:var(--success)">&#10003; 完成${f.duration ? ` (${f.dura
+static/js/50-meta.js	353	U+2717	x	REPLACE	-	statusHtml = `<span style="color:var(--error)" title="${esc(f.statusMsg || '')}">&#100
+static/js/50-meta.js	366	U+1F310	globe	REPLACE	-	taskBadges.push(`<span class="meta-badge meta-badge-spherical" title="全景元数据 ${pano}° $
+static/js/50-meta.js	371	U+1F4C5	calendar	REPLACE	-	taskBadges.push(`<span class="meta-badge meta-badge-date" title="写入日期">&#128197; ${esc
+static/js/50-meta.js	380	U+1F4CD	pin	REPLACE	-	taskBadges.push(`<span class="meta-badge meta-badge-gps" title="GPS ${esc(s.location_n
+static/js/50-meta.js	395	U+270E	edit	REPLACE	-	<button class="btn btn-sm" data-action="edit-meta-file-settings" data-idx="${i}" title
+static/js/50-meta.js	396	U+2715	x	REPLACE	-	<button class="btn btn-sm btn-danger" data-action="remove-meta-file" data-idx="${i}" t
+static/js/50-meta.js	472	U+1F4CD	pin	REPLACE	-	`<button class="si-btn" data-action="reuse-source-gps" data-target="me" ${(!pd.has_gps
+static/js/50-meta.js	473	U+1F4C5	calendar	REPLACE	-	`<button class="si-btn" data-action="reuse-source-time" data-target="me" ${(!pd.has_ti
+static/js/50-meta.js	561	U+1F4CD	pin	REPLACE	-	html += `<button class="si-btn" data-action="reuse-source-gps" data-target="${esc(targ
+static/js/50-meta.js	562	U+1F4C5	calendar	REPLACE	-	html += `<button class="si-btn" data-action="reuse-source-time" data-target="${esc(tar
+static/js/60-jobs.js	21	U+26A0	alert	REPLACE	-	if (resultDiv) resultDiv.innerHTML = `<span style="color:var(--danger)">⚠ ${esc(data.e
+static/js/60-jobs.js	29	U+2705	checkCircle	REPLACE	-	html += `<div style="color:var(--success);margin-top:4px;">✅ 左右眼视频对齐良好</div>`;
+static/js/60-jobs.js	31	U+26A0	alert	REPLACE	-	html += `<div style="color:var(--warning);margin-top:4px;">⚠ ${esc((data.warnings || [
+static/js/60-jobs.js	99	U+1F4E6	package	REPLACE	-	infoEl.innerHTML = `<span style="color:var(--accent);">📦 检测到配对文件: ${esc(data.paired.sp
+static/js/60-jobs.js	412	U+1F517	link	REPLACE	PHASE_FIRST	let mergeText = '🔗 合并预处理中';
+static/js/60-jobs.js	426	U+1F517	link	REPLACE	PHASE_FIRST	? `🔗 合并 ${fi + 1}/${totalFiles}: ${fn}`
+static/js/60-jobs.js	427	U+1F517	link	REPLACE	PHASE_FIRST	: '🔗 合并中...');
+static/js/60-jobs.js	433	U+1F517	link	REPLACE	PHASE_FIRST	if (lbl && data.status === 'running' && !isPaused && lbl.textContent.startsWith('🔗')) 
+static/js/60-jobs.js	550	U+2705	checkCircle	REPLACE	-	const completedLabel = data.status === 'completed' ? '&#9989; 全部完成'
+static/js/60-jobs.js	551	U+274C	xCircle	REPLACE	-	: data.status === 'failed' ? '&#10060; 有失败项'
+static/js/60-jobs.js	867	U+2713	check	REPLACE	-	html = '<span class="status-dot status-done"></span> &#10003;';
+static/js/60-jobs.js	875	U+2713	check	REPLACE	-	html = '<span class="status-dot status-done"></span> &#10003;';
+static/js/70-report.js	164	U+2717	x	REPLACE	-	if (!m.has_moov) return '<span class="meta-badge moov-badge-missing">moov &#10007; 缺失<
+static/js/70-report.js	165	U+2713	check	REPLACE	-	if (m.moov_position === 'front') return '<span class="meta-badge moov-badge-front">moo
+static/js/70-report.js	166	U+2713	check	REPLACE	-	return '<span class="meta-badge moov-badge-end">moov &#10003; 尾部</span>';
+static/js/70-report.js	222	U+2715	x	REPLACE	-	'<button class="btn btn-sm" type="button" data-action="report-filter-remove" data-row=
+static/js/70-report.js	450	U+26A0	alert	REPLACE	-	<span style="color:var(--error);">&#9888; 读取失败</span>
+static/js/80-codec.js	50	U+2717	x	REPLACE	-	resultEl.innerHTML = '<div style="color:var(--error);font-size:0.82rem;">&#10007; ' + 
+static/js/80-codec.js	54	U+2713	check	REPLACE	-	html += '<div style="color:var(--success);font-weight:600;">&#10003; ' + esc(data.vers
+static/js/80-codec.js	65	U+2713	check	REPLACE	-	const icon = avail ? '&#10003;' : '&#10007;';
+static/js/80-codec.js	65	U+2717	x	REPLACE	-	const icon = avail ? '&#10003;' : '&#10007;';
+static/js/80-codec.js	77	U+2717	x	REPLACE	-	resultEl.innerHTML = '<div style="color:var(--error);font-size:0.82rem;">&#10007; 测试失败
+static/js/80-codec.js	112	U+2713	check	REPLACE	-	const icon = avail ? '&#10003;' : '&#10007;';
+static/js/80-codec.js	112	U+2717	x	REPLACE	-	const icon = avail ? '&#10003;' : '&#10007;';
+static/js/80-codec.js	155	U+1F4C4	file	REPLACE	-	html += `<div style="margin-top:6px;"><button data-action="export-diagnostic-report" s
+static/js/80-codec.js	183	U+2713	check	REPLACE	-	html += `<div style="margin-bottom:4px;"><strong>结果:</strong> ${d.success ? '<span sty
+static/js/80-codec.js	183	U+2717	x	REPLACE	-	html += `<div style="margin-bottom:4px;"><strong>结果:</strong> ${d.success ? '<span sty
+static/js/80-codec.js	198	U+2713	check	REPLACE	-	const icon = found ? '&#10003;' : '&#10007;';
+static/js/80-codec.js	198	U+2717	x	REPLACE	-	const icon = found ? '&#10003;' : '&#10007;';
+static/js/80-codec.js	217	U+1F4C4	file	REPLACE	-	html += `<button data-action="export-diagnostic-report" style="font-size:0.72rem;paddi
+static/js/80-codec.js	218	U+1F4CB	clipboard	REPLACE	-	html += `<button data-action="copy-error-info" data-encoder="${esc(encoder)}" style="f
+static/js/80-codec.js	309	U+1F4C4	file	REPLACE	-	if (btn) { btn.disabled = false; btn.textContent = '📄 导出日志'; }
+#
+# 汇总：REPLACE 68 处 / KEEP_COMMENT 4 处 / 其中 PHASE_FIRST 4 处
+#
+# ⚠ 实施顺序（team-lead 裁决）：
+#   1. 先做 ActiveJob.phase 改造（60-jobs.js:433 的 startsWith 去 emoji 化）
+#   2. 单独验证合并->编码阶段切换正常（此时 emoji 尚未替换，可区分责任）
+#   3. 再做 68 处 SVG 替换
+#   若顺序颠倒，"标签卡住"将无法区分是 emoji 引入还是原本就有。
