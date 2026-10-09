@@ -182,7 +182,11 @@ async function startConversion() {
   const data = await r.json();
   if (data.error) { alert(data.error); return; }
 
-  if (!beginJob(data.job_id, 'encode')) return;
+  // 初始阶段由「实际提交的 items」判定，而非只看 currentMode：
+  // 批量模式里带 t.is_merge 的合并任务同样会产生 merge 阶段（后端按 items[].inputs 走合并），
+  // 若只判 currentMode==='merge'，这类任务的阶段复位依旧失效。
+  const hasMergeItem = items.some(it => Array.isArray(it.inputs));
+  if (!beginJob(data.job_id, 'encode', hasMergeItem ? 'merge' : 'encode')) return;
   isPaused = false;
   resetJobButtons();
   setText('progressLabel', '转换中...');
@@ -286,6 +290,11 @@ const POLL_INTERVAL_MS = 500;
 const ActiveJob = {
   id: null,
   type: null,     // 'encode' | 'metadata'
+  // v3.13.14：任务内部的阶段。旧实现用「进度标签文案是否以合并链图标开头」反推
+  // 是否处于合并阶段（renderCommonStatus 原第 433 行），文案一改就静默失效，
+  // 且会把标签卡在「合并 N/M」不再复位。改为显式状态字段。
+  // 注：注释刻意不写该图标的字面字符，避免被 P0 emoji 扫描按字面量误报。
+  phase: null,    // null | 'merge' | 'encode'
   timer: null,
 };
 
@@ -301,13 +310,16 @@ function setPrimaryButtonsEnabled(enabled) {
 function isJobRunning() { return !!(ActiveJob.id && ActiveJob.timer); }
 
 // 启动任务后调用；返回 false 表示被拒绝（已有任务进行中）
-function beginJob(id, type) {
+// phase：可选初始阶段。合并任务传 'merge'，其余缺省为 'encode'（第三参兜底），
+// 保证调用方漏传时不会留下 phase=null 导致阶段复位失效。
+function beginJob(id, type, phase) {
   if (isJobRunning()) {
     showToast('已有任务正在运行，请先取消或等待完成后再启动新任务', 'error');
     return false;
   }
   ActiveJob.id = id;
   ActiveJob.type = type;
+  ActiveJob.phase = phase || 'encode';
   jobId = id;
   lastLogCount = 0;                 // 新任务重置增量日志计数器
   setPrimaryButtonsEnabled(false);  // 两个主按钮同时禁用，杜绝并发启动
@@ -322,6 +334,7 @@ function endJob() {
   pollTimer = null;
   ActiveJob.id = null;
   ActiveJob.type = null;
+  ActiveJob.phase = null;
   jobId = null;
   setPrimaryButtonsEnabled(true);
 }
@@ -399,9 +412,11 @@ function renderProgressBars(data) {
 
 function renderCommonStatus(data, nowSec) {
   const ms = data.merge_status;
+  const linkIcon = ico('link', 14);
 
   if (ms && ms.phase === 'merging' && data.status === 'running' && !isPaused) {
     // 合并预处理阶段的文案（合并模式专用，编码/元数据共用同一标签位）
+    ActiveJob.phase = 'merge';
     const fi = ms.current_file_index || 0;
     const fn = ms.current_file_name || '';
     const totalFiles = ms.total_files || 0;
@@ -409,7 +424,7 @@ function renderCommonStatus(data, nowSec) {
     const totalDur = ms.total_duration || 0;
     const totalGb = ms.total_gb || 0;
 
-    let mergeText = '🔗 合并预处理中';
+    let mergeText = '合并预处理中';
     if (totalFiles > 0) mergeText += ` (${fi + 1}/${totalFiles})`;
     if (fn) mergeText += `：${fn}`;
     if (totalDur > 0) {
@@ -421,17 +436,19 @@ function renderCommonStatus(data, nowSec) {
     }
     mergeText += '，完成后开始编码';
 
-    setText('progressLabel', mergeText);
-    setText('currentFileLabel', totalFiles > 0
-      ? `🔗 合并 ${fi + 1}/${totalFiles}: ${fn}`
-      : '🔗 合并中...');
+    setHTML('progressLabel', linkIcon + ' ' + esc(mergeText));
+    setHTML('currentFileLabel', totalFiles > 0
+      ? linkIcon + ` 合并 ${fi + 1}/${totalFiles}: ${esc(fn)}`
+      : linkIcon + ' 合并中...');
   } else if (data.current_input) {
     const fname = data.current_input.split(/[\/\\]/).pop();
     setText('currentFileLabel', `[${data.current_index + 1}/${data.total}] ${fname}`);
-    // 从合并阶段切回编码阶段时，重置进度标签文案
-    const lbl = document.getElementById('progressLabel');
-    if (lbl && data.status === 'running' && !isPaused && lbl.textContent.startsWith('🔗')) {
-      lbl.textContent = ActiveJob.type === 'metadata' ? '应用中...' : '转换中...';
+    // 从合并阶段切回编码阶段时，重置进度标签文案。
+    // v3.13.14：原判据是「进度标签文案是否以合并链图标开头」——用文案反推状态，
+    // 文案一改/被外部覆盖即静默失效（标签永久卡在「合并 N/M」且不报错）。改为读显式状态字段。
+    if (data.status === 'running' && !isPaused && ActiveJob.phase === 'merge') {
+      setText('progressLabel', ActiveJob.type === 'metadata' ? '应用中...' : '转换中...');
+      ActiveJob.phase = 'encode';   // 立即翻转，避免下一轮再次误判
     }
   }
 
