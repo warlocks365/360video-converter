@@ -39,10 +39,10 @@ body {
 }
 
 /* ── Layout ───────────────────────────────────── */
-.app { max-width: 1920px; margin: 0 auto; padding: 20px; }
+.app { max-width: 1920px; margin: 0 auto; padding: 0 20px 20px; }
 .header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 0; margin-bottom: 16px; border-bottom: 2px solid var(--border);
+  padding: 20px 0 16px; margin-bottom: 16px; border-bottom: 2px solid var(--border);
 }
 .header h1 { font-size: 1.5rem; font-weight: 700; }
 .header h1 span { color: var(--primary); }
@@ -56,7 +56,10 @@ body {
    见下方「左栏侧栏适配」一节——光给宽度不够，列数必须同步降级。 */
 .workspace { display: grid; grid-template-columns: minmax(360px, 400px) minmax(0, 1fr) minmax(240px, 270px); gap: 16px; align-items: start; }
 .ws-col { min-width: 0; }
-.ws-col-sticky { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-gutter: stable; }
+/* v3.13.15: top 由 12px 改为让开吸顶标签栏。
+   实测标签栏高 ≈90px（深色胶囊：8+8 内边距 + 胶囊 73.8），此处取 100px 留 10px 呼吸；
+   max-height 同时扣除顶部标签栏与底部吸底动作栏，避免右栏内容被遮挡或伸进动作栏。 */
+.ws-col-sticky { position: sticky; top: 100px; max-height: calc(100vh - 190px); overflow-y: auto; scrollbar-gutter: stable; }
 
 /* ── 左栏「参数配置」的侧栏适配 ──────────────────────
    编码参数面板原按约 1160px 全宽设计：内含 10 处 .grid-4（四列字段）与 2 处 .grid-2，
@@ -125,6 +128,15 @@ body {
 }
 
 /* ── Mode Tabs ────────────────────────────────── */
+.mode-tabs-bar {
+  /* v3.13.15: 主功能模块切换标签吸顶冻结 —— 外层承载 sticky，
+     不透明底 + 底部分隔线，内容滚动时不从标签缝隙透出。
+     z-index 20：高于内容与表头(sticky z-index 1)，低于弹窗(100)/下拉(200)。 */
+  position: sticky; top: 0; z-index: 20;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 0;
+}
 .mode-tabs { display: flex; gap: 4px; margin-bottom: 16px; }
 .mode-tab {
   flex: 1; padding: 12px 20px; text-align: center;
