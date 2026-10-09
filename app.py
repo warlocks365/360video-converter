@@ -5064,6 +5064,76 @@ def probe_source():
         return jsonify({'error': str(e)}), 500
 
 
+# ── 文件系统时间读取（只读）────────────────────────────────────
+# 与 set_file_dates（app.py:509）严格分工：
+#   set_file_dates = 写路径，Windows 需 ctypes CreateFileW + SetFileTime
+#   本路由        = 读路径，一次 os.stat 即可，绝不复用 ctypes 句柄管理
+# 同类先例见 faststart 重排处（本文件 :2930 调用 relocate_moov_front）：
+# 读用 os.stat(...).st_ctime/st_mtime，只在写的时候才调 set_file_dates（:2936）。
+@app.route('/api/file_fs_time')
+def file_fs_time():
+    """Read a file's filesystem timestamps (creation + modification).
+
+    Backs the "browse..." button next to every manual-date input: the user
+    picks a reference file and its **filesystem** creation time is filled into
+    the date box. Deliberately does NOT read the video `creation_time` metadata
+    tag -- that is /api/probe-source's job, and it spawns an ffprobe subprocess
+    (up to 30s) where a single stat() suffices.
+
+    Returns::
+        {
+          path: str,             # echo of the resolved path
+          ctime: str,            # local naive 'YYYY-MM-DDTHH:MM:SS' (NO 'Z')
+          ctime_ts: float,       # raw Unix timestamp (for debug/re-processing)
+          mtime: str,            # local naive, same format
+          source: 'filesystem',  # constant; distinguishes from metadata tags
+          is_creation_time: bool # False on POSIX, where st_ctime is inode ctime
+        }
+
+    Timezone contract (load-bearing):
+        `ctime`/`mtime` are **local naive** strings, formatted with the same
+        '%Y-%m-%dT%H:%M:%S' pattern used elsewhere in this file (see
+        extract_date_from_filename and apply_metadata_one). The frontend feeds
+        them straight into a `manual_date` box, which the metadata writer parses
+        via datetime.fromisoformat() and then treats as **local** wall-clock.
+        Emitting a 'Z' suffix or an aware datetime here would reintroduce the
+        +/-8h skew that v3.13.7 fixed (see utcToLocalNaive in 50-meta.js).
+        => do NOT add .astimezone() and do NOT append 'Z' here.
+
+    Errors: 400 missing path / path is a directory, 404 not found, 500 stat failed.
+    """
+    raw_path = (request.args.get('path') or '').strip()
+    if not raw_path:
+        return jsonify({'error': '缺少 path 参数'}), 400
+
+    path = resolve_real_path(raw_path)
+    if not os.path.exists(path):
+        return jsonify({'error': '文件不存在'}), 404
+    if not os.path.isfile(path):
+        return jsonify({'error': '路径是目录，不是文件'}), 400
+
+    try:
+        st = os.stat(path)
+    except OSError as e:
+        return jsonify({'error': f'读取文件时间失败: {e}'}), 500
+
+    # Naive local wall-clock. Matches the manual_date input contract exactly.
+    ctime = datetime.fromtimestamp(st.st_ctime).strftime('%Y-%m-%dT%H:%M:%S')
+    mtime = datetime.fromtimestamp(st.st_mtime).strftime('%Y-%m-%dT%H:%M:%S')
+
+    return jsonify({
+        'path': path,
+        'ctime': ctime,
+        'ctime_ts': st.st_ctime,
+        'mtime': mtime,
+        'source': 'filesystem',
+        # On Windows CPython maps st_ctime to ftCreationTime, so it really is the
+        # creation time. On POSIX it is inode-change time -- say so honestly
+        # rather than presenting it as a creation time.
+        'is_creation_time': os.name == 'nt',
+    })
+
+
 @app.route('/api/probe_metadata')
 def probe_metadata():
     """Probe a video file for ALL existing metadata: spherical, date, GPS.
