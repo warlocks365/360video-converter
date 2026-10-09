@@ -101,6 +101,28 @@ body {
   .ws-col-right .sysmon-grid { grid-template-columns: repeat(5, 1fr); }
 }
 
+/* ── 文本可选区（v3.13.16）─────────────────────────────
+   问题：报告等只读内容区的 user-select 计算值为 none（Blink 按继承语义级联），
+   实测鼠标拖选 rangeCount=0，报告里的元数据无法复制。
+   定位：DevTools CSS.getMatchedStylesForNode 显示存在一条**后加载样式表**里的
+   `body { user-select: none }`（非 app.css、非 leaflet.css——leaflet 的规则都
+   有作用域限定），它按加载顺序压过 app.css。属第三方全局重置。
+   处理：用 !important 显式开启全应用文本选择（覆盖第三方重置的正规用法），
+   再用同等 !important 把交互控件排除在外——拖过按钮/页签不产生选区，
+   避免误操作；只读内容（报告/日志/监控/路径/日期等）一律可自由拖选复制。 */
+body, .app, .app * {
+  user-select: text !important; -webkit-user-select: text !important;
+}
+.btn, .btn-sm, .btn-lg, .mode-tab, .toggle-switch, .toggle-slider,
+.check, .check-group, .dropdown-item, .report-item-select,
+.tip-icon, .progress-label, .badge, .metaq-chip, .meta-badge {
+  user-select: none !important; -webkit-user-select: none !important;
+}
+/* 标签类文字不参与拖选（避免选中"时长"这类与值无关的噪声），但字段值可选 */
+.field-label, .report-row .label, .sysmon-cell .sm-label, .toggle-label strong {
+  user-select: none !important; -webkit-user-select: none !important;
+}
+
 /* ── Cards ────────────────────────────────────── */
 .card {
   background: var(--surface); border: 1px solid var(--border);
