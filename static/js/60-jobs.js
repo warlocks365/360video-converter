@@ -309,6 +309,11 @@ function setPrimaryButtonsEnabled(enabled) {
 
 function isJobRunning() { return !!(ActiveJob.id && ActiveJob.timer); }
 
+// 「已暂停」标签是否由本模块写入。
+// 用于恢复运行时精确撤除该标签 —— 靠这个显式标志而非读展示文案判断，
+// 既避免在普通轮询里误覆盖阶段文案，也避免重新引入「读文案反推状态」的缺陷。
+let _pausedLabelShown = false;
+
 // 启动任务后调用；返回 false 表示被拒绝（已有任务进行中）
 // phase：可选初始阶段。合并任务传 'merge'，其余缺省为 'encode'（第三参兜底），
 // 保证调用方漏传时不会留下 phase=null 导致阶段复位失效。
@@ -320,6 +325,7 @@ function beginJob(id, type, phase) {
   ActiveJob.id = id;
   ActiveJob.type = type;
   ActiveJob.phase = phase || 'encode';
+  _pausedLabelShown = false;
   jobId = id;
   lastLogCount = 0;                 // 新任务重置增量日志计数器
   setPrimaryButtonsEnabled(false);  // 两个主按钮同时禁用，杜绝并发启动
@@ -335,6 +341,7 @@ function endJob() {
   ActiveJob.id = null;
   ActiveJob.type = null;
   ActiveJob.phase = null;
+  _pausedLabelShown = false;
   jobId = null;
   setPrimaryButtonsEnabled(true);
 }
@@ -454,9 +461,29 @@ function renderCommonStatus(data, nowSec) {
 
   // 暂停态以服务端为准
   if (data.paused !== undefined) {
+    const wasPaused = isPaused;
     isPaused = data.paused;
     updatePauseButtonUI();
-    if (isPaused && data.status === 'running') setText('progressLabel', '⏸ 已暂停');
+    if (data.status === 'running') {
+      if (isPaused) {
+        setText('progressLabel', '⏸ 已暂停');
+        _pausedLabelShown = true;
+      } else if (wasPaused && _pausedLabelShown) {
+        // 恢复运行：撤掉暂停标签，露出当前阶段文案。
+        // 既存缺陷（v3.13.14 一并修）：旧实现只在 isPaused 为真时写标签、从不清除，
+        // 于是一旦暂停，「已暂停」就永久留在屏幕上（即使任务继续跑完）。
+        //
+        // 判据全部取自显式状态，绝不读展示文案反推 —— 那正是本版刚修掉的
+        // 「用文案是否以某图标开头来判断阶段」那类缺陷。
+        // 用 _pausedLabelShown 标记「这次暂停标签确实是我们写的」，
+        // 避免在从未暂停过的普通轮询里误覆盖阶段文案。
+        _pausedLabelShown = false;
+        // 仍在合并阶段时不在此覆写：本轮开头的合并分支已写过带进度/预计的完整文案
+        if (!(ActiveJob.phase === 'merge' && data.merge_status)) {
+          setText('progressLabel', ActiveJob.type === 'metadata' ? '应用中...' : '转换中...');
+        }
+      }
+    }
   }
 
   appendLogLines(data.log || []);

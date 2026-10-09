@@ -144,13 +144,26 @@ const emojiRe = /[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
   render({ status: 'running', paused: true, merge_status: null, current_input: 'D:\\v\\a.mp4', current_index: 0, total: 3, items: [], log: [] });
   check('⑥暂停时进度标签显示「已暂停」（暂停态覆盖阶段文案）',
     lbl().includes('已暂停'), `"${lbl()}"`);
-  // 恢复运行后不得卡在合并文案 —— 这是本次 phase 改造保证的不变量。
-  // 注：「已暂停」标签本身不会被本函数清掉，属**既存缺陷**（已比对 a195db6：
-  // 旧版 current_input 分支同样带 !isPaused 守卫、暂停块同样在末尾且只在
-  // isPaused 为真时写入，三段结构完全一致），非本次引入，故不在此断言。
+
+  // 恢复运行 → 「已暂停」必须被撤除（team-lead 要求的断言；既存缺陷，本次修）
+  ev('isPaused = false;');
   render({ status: 'running', paused: false, merge_status: null, current_input: 'D:\\v\\a.mp4', current_index: 0, total: 3, items: [], log: [] });
-  check('⑥恢复运行后标签不再是合并文案（phase 改造保证的核心不变量）',
-    !lbl().includes('合并'), `"${lbl()}"`);
+  check('⑥恢复运行后 progressLabel 不再包含「已暂停」（暂停标签被撤除）',
+    lbl().indexOf('已暂停') < 0, `"${lbl()}"`);
+  check('⑥恢复运行后露出编码阶段文案「转换中...」',
+    lbl() === '转换中...', `"${lbl()}"`);
+
+  // 从未暂停过的普通轮询不得被误覆盖：直接给 running + paused=false，
+  // 标签应保留本轮合并分支写的完整文案，而不是被「转换中...」冲掉。
+  reset();
+  ev("beginJob('j8','encode','merge')");
+  render({ status: 'running', paused: false, merge_status: { phase: 'merging', total_files: 4, current_file_name: 'z.mp4', elapsed_time: 12, total_duration: 40, total_gb: 0 }, items: [], log: [] });
+  // 注意：两轮之间 elapsed_time 变了（8→12），合并文案本就应随之更新，
+  // 故不能断言文案逐字不变；真正的不变量是「仍是完整的合并进度文案，
+  // 未被暂停块误覆盖成『转换中...』」。
+  check('⑥未暂停过的普通轮询不被覆盖（合并进度文案保留，未被误写成转换中）',
+    lbl().includes('合并') && lbl().includes('预计还需') && lbl() !== '转换中...',
+    `"${lbl()}"`);
   reset();
 
   // ══ ⑦ metadata 任务用「应用中...」而非「转换中...」═════════
