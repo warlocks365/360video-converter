@@ -199,7 +199,23 @@ function closeSettings() {
 function toggleAboutMenu(e) {
   e.stopPropagation();
   const m = document.getElementById('aboutMenu');
-  if (m) m.classList.toggle('active');
+  if (!m) return;
+  const opening = !m.classList.contains('active');
+  m.classList.toggle('active');
+  // v3.13.17 溢出兜底：若按当前定位基准展开后整体落在视口下缘之外，改为向上弹出。
+  // 起因是下拉原本依赖 .dropdown 作为绝对定位基准，而该包裹在运行态可能缺失，
+  // 导致包含块退到 body、top 按视口高计算 → 菜单位于屏幕外点不到。
+  // CSS 侧已把基准上移到 .header-actions，这里再兜一层，保证任何情况下都可点。
+  if (opening) {
+    const r = m.getBoundingClientRect();
+    if (r.bottom > window.innerHeight && r.top > window.innerHeight / 2) {
+      m.style.top = 'auto';
+      m.style.bottom = 'calc(100% + 6px)';
+    }
+  } else {
+    m.style.top = '';
+    m.style.bottom = '';
+  }
   if (!window.__aboutOutsideBound) {
     window.__aboutOutsideBound = true;
     document.addEventListener('click', function() {

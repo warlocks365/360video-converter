@@ -46,7 +46,7 @@ body {
 }
 .header h1 { font-size: 1.5rem; font-weight: 700; }
 .header h1 span { color: var(--primary); }
-.header-actions { display: flex; gap: 8px; align-items: center; }
+.header-actions { display: flex; gap: 8px; align-items: center; position: relative; }
 
 /* ── Workspace (3-column) ─────────────────────── */
 /* 两侧栏取 minmax，中间用 minmax(0,1fr) 吸收剩余宽度；0 下限是为了让内部
@@ -447,6 +447,8 @@ tr:hover td { background: var(--surface-hover); }
   border: 1px solid var(--border); border-radius: 10px;
   box-shadow: var(--shadow-lg); padding: 6px; z-index: 200;
   display: none;
+  /* v3.13.17 兜底：下拉始终留在视口内（极端小窗口/长内容时不溢出屏幕） */
+  max-height: calc(100vh - 96px); overflow-y: auto;
 }
 .dropdown-menu.active { display: block; }
 .dropdown-item {
