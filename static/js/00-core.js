@@ -161,6 +161,13 @@ const ICON_PATHS = {
   merge:     '<path d="M6 3v6a6 6 0 0 0 6 6h6"/><polyline points="15 12 18 15 15 18"/><path d="M18 9V3"/><path d="M6 21v-6"/>',
   // 垃圾桶：移除行（批量表/合并表/报告筛选行共用）
   trash:     '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  // ── v3.13.18 拍摄位置 GPS 增强 ──
+  // 地图选点：与既有 openMapPicker 的 pin 图标同源，此处为「带靶心」的选点语义
+  geoPick:   '<circle cx="12" cy="10" r="3"/><path d="M19 10c0 7-7 13-7 13s-7-6-7-13a7 7 0 0 1 14 0z"/><circle cx="19" cy="5" r="2"/>',
+  // 复制到剪贴板：两个重叠矩形
+  copy:      '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  // 从剪贴板粘贴：剪贴板 + 向下箭头
+  paste:     '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M12 11v6"/><path d="M9 14h6"/>',
 };
 // 产出图标 HTML。size 只允许 14 / 20 两档（设计文档 7.1：不提供第三档）。
 function ico(name, size) {
@@ -288,8 +295,18 @@ const DELEGATED_ACTIONS = {
   // v3.13.14 元数据队列：加入列队 / 显式重排队 / 一次性忽略队列按界面跑 / 输出位置三态
   'meta-enqueue':               () => addToMetaBatchList(),
   'reset-meta-item':            el => resetMetaItem(Number(el.dataset.idx)),
-  'meta-force-form-run':        () => forceFormRunOnce(),
+  // v3.13.18 列队执行独立按钮：与 #metaApplyBtn（界面单文件）职责相反，
+  // 两者各调一条执行路径，不再共用一个按队列状态切换文案的按钮。
+  'meta-batch-run':            () => startMetadataBatchRun(),
+  // v3.13.18 设置同步器：把界面设置写入所有勾选列队项，不启动转换。
+  'meta-force-form-run':        () => applyFormSettingsToQueue(),
   'meta-out-mode':              el => applyMetaOutModeUI(el.value),
+  // v3.13.18 拍摄位置 GPS：地图选点 / 一键复制 / 一键粘贴。
+  // 三前缀（p_/m_/me_）共用同一套动作名与同一套 JSON 字段命名，
+  // 目标前缀由 data-geo-prefix 决定 —— 一个动作一种语义，不按前缀分裂成六条。
+  'geo-map-pick':               el => openGeoMapPicker(el.dataset.geoPrefix),
+  'geo-copy':                   el => copyGeoEntry(el.dataset.geoPrefix),
+  'geo-paste':                  el => pasteGeoEntry(el.dataset.geoPrefix),
   // v3.13.14「读创建时间」：与 14 处「填路径」的 open-path-dialog 是两件事，
   // 故独立成条（ADR-004 D-7）；溯源条上的清除/手动输入按钮也走这一条。
   'browse-date':                el => browseDateFromFile(el.dataset.dateTarget, el.dataset.datePrefix),

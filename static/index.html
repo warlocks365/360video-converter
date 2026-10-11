@@ -611,13 +611,17 @@
           写入拍摄位置标签<span class="tip-icon" data-tip="勾选后可使用地图选取拍摄位置（支持国内外地址搜索），将 GPS 经纬度和地点名称写入视频元数据。也可直接手动填写。">?</span> (GPS 经纬度 + 地点名称)
         </label>
         <div id="locationOptions" class="hidden" style="margin-left:26px;margin-top:8px;">
-          <div class="field">
-            <label class="field-label">拍摄地点<span class="tip-icon" data-tip="点击右侧按钮在地图上选取，或直接手动输入地点名称（如「故宫博物院」「马尔代夫」）。支持国内外地址搜索。">?</span></label>
-            <div class="input-group">
-              <input class="input" id="p_location_name" placeholder="点击右侧按钮在地图选取，或直接输入...">
-              <button class="btn btn-accent" onclick="openMapPicker()"> 选取位置</button>
+<div class="field">
+              <label class="field-label">拍摄地点<span class="tip-icon" data-tip="点击右侧按钮在地图上选取，或直接手动输入地点名称（如「故宫博物院」「马尔代夫」）。支持国内外地址搜索。">?</span></label>
+              <div class="input-group">
+                <input class="input" id="p_location_name" placeholder="点击右侧按钮在地图选取，或直接输入...">
+                <button class="btn btn-accent" data-action="geo-map-pick" data-geo-prefix="p" type="button"> 选取位置</button>
+              </div>
+              <div class="geo-actions">
+                <button class="btn btn-sm" data-action="geo-copy" data-geo-prefix="p" type="button" title="把本处拍摄位置（经纬度/地点/地址）序列化为 JSON 复制到剪贴板"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> 复制</button>
+                <button class="btn btn-sm" data-action="geo-paste" data-geo-prefix="p" type="button" title="从剪贴板读取 JSON 拍摄位置，校验通过后写入本处"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M12 11v6"/><path d="M9 14h6"/></svg> 粘贴</button>
+              </div>
             </div>
-          </div>
           <div class="grid-2">
             <div class="field">
               <label class="field-label">纬度 (Latitude)<span class="tip-icon" data-tip="纬度范围 -90 到 90，正值北纬、负值南纬。北京约 39.9，上海约 31.2。由地图选取自动填充，也可手动输入。">?</span></label>
@@ -848,15 +852,17 @@
       </div>
     </div>
 
-    <!-- 执行范围说明条（v3.13.14）：有待转换项时出现，说明「本次忽略界面设置」。
-         必须放在惰性子树之外，保证满对比度（设计文档 11.2 陷阱 5）。 -->
+    <!-- 执行范围说明条（v3.13.14）：有待转换项时出现，说明列队用各自的设置。
+         必须放在惰性子树之外，保证满对比度（设计文档 11.2 陷阱 5）。
+         v3.13.18：出口按钮由「仍按界面设置执行这一轮」改为设置同步器 ——
+         现在列队执行是独立按钮，不需要「这一轮例外」的中间态了。 -->
     <div id="metaScopeNotice" class="scope-notice hidden" role="status" aria-live="polite">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
         <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
         <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
       </svg>
-      <span class="meta-scope-text">列队有待转换项，本次将忽略上方界面设置。</span>
-      <button type="button" data-action="meta-force-form-run">仍按界面设置执行这一轮</button>
+      <span class="meta-scope-text">列队有待转换项，执行时使用各项自己的设置。</span>
+      <button type="button" data-action="meta-force-form-run">把界面设置应用到勾选项</button>
     </div>
 
     <!-- Feature Toggles -->
@@ -919,7 +925,11 @@
           <label class="field-label">拍摄地点</label>
           <div class="input-group">
             <input class="input" id="m_location_name" placeholder="点击右侧按钮在地图选取，或直接输入...">
-            <button class="btn btn-accent" onclick="openMapPicker('meta')"> 选取位置</button>
+            <button class="btn btn-accent" data-action="geo-map-pick" data-geo-prefix="m" type="button"> 选取位置</button>
+          </div>
+          <div class="geo-actions">
+            <button class="btn btn-sm" data-action="geo-copy" data-geo-prefix="m" type="button" title="把本处拍摄位置（经纬度/地点/地址）序列化为 JSON 复制到剪贴板"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> 复制</button>
+            <button class="btn btn-sm" data-action="geo-paste" data-geo-prefix="m" type="button" title="从剪贴板读取 JSON 拍摄位置，校验通过后写入本处"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M12 11v6"/><path d="M9 14h6"/></svg> 粘贴</button>
           </div>
         </div>
         <div class="grid-2">
@@ -1117,6 +1127,12 @@
         <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
       </svg>
       加入批量列队
+    </button>
+    <button class="btn btn-lg" id="metaBatchRunBtn" data-action="meta-batch-run" type="button" style="white-space:nowrap;display:none" aria-describedby="metaScopeNotice">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        <polygon points="6 3 20 12 6 21 6 3"/>
+      </svg>
+      开始批量列队执行
     </button>
     <button class="btn btn-lg" id="addToBatchBtn" onclick="addToBatchQueue()" style="white-space:nowrap;"> 加入批量队列</button>
     <button class="btn btn-warning" id="pauseBtn" onclick="togglePause()" style="display:none">&#9208; 暂停</button>
@@ -1354,7 +1370,14 @@
             </div>
             <div class="field">
               <label class="field-label" style="font-size:0.75rem;">拍摄地点</label>
-              <input class="input" id="me_location_name" type="text" placeholder="地点名称..." style="font-size:0.8rem;">
+              <div class="input-group">
+                <input class="input" id="me_location_name" type="text" placeholder="地点名称..." style="font-size:0.8rem;">
+                <button class="btn btn-accent" data-action="geo-map-pick" data-geo-prefix="me" type="button" style="font-size:0.8rem;"> 选取位置</button>
+              </div>
+              <div class="geo-actions">
+                <button class="btn btn-sm" data-action="geo-copy" data-geo-prefix="me" type="button" title="把本行拍摄位置（经纬度/地点/地址）序列化为 JSON 复制到剪贴板" style="font-size:0.78rem;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> 复制</button>
+                <button class="btn btn-sm" data-action="geo-paste" data-geo-prefix="me" type="button" title="从剪贴板读取 JSON 拍摄位置，校验通过后写入本行" style="font-size:0.78rem;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M12 11v6"/><path d="M9 14h6"/></svg> 粘贴</button>
+              </div>
             </div>
             <div class="field">
               <label class="field-label" style="font-size:0.75rem;">详细地址</label>

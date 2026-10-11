@@ -736,6 +736,32 @@ function updateSysMon(sm) {
 }
 
 
+// v3.13.18 提交元数据任务的共用尾段。
+// 两条执行路径（界面单文件 / 列队批量）在此汇合，保证请求体形状、
+// 任务句柄接管、进度标签三处永远一致 —— 拆成两份必然漂移。
+// items 为空时直接返回，绝不发出空作业请求（后端会建一个 0 项任务，
+// 用户看到「应用中…」永远不结束）。
+async function submitMetadataItems(items, globalParams) {
+  if (!items || !items.length) return;
+  const r = await fetch('/api/apply_metadata', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({params: globalParams, items})
+  });
+  const data = await r.json();
+  if (data.error) { alert(data.error); return; }
+
+  if (!beginJob(data.job_id, 'metadata')) return;
+  isPaused = false;
+  resetJobButtons();
+  setText('progressLabel', '应用中...');
+}
+
+
+// v3.13.18：本按钮只负责「界面当前单文件」。
+// 列队执行已独立到 #metaBatchRunBtn（startMetadataBatchRun）。
+// 为什么必须拆：一个按钮同时承载两条语义不同的路径时，按钮标签是
+// 分叉路径上唯一始终可见的载体 —— 用户无法从界面分辨本轮跑的是
+// 「列队快照」还是「界面设置」。拆开后两个按钮各司其职，标签即语义。
 async function startMetadataApply() {
   // Build global default params from the toggle card.
   // m_* 部分统一走 collectMetaSettings('m')（与 50-meta.js 的 getDefaultMetaSettings 同源，
@@ -748,81 +774,91 @@ async function startMetadataApply() {
   const outDir = document.getElementById('metaBatchOutDir').value.trim();
   const inp = document.getElementById('metaInput').value.trim();
 
-  // ADR-004 D-3：待执行项 = selected && status !== 'done'，与 checkbox AND 关系。
-  // ⚠ 两段过滤不可合成一次：hasAnyFeature 需要区分「有项但都没开功能」（alert 中止）
-  //   与「无可执行项」（兜底到界面），合成一次会把中止误判成兜底。
+  const queue = metaBatchItems.filter(f => f.selected);
+  if (queue.length > 0) {
+    // 有列队项时必须说清「这一轮跑的不是列队」，否则用户会以为界面设置
+    // 对列队生效（这正是旧设计里最容易被误解的一点）。
+    writeMetaScopeLog('[单文件] 列队有勾选项，本按钮只处理 metaInput；列队请点「开始批量列队执行」', 'warn');
+  } else {
+    writeMetaScopeLog('[单文件] 按界面设置处理 metaInput', 'info');
+  }
+  if (!inp) { alert('请选择视频文件，或将文件加入批量列表'); return; }
+  if (!globalParams.apply_date && !globalParams.apply_location && !globalParams.apply_spherical) {
+    alert('请至少选择一个元数据功能'); return;
+  }
+  const name = inp.split(/[\/\\]/).pop();
+  // 单文件路径不写 _metaProcessingIndices：渲染器据此把后端结果映射回
+  // 队列行，留空即可让 renderMetadataJob / renderJobCompletion 整体跳过，
+  // 避免把单文件结果错记到某个队列行上（静默状态污染）。
+  _metaProcessingIndices = [];
+  await submitMetadataItems(
+    [{input: inp, output: outDir ? `${outDir}\\${name}` : inp}],
+    globalParams
+  );
+}
+
+
+// v3.13.18：只负责列队执行，完全忽略界面设置。
+// 判定规则沿用 ADR-004 D-3：待执行项 = selected && status !== 'done'。
+async function startMetadataBatchRun() {
+  const globalParams = {
+    ...collectMetaSettings('m'),
+    faststart: true,
+  };
+  const outDir = document.getElementById('metaBatchOutDir').value.trim();
+
+  // ⚠ 两段过滤不可合成一次：hasAnyFeature 校验需要区分「有项但都没开功能」
+  //   （alert 中止）与「无可执行项」（toast 后退出），合成一次会把中止
+  //   误判成「无待转换项」，用户点按钮后什么也没发生却不知道原因。
   const queue = metaBatchItems.filter(f => f.selected);
   const runnable = metaBatchItems.filter(f => f.selected && f.status !== 'done');
-  const useFormRun = forceFormRun || runnable.length === 0;
-  // 消费一次性标志：无论本次走哪条分支，都不得残留到下一轮
-  const wasForced = forceFormRun;
-  forceFormRun = false;
 
-  let items = [];
-  if (!useFormRun) {
-    // ── 列队模式：忽略界面设置，按列队顺序（数组下标升序）──
-    let hasAnyFeature = false;
-    _metaProcessingIndices = [];
-    items = [];
-    // 单次 forEach 同时推进映射数组与 items：两者必须同序同长。
-    // 不可用 filter().map() 两次独立遍历 —— 两次遍历之间若有 DOM 事件插入项，
-    // 映射会错位（表现为「第一行显示第二行的结果」）。
-    metaBatchItems.forEach((f, i) => {
-      if (!f.selected || f.status === 'done') return;
-      // 逐项校验功能开关：只统计本次真正要跑的项
-      const itemParams = f.settings || globalParams;
-      if (itemParams.apply_date || itemParams.apply_location || itemParams.apply_spherical) {
-        hasAnyFeature = true;
-      }
-      _metaProcessingIndices.push(i);
-      items.push({
-        input: f.path,
-        output: resolveMetaOutputPath(f, outDir),
-        params: itemParams
-      });
-      // 仅重置本次真正要跑的项 —— 旧实现无差别重置全部 selected 项，
-      // 这正是 done 项被重复重跑的根因（ADR D-4）
-      f.status = 'pending';
-      f.statusMsg = '';
-      f.duration = '';
-    });
-    if (!hasAnyFeature) {
-      alert('选中的文件均未启用任何元数据功能，请至少在一个文件中启用一项');
-      _metaProcessingIndices = [];   // 中止时不要留下悬空映射
-      return;
-    }
-    writeMetaScopeLog(`[列队] 按列队顺序执行 ${items.length} 项（不含已完成项），本次忽略界面设置`, 'info');
-    renderMetaBatchTable();
-  } else {
-    // ── 兜底：界面单文件 ──
-    if (queue.length > 0) {
-      const msg = wasForced
-        ? '[单文件] 用户选择忽略列队，本次按界面设置处理 metaInput'
-        : `[单文件] 列队 ${queue.length} 项已处理完毕，本次按界面设置处理 metaInput`;
-      writeMetaScopeLog(msg, 'warn');
-      if (!wasForced) showToast('列队中无待转换项，已按当前界面设置执行', 'info', 4000);
+  if (runnable.length === 0) {
+    // 三种「无可执行项」成因不同，提示必须能区分，否则用户无法决定下一步
+    if (queue.length === 0) {
+      showToast(metaBatchItems.length > 0
+        ? '请先在列队中勾选要转换的文件'
+        : '列队为空，请先点「加入批量列队」', 'warning', 4000);
     } else {
-      writeMetaScopeLog('[单文件] 列队为空，按界面设置处理 metaInput', 'info');
+      showToast('列队中无待转换项：勾选项均已完成。如需重跑，请在对应行点「重新排队」', 'info', 5000);
     }
-    if (!inp) { alert('请选择视频文件，或将文件加入批量列表'); return; }
-    if (!globalParams.apply_date && !globalParams.apply_location && !globalParams.apply_spherical) {
-      alert('请至少选择一个元数据功能'); return;
-    }
-    const name = inp.split(/[\/\\]/).pop();
-    items = [{input: inp, output: outDir ? `${outDir}\\${name}` : inp}];
+    return;
   }
 
-  const r = await fetch('/api/apply_metadata', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({params: globalParams, items})
+  let hasAnyFeature = false;
+  _metaProcessingIndices = [];
+  const items = [];
+  // 单次 forEach 同时推进映射数组与 items：两者必须同序同长。
+  // 不可用 filter().map() 两次独立遍历 —— 两次遍历之间若有 DOM 事件插入项，
+  // 映射会错位（表现为「第一行显示第二行的结果」）。
+  metaBatchItems.forEach((f, i) => {
+    if (!f.selected || f.status === 'done') return;
+    // 逐项校验功能开关：只统计本次真正要跑的项
+    const itemParams = f.settings || globalParams;
+    if (itemParams.apply_date || itemParams.apply_location || itemParams.apply_spherical) {
+      hasAnyFeature = true;
+    }
+    _metaProcessingIndices.push(i);
+    items.push({
+      input: f.path,
+      output: resolveMetaOutputPath(f, outDir),
+      params: itemParams
+    });
+    // 仅重置本次真正要跑的项 —— 旧实现无差别重置全部 selected 项，
+    // 这正是 done 项被重复重跑的根因（ADR D-4）
+    f.status = 'pending';
+    f.statusMsg = '';
+    f.duration = '';
   });
-  const data = await r.json();
-  if (data.error) { alert(data.error); return; }
-
-  if (!beginJob(data.job_id, 'metadata')) return;
-  isPaused = false;
-  resetJobButtons();
-  setText('progressLabel', '应用中...');
+  if (!hasAnyFeature) {
+    alert('选中的文件均未启用任何元数据功能。可点列表上方说明条里的「把界面设置应用到 N 项」，或逐行编辑设置。');
+    _metaProcessingIndices = [];   // 中止时不要留下悬空映射
+    renderMetaBatchTable();
+    return;
+  }
+  writeMetaScopeLog(`[列队] 按列队顺序执行 ${items.length} 项（不含已完成项），本次忽略界面设置`, 'info');
+  renderMetaBatchTable();
+  await submitMetadataItems(items, globalParams);
 }
 
 // 执行分派写入日志（设计文档 5.3）：让用户事后能分辨某一行是哪一轮跑的。

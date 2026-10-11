@@ -62,6 +62,10 @@ function switchMode(mode) {
   // 必须在 setDisplay 里显隐 —— 否则会在单文件/合并/批量/报告/VR3D 模式漏出，
   // 与转换族自己的 #addToBatchBtn（「加入批量队列」）同屏出现造成同名不同义。
   setDisplay('metaAddQueueBtn', isMetaMode ? '' : 'none');
+  // v3.13.18「开始批量列队执行」：与 #metaApplyBtn 同属元数据族，但职责相反 ——
+  // #metaApplyBtn 只跑界面当前单文件，本按钮只跑列队。两者都必须在 setDisplay 里
+  // 显隐，否则会在单文件/合并/批量/报告/VR3D 模式漏出，与转换族按钮同屏混淆。
+  setDisplay('metaBatchRunBtn', isMetaMode ? '' : 'none');
   // 转换专属控件在元数据 / 报告模式下隐藏
   setDisplay('addToBatchBtn', (mode === 'single' || mode === 'merge') ? '' : 'none');
   setDisplay('testEncodeLabel', (isMetaMode || isReportMode) ? 'none' : '');

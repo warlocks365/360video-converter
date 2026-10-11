@@ -301,8 +301,15 @@ function staticPhase() {
     /if \(!f\.selected \|\| f\.status === 'done'\) return;/.test(jobs), '');
   check('A8.4 输出路径按 outDir.mode 分派（不再统一读全局 outDir）',
     /resolveMetaOutputPath\(f,\s*outDir\)/.test(jobs), '');
-  check('A8.5 一次性覆盖标志 forceFormRun 在 startMetadataApply 内消费并复位',
-    /forceFormRun = false/.test(jobs) && /forceFormRun \|\|/.test(jobs), '');
+  // v3.13.18：forceFormRun 已整体删除（界面单文件与列队执行拆成两个按钮后，
+  // 不再需要「这一轮例外」的中间态）。断言改为「死标志不得复活」——
+  // 若有人日后重新引入同名标志并挂回执行路径，这里会立刻失败。
+  // 只查可执行代码（剥掉注释），否则解释其删除原因的注释会误报。
+  // 注意：不能复用下方 A16 段的 stripComments —— 那是 const 声明，存在 TDZ。
+  const codeOnly = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  check('A8.5 forceFormRun 已彻底移除（两按钮拆分后无「这一轮例外」中间态）',
+    !/forceFormRun/.test(codeOnly(jobs)) && !/forceFormRun/.test(codeOnly(metaJs)),
+    'forceFormRun 仍出现在可执行代码中');
   check('A8.6 列队模式写可追溯日志（[列队] 行）', /\[列队\] 按列队顺序执行/.test(jobs), '');
 
   // ── A7 reset 零副作用（源码层：不得绑定任何执行函数）───────────
@@ -507,6 +514,9 @@ vc.on('error', (...a) => errors.push('console.error: ' + a.map(String).join(' ')
   };
   const toastText = () => { const t = $('toastNotification'); return t ? (t.textContent || '') : ''; };
   const badgeText = () => ($('metaQueueCount') ? ($('metaQueueCount').textContent || '') : '');
+  // v3.13.18：待转换数（= selected && status !== 'done'），供拆分后的按钮文案断言使用。
+  // 口径与 50-meta.js 的 metaQueueStats 完全一致，不另立标准。
+  const pendingCount = () => ev('metaBatchItems.filter(f => f.selected && f.status !== "done").length');
 
   // ══ A1 按钮存在性 / 位置 / 模式显隐 ═══════════════════════════
   check('A1.9 运行时：#metaAddQueueBtn 存在于 DOM', !!$('metaAddQueueBtn'), '');
@@ -621,10 +631,17 @@ vc.on('error', (...a) => errors.push('console.error: ' + a.map(String).join(' ')
   // ══ A6 按钮文案随状态切换 + 惰性化 ═════════════════════════
   $('metaApplyBtn').textContent = '?';
   ev('renderMetaBatchTable();');
-  check('A6.9 有待转换项 → 按钮文案「应用元数据 · 3 项」',
-    $('metaApplyBtn').textContent === '应用元数据 · 3 项', `"${$('metaApplyBtn').textContent}"`);
-  check('A6.10 文案切换伴随 title 说明「忽略界面设置」（唯一始终可见的分叉载体）',
-    ($('metaApplyBtn').title || '').indexOf('上方界面设置本次不生效') >= 0, $('metaApplyBtn').title);
+  check('A6.9 有待转换项 → 「应用元数据」文案恒定（职责已收窄为界面单文件）',
+    $('metaApplyBtn').textContent === '应用元数据（当前文件）', `"${$('metaApplyBtn').textContent}"`);
+  check('A6.10 「应用元数据」title 指向单文件语义并指路列队按钮（标签即语义）',
+    ($('metaApplyBtn').title || '').indexOf('单个文件') >= 0
+    && ($('metaApplyBtn').title || '').indexOf('开始批量列队执行') >= 0, $('metaApplyBtn').title);
+  // v3.13.18：待转换计数与「忽略界面设置」的说明已迁移到 #metaBatchRunBtn。
+  // 这是拆分后信息不该丢失的保证 —— 两个按钮各司其职，但「本次跑什么」仍必须可见。
+  check('A6.10b 有待转换项 → 「开始批量列队执行」显示待转换数并在 title 说明忽略界面设置',
+    $('metaBatchRunBtn').textContent === `开始批量列队执行 · ${pendingCount()} 项`
+    && ($('metaBatchRunBtn').title || '').indexOf('界面设置本次不生效') >= 0,
+    `btn="${$('metaBatchRunBtn').textContent}" title="${$('metaBatchRunBtn').title}"`);
   check('A6.11 有待转换项 → 执行范围说明条出现并列出待转换数',
     !$('metaScopeNotice').classList.contains('hidden') && ($('metaScopeNotice').textContent || '').indexOf('3') >= 0,
     ($('metaScopeNotice').textContent || '').trim().slice(0, 46));
@@ -642,22 +659,33 @@ vc.on('error', (...a) => errors.push('console.error: ' + a.map(String).join(' ')
     inert[0] === true && inert[1] === true, JSON.stringify(inert));
   check('A6.13 说明条在惰性子树之外（满对比度，WCAG 禁用豁免的正确用法）',
     inert[2] === false, '说明条未被惰性化');
-  // 一次性覆盖出口
+  // v3.13.18：出口按钮语义由「本轮忽略列队」改为「设置同步器」——
+  // 把界面设置写入勾选项，且不启动任何转换。
+  const beforeSync = JSON.stringify(ev('metaBatchItems.map(f => f.settings)'));
+  const outDirsBefore = JSON.stringify(ev('metaBatchItems.map(f => f.outDir)'));
+  BACKEND.applied = [];
   click('[data-action="meta-force-form-run"]');
   await wait(40);
-  check('A6.14 点「仍按界面设置执行这一轮」→ 惰性解除 + 文案切界面模式 + 置一次性标志',
-    ev('forceFormRun') === true
-    && $('metaScopeNotice').classList.contains('hidden')     // 说明条必须消失（不再忽略界面）
-    && $('metaApplyBtn').textContent === '按界面设置应用',
-    `force=${ev('forceFormRun')} noticeHidden=${$('metaScopeNotice').classList.contains('hidden')} btn="${$('metaApplyBtn').textContent}"`);
-  check('A6.15 一次性覆盖不改动任何队列项状态（只置标志）',
+  check('A6.14 点「把界面设置应用到勾选项」→ 设置写入各列队项，且未发起任何转换请求',
+    ev('metaBatchItems.every(f => f.settings && typeof f.settings === "object")')
+    && JSON.stringify(ev('metaBatchItems.map(f => f.settings)')) !== beforeSync
+    && BACKEND.applied.length === 0,
+    `applied=${BACKEND.applied.length} toast="${toastText()}"`);
+  check('A6.14b 设置同步器绝不改写各项 outDir（输出位置与标签内容是两件事）',
+    JSON.stringify(ev('metaBatchItems.map(f => f.outDir)')) === outDirsBefore,
+    JSON.stringify(ev('metaBatchItems.map(f => f.outDir)')));
+  check('A6.14c 设置同步成功有 toast 反馈（非静默）',
+    toastText().indexOf('已将界面设置应用到') >= 0, toastText());
+  check('A6.14d 设置同步器不改动任何队列项状态（只改 settings，不隐式重排队）',
     ev('metaBatchItems.filter(f=>f.status==="done").length') === 0, '');
   ev('forceFormRun = false; renderMetaBatchTable();');
 
   // ══ A8 待执行项判定 + 输出分派 ═══════════════════════════════
+  // v3.13.18：列队执行已从 startMetadataApply 迁到 startMetadataBatchRun，
+  // 本组断言改为打新按钮对应的入口 —— 判定语义（ADR D-3/D-4）未变。
   ev('metaBatchItems[1].selected = false;');
   BACKEND.applied = [];
-  await ev('startMetadataApply()');
+  await ev('startMetadataBatchRun()');
   await wait(100);
   check('A8.7 未勾选项不执行（selected=false 的 pending 项照跑会让 checkbox 变装饰）',
     BACKEND.applied.length === 2 && BACKEND.applied.every(i => i.input.indexOf('b.mp4') < 0),
@@ -667,24 +695,35 @@ vc.on('error', (...a) => errors.push('console.error: ' + a.map(String).join(' ')
     JSON.stringify(BACKEND.applied.map(i => i.output)));
   check('A8.9 列队模式忽略界面设置（items 用 per-item settings 快照，非当前界面）',
     BACKEND.applied.every(i => i.params && typeof i.params === 'object') && BACKEND.applied.length === 2, '');
-  check('A8.10 forceFormRun 在 startMetadataApply 内被消费复位（不残留到下一轮）',
-    ev('forceFormRun') === false, `forceFormRun=${ev('forceFormRun')}`);
-
-  // 全 done → 兜底到界面单文件（done 不被重跑 = D-4 核心修复）
-  // 先结束上一轮任务句柄，否则 beginJob 会因 isJobRunning 拒绝新任务（本断言就测不到兜底分支）
+  // v3.13.18：两条路径彻底分离 —— 界面单文件入口内不得再出现列队判定。
+  // 运行时判据：调用 startMetadataApply 后 _metaProcessingIndices 必须为空
+  // （非空即说明它仍在建立「后端项 → 队列行」映射，也就是仍在跑列队）。
   ev('if (isJobRunning()) endJob();');
-  ev('metaBatchItems.forEach(f => { f.status = "done"; }); renderMetaBatchTable();');
-  check('A8.11 队列非空但全部完成 → 按钮文案「按界面设置应用」',
-    $('metaApplyBtn').textContent === '按界面设置应用', `"${$('metaApplyBtn').textContent}"`);
-  ev('metaBatchItems[1].selected = true;');
+  $('metaInput').value = 'D:\\videos\\c.mp4';
   BACKEND.applied = [];
   await ev('startMetadataApply()');
   await wait(100);
-  check('A8.12 全 done 时兜底只处理界面单文件（done 项不被重复处理）',
-    BACKEND.applied.length === 1 && BACKEND.applied[0].input === 'D:\\videos\\c.mp4',
-    JSON.stringify(BACKEND.applied.map(i => i.input)));
-  check('A8.13 兜底前明确告知「无待转换项」（界面必须让用户看见为什么跑的不是队列）',
-    toastText().indexOf('无待转换项') >= 0, toastText());
+  check('A8.10 「应用元数据」只跑界面单文件（不建立队列行映射即不碰列队）',
+    BACKEND.applied.length === 1
+    && BACKEND.applied[0].input === 'D:\\videos\\c.mp4'
+    && ev('_metaProcessingIndices.length') === 0,
+    `n=${BACKEND.applied.length} idx=${ev('_metaProcessingIndices.length')}`);
+
+  // 全 done → 「开始批量列队执行」应拒绝执行（done 不被重跑 = D-4 核心修复）
+  ev('if (isJobRunning()) endJob();');
+  ev('metaBatchItems.forEach(f => { f.status = "done"; }); renderMetaBatchTable();');
+  check('A8.11 队列非空但全部完成 → 列队按钮禁用且 title 说明原因',
+    $('metaBatchRunBtn').disabled === true
+    && ($('metaBatchRunBtn').title || '').indexOf('重新排队') >= 0,
+    `disabled=${$('metaBatchRunBtn').disabled} title="${$('metaBatchRunBtn').title}"`);
+  ev('metaBatchItems[1].selected = true;');
+  BACKEND.applied = [];
+  await ev('startMetadataBatchRun()');
+  await wait(100);
+  check('A8.12 全 done 时列队执行不发起任何请求（done 项不被重复处理）',
+    BACKEND.applied.length === 0, JSON.stringify(BACKEND.applied.map(i => i.input)));
+  check('A8.13 无待转换项时明确告知（含重跑指引，而非静默退出）',
+    toastText().indexOf('无待转换项') >= 0 && toastText().indexOf('重新排队') >= 0, toastText());
 
   // hasAnyFeature 中止 ≠ 无可执行项兜底（D-4 明确要求两段过滤）
   ev(`metaBatchItems = [{path:"D:\\\\videos\\\\z.mp4",name:"z.mp4",size_mb:"",date_in_name:"",
@@ -694,11 +733,13 @@ vc.on('error', (...a) => errors.push('console.error: ' + a.map(String).join(' ')
   $('metaInput').value = 'D:\\videos\\y.mp4';
   w.__lastAlert = undefined;
   BACKEND.applied = [];
-  await ev('startMetadataApply()');
+  await ev('startMetadataBatchRun()');
   await wait(80);
-  check('A8.14 有项但都没开功能 → alert 中止（不得误判成兜底到界面）',
+  check('A8.14 有项但都没开功能 → alert 中止（不得误判成「无待转换项」静默退出）',
     (w.__lastAlert || '').indexOf('均未启用任何元数据功能') >= 0 && BACKEND.applied.length === 0,
     `alert="${w.__lastAlert}" 已发起请求=${BACKEND.applied.length > 0}`);
+  check('A8.14b 中止后不留悬空 _metaProcessingIndices（否则结果会错记到别的行）',
+    ev('_metaProcessingIndices.length') === 0, `len=${ev('_metaProcessingIndices.length')}`);
 
   // ══ A5 编辑弹窗输出位置三态 ═════════════════════════════════
   ev(`metaBatchItems = [
@@ -997,16 +1038,21 @@ vc.on('error', (...a) => errors.push('console.error: ' + a.map(String).join(' ')
     const done = ev('metaBatchItems.filter(f => f.status === "done").length');
     const err = ev('metaBatchItems.filter(f => f.status === "error").length');
     const b = badgeText();
-    const btn = $('metaApplyBtn').textContent;
+    // v3.13.18：计数一致性改为对齐「开始批量列队执行」——
+    // 「应用元数据」文案恒定，不再承载队列计数，故不参与一致性判定。
+    // 零脱节的本意（徽标数字 == 按钮承诺处理的项数）由 batchRun 按钮继续保证。
+    const btn = $('metaBatchRunBtn').textContent;
     if (total === 0) {
-      return $('metaQueueCount').classList.contains('hidden') && btn === '按界面设置应用';
+      return $('metaQueueCount').classList.contains('hidden') && btn === '开始批量列队执行';
     }
     const badgeOk = b.indexOf(total + ' 项') >= 0
       && (pending === 0 || b.indexOf(pending + ' 待转换') >= 0)
       && (done === 0 || b.indexOf(done + ' 已完成') >= 0)
       && (err === 0 || b.indexOf(err + ' 失败') >= 0);
-    const btnOk = pending > 0 ? btn === `应用元数据 · ${pending} 项` : btn === '按界面设置应用';
-    return badgeOk && btnOk;
+    const btnOk = pending > 0 ? btn === `开始批量列队执行 · ${pending} 项` : btn === '开始批量列队执行';
+    // 「应用元数据」必须始终是单文件语义文案，不得被队列状态改写
+    const applyOk = $('metaApplyBtn').textContent === '应用元数据（当前文件）';
+    return badgeOk && btnOk && applyOk;
   };
   let syncOk = true, syncDetail = [];
   for (const [label, fn] of SYNC_POINTS) {
@@ -1014,7 +1060,7 @@ vc.on('error', (...a) => errors.push('console.error: ' + a.map(String).join(' ')
     await wait(50);
     if (!consistent()) {
       syncOk = false;
-      syncDetail.push(`${label}: n=${ev('metaBatchItems.length')} badge="${badgeText()}" btn="${$('metaApplyBtn').textContent}"`);
+      syncDetail.push(`${label}: n=${ev("metaBatchItems.length")} badge="${badgeText()}" run="${$("metaBatchRunBtn").textContent}"`);
     }
   }
   check('A11.6 11 个实时同步触发点后徽标与按钮文案零脱节（缺一即不一致，R-4）',

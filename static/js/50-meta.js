@@ -15,9 +15,10 @@ let _metaProcessingIndices = [];  // maps backend item index → metaBatchItems 
 
 let mapPickerTarget = 'encode'; // 'encode' or 'meta'
 
-// v3.13.14：一次性标志。用户点「仍按界面设置执行这一轮」后置 true，
-// 由 startMetadataApply 消费后立即复位。不影响队列状态本身。
-let forceFormRun = false;
+// v3.13.14 曾有一个一次性标志 forceFormRun（「本轮忽略列队按界面设置跑」）。
+// v3.13.18 该流程已整体取消：界面单文件与列队执行拆成两个按钮后，
+// 不再需要「这一次例外」的中间态。保留一个无人读写的标志就是纯死代码，
+// 且会让后来者误以为仍存在覆盖机制。故连同其声明一并删除。
 
 // ── 路径归一化（ADR-004 D-5）──────────────────────────────
 // 用途：入队去重。旧实现用严格字符串相等（f.path === inp），
@@ -467,6 +468,10 @@ function renderMetaBatchTable() {
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">选择文件后点「加入批量列队」或「添加文件」加入队列</td></tr>';
     syncMetaQueueCount();
     syncMetaApplyButton();
+    // ⚠ 空队列早退路径同样必须刷列队按钮：漏掉会让按钮停在上一次的
+    // 「· N 项」，而此时列队已空 —— 用户点下去只会得到「请先勾选」，
+    // 界面却写着有 N 项可跑。这是 A11.6 抓到的真实缺陷。
+    syncMetaBatchRunButton();
     syncMetaFormInert();
     return;
   }
@@ -548,6 +553,7 @@ function renderMetaBatchTable() {
   // 单一渲染入口 → 三处计数/文案/惰性化统一在此产出，杜绝徽标与按钮脱节
   syncMetaQueueCount();
   syncMetaApplyButton();
+  syncMetaBatchRunButton();
   syncMetaFormInert();
 }
 
@@ -583,44 +589,63 @@ function syncMetaQueueCount() {
 }
 
 
-// ── 「应用元数据」按钮文案随队列状态切换（设计文档 5.1）────
-// 这是本次风险最高的一处：同一按钮标签对应两条不同执行路径，
-// 按钮标签是这条分叉路径上唯一始终可见的载体。
+// ── 「应用元数据」按钮（v3.13.18：职责收窄为界面单文件）──────
+// 旧实现在此按队列状态切换文案（「应用元数据 · N 项」/「按界面设置应用」），
+// 因为一个按钮同时承载界面与列队两条路径。现已拆为两个按钮，
+// 本按钮文案恒定 —— 标签与行为一一对应，用户不必点之前先数队列。
 function syncMetaApplyButton() {
   const btn = document.getElementById('metaApplyBtn');
   if (!btn) return;
-  const st = metaQueueStats();
-  const n = st.pending;
-  // forceFormRun 置位期间按钮必须切到界面模式 —— 否则用户点完「仍按界面设置执行这一轮」，
-  // 按钮仍显示「应用元数据 · N 项」，与实际本轮行为不符（标签是该分叉路径唯一可见载体）
-  if (n > 0 && !forceFormRun) {
-    btn.textContent = `应用元数据 · ${n} 项`;
-    btn.title = `本次将按列队顺序执行 ${n} 个待转换项（不含已完成项）。上方界面设置本次不生效。`;
-  } else if (forceFormRun) {
-    btn.textContent = '按界面设置应用';
-    btn.title = '本轮已选择忽略列队，将按上方界面设置处理「视频文件」中的单个文件。该选择只生效这一轮。';
-  } else {
-    btn.textContent = '按界面设置应用';
-    btn.title = st.total > 0
-      ? `列队 ${st.total} 项已全部处理完毕，本次将按上方界面设置处理「视频文件」中的单个文件。`
-      : '列队为空，本次按上方界面设置处理「视频文件」中的单个文件。';
-  }
-  // 禁用态：全部项都在执行中 → 明确告知原因，而不是让用户点了没反应
-  const allRunning = st.total > 0 && st.running === st.total;
-  const noInput = !(document.getElementById('metaInput') || {}).value;
-  btn.disabled = allRunning || ((n === 0 || forceFormRun) && noInput);
-  if (allRunning) btn.title = '列队正在执行中';
-  else if ((n === 0 || forceFormRun) && noInput) btn.title = '先在「视频文件」选择一个文件，或把文件加入列队';
+  btn.textContent = '应用元数据（当前文件）';
+  btn.title = '按上方界面设置，处理「视频文件」中的单个文件。列队请点右侧「开始批量列队执行」。';
+  const inpEl = document.getElementById('metaInput');
+  const noInput = !(inpEl && inpEl.value.trim());
+  btn.disabled = noInput;
+  if (noInput) btn.title = '先在「视频文件」选择一个文件';
 }
 
 
-// ── 界面设置惰性化 + 可撤销说明条（设计文档 5.2）────────────
-// 有待转换项时：本次执行忽略界面设置，故把界面设置区置惰性并给出说明条 + 一次性覆盖出口。
-// 说明条必须留在惰性子树之外，保证「为什么不生效」这句关键信息始终满对比度。
+// ── 「开始批量列队执行」按钮（v3.13.18 新增）──────────────
+// 禁用条件只认「本次真的无可执行项」，并在 title 里说明原因 ——
+// 让用户知道是「没勾选」「勾了但已完成」还是「列队为空」，而不是点了没反应。
+function syncMetaBatchRunButton() {
+  const btn = document.getElementById('metaBatchRunBtn');
+  if (!btn) return;
+  const st = metaQueueStats();
+  const runnable = st.pending;
+  const allRunning = st.total > 0 && st.running === st.total;
+
+  btn.textContent = runnable > 0
+    ? `开始批量列队执行 · ${runnable} 项`
+    : '开始批量列队执行';
+
+  if (allRunning) {
+    btn.disabled = true;
+    btn.title = '列队正在执行中';
+  } else if (runnable === 0 && st.selected === 0 && st.total > 0) {
+    btn.disabled = true;
+    btn.title = '请先在列队中勾选要转换的文件';
+  } else if (runnable === 0 && st.total === 0) {
+    btn.disabled = true;
+    btn.title = '列队为空，请先点「加入批量列队」';
+  } else if (runnable === 0) {
+    btn.disabled = true;
+    btn.title = '勾选项均已完成，不会重复处理。需要重跑请在对应行点「重新排队」';
+  } else {
+    btn.disabled = false;
+    btn.title = `按列队顺序执行 ${runnable} 个待转换项（不含已完成项），每项使用各自入队时的设置，上方界面设置本次不生效。`;
+  }
+}
+
+
+// ── 列队与界面设置的关系说明条（v3.13.18）──────────────
+// 有勾选中的待转换项时出现：说明「列队执行用每项自己的设置」，
+// 并给出唯一的显式出口 —— 把界面设置写进列队项。
+// 说明条必须留在惰性子树之外，保证满对比度（设计文档 11.2 陷阱 5）。
 function syncMetaFormInert() {
   const notice = document.getElementById('metaScopeNotice');
   const st = metaQueueStats();
-  const inert = st.pending > 0 && !forceFormRun;
+  const inert = st.pending > 0;
 
   // 惰性目标：功能开关整卡 + 输出目录字段。用 closest 定位，避免新增 DOM id 契约。
   const targets = [];
@@ -635,20 +660,284 @@ function syncMetaFormInert() {
   if (inert) {
     const textEl = notice.querySelector('.meta-scope-text');
     if (textEl) {
-      textEl.innerHTML = `列队有 <strong>${st.pending}</strong> 项待转换，本次将忽略上方界面设置。`;
+      textEl.innerHTML = `列队有 <strong>${st.pending}</strong> 项待转换，执行时使用各项自己的设置，上方界面设置不生效。`;
     }
   }
 }
 
 
-// 一次性覆盖：忽略队列，本轮按界面设置跑。队列状态完全不受影响。
-function forceFormRunOnce() {
-  forceFormRun = true;
-  showToast('本轮将按界面设置执行', 'info', 3000);
-  syncMetaApplyButton();
-  syncMetaFormInert();
+// ── 设置同步器（v3.13.18；原 forceFormRunOnce）──────────────
+// 语义：把界面各设置项统一写入所有已勾选列队项的 settings，覆盖各自旧设置。
+// 明确不做三件事：
+//   ① 不动 f.outDir —— 输出位置是「产物去哪」，与标签内容无关，
+//      且每项独立（全局/快照/原地三态）。界面根本也没有 per-item 输出控件。
+//   ② 不启动任何转换 —— 本函数只改内存数据，用户仍需显式点
+//      「开始批量列队执行」。一个按钮直接跑 ffmpeg 在 500 项队列上是灾难性误操作。
+//   ③ 不改 status —— 参数编辑不隐式重排队（ADR-004 D-2 关键约束）。
+function applyFormSettingsToQueue() {
+  const selected = metaBatchItems.filter(f => f.selected);
+  if (selected.length === 0) {
+    showToast('请先勾选要应用设置的列队项', 'warning', 4000);
+    return;
+  }
+  // 执行中的项不能改：它此刻正在按旧快照跑，改了只会让界面显示与
+  // 本轮实际写入的参数不一致（用户以为改了，实际没生效，且无从察觉）。
+  const runningCount = selected.filter(f => f.status === 'processing').length;
+  const targets = selected.filter(f => f.status !== 'processing');
+
+  if (targets.length === 0) {
+    showToast(`勾选的 ${selected.length} 项全部正在执行中，无法改写设置`, 'warning', 4000);
+    writeMetaScopeLog(`[设置同步] 勾选的 ${selected.length} 项均在执行中，已跳过（执行中项的参数不能改写）`, 'warn');
+    return;
+  }
+
+  try {
+    // 采集一次而非每项各采一次：同一轮里界面值可能因副作用变化，
+    // 逐项重采会让不同队列项拿到不同快照，用户无从预期。
+    const formSettings = collectMetaSettings('m');
+    targets.forEach(f => {
+      // 整体替换而非 Object.assign 合并：设置项从「开」改到「关」时
+      // 合并会残留旧 true，这是静默失效（用户关了某功能却被写入文件）。
+      f.settings = { ...formSettings };
+    });
+    renderMetaBatchTable();
+
+    const doneMsg = `已将界面设置应用到 ${targets.length} 个列队项（输出位置保持各自不变）`;
+    if (runningCount > 0) {
+      showToast(`${doneMsg}，其中 ${runningCount} 项执行中已跳过`, 'warning', 5000);
+      writeMetaScopeLog(`[设置同步] ${doneMsg}；跳过执行中 ${runningCount} 项`, 'warn');
+    } else {
+      showToast(doneMsg, 'success', 3000);
+      writeMetaScopeLog(`[设置同步] ${doneMsg}`, 'info');
+    }
+  } catch (e) {
+    // 同步是纯内存写入，正常不该抛。抛了必须让用户看见 ——
+    // 静默 catch 会让用户以为设置已写入，实际队列仍是旧参数。
+    showToast('应用界面设置失败：' + (e && e.message ? e.message : '未知错误'), 'error', 6000);
+    writeMetaScopeLog(`[设置同步] 失败：${e && e.message ? e.message : e}`, 'warn');
+  }
 }
 
+
+// ============================================================
+//   拍摄位置 GPS 增强（v3.13.18）：地图选点 / 一键复制 / 一键粘贴
+//
+//   p_（单文件）、m_（元数据工具）、me_（列队编辑弹窗）三处前缀
+//   共用同一套实现、同一套 JSON 字段命名。前缀差异只体现在
+//   GEO_TARGETS 映射表的元素 id 上 —— 这是唯一允许不对称的地方。
+// ============================================================
+
+// 前缀 → 目标控件 id 与地图选点的 target 实参。
+// ⚠ openMapPicker 的实参是 'meta' / 'me'（p_ 侧走默认 'encode'），
+//   不是字段前缀本身。传 'm' 会掉进 confirmMapSelection 的 else 分支
+//   （p_ 前缀），把值写进错误的输入框 —— 且界面无任何报错。
+const GEO_TARGETS = {
+  p:  { lat: 'p_location_lat',  lon: 'p_location_lon',  name: 'p_location_name',  address: 'p_location_address',  info: 'locationInfo',     mapTarget: 'encode' },
+  m:  { lat: 'm_location_lat',  lon: 'm_location_lon',  name: 'm_location_name',  address: 'm_location_address',  info: 'metaLocationInfo', mapTarget: 'meta' },
+  me: { lat: 'me_location_lat', lon: 'me_location_lon', name: 'me_location_name', address: 'me_location_address', info: 'me_location_info', mapTarget: 'me' },
+};
+
+// 导出格式的版本号。字段命名一经发布即为对外契约，改名要升版本 ——
+// 否则用户手上按旧版格式复制的文本会在粘贴时被判为「缺少字段」。
+const GEO_JSON_SCHEMA = 'meta-geo/v1';
+
+function geoTargetsOf(prefix) {
+  const t = GEO_TARGETS[prefix];
+  if (!t) {
+    showToast(`未知的拍摄位置区域：${prefix}`, 'error', 4000);
+    return null;
+  }
+  return t;
+}
+
+// 读取某前缀当前的拍摄位置数据（未经校验，原样返回字符串）。
+function readGeoEntry(prefix) {
+  const t = geoTargetsOf(prefix);
+  if (!t) return null;
+  const val = id => { const el = document.getElementById(id); return el ? String(el.value || '').trim() : ''; };
+  return { lat: val(t.lat), lon: val(t.lon), name: val(t.name), address: val(t.address) };
+}
+
+// 经纬度合法性：必须是有限数字且在合法范围内。
+// 返回 null 表示合法，否则返回可读的原因（直接进 toast）。
+// ⚠ 绝不用 isNaN()：isNaN('') 是 false，空字符串会被判成合法数字 0，
+//   于是「空坐标」被当成「赤道几内亚」，静默写入错误位置。
+function geoCoordError(lat, lon) {
+  if (lat === '' || lon === '') return '经纬度不能为空';
+  const nlat = Number(lat), nlon = Number(lon);
+  if (!Number.isFinite(nlat)) return `纬度不是有效数字：${lat}`;
+  if (!Number.isFinite(nlon)) return `经度不是有效数字：${lon}`;
+  if (nlat < -90 || nlat > 90) return `纬度超出范围（-90 到 90）：${lat}`;
+  if (nlon < -180 || nlon > 180) return `经度超出范围（-180 到 180）：${lon}`;
+  return null;
+}
+
+// 三、能力一：地图选点。
+// 复用既有 openMapPicker + confirmMapSelection —— 它内部已用显式
+// addrFailed 标志位拦截逆地理失败哨兵（`(地址获取失败 — …)`），
+// 不会把错误提示当地址写进表单。本函数只负责选对 target。
+function openGeoMapPicker(prefix) {
+  const t = geoTargetsOf(prefix);
+  if (!t) return;
+  openMapPicker(t.mapTarget);
+}
+
+// 剪贴板写入。优先异步 Clipboard API；WebView2 下不可用时回退
+// execCommand('copy')（需同步调用链，故与异步分支分开实现）。
+// 两条路都失败必须让用户知道 —— 静默失败等于「复制按钮坏了」。
+async function writeClipboardText(text) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (e) { /* 落到 execCommand 回退 */ }
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    // 置于视口外而非 display:none —— 隐藏元素无法被 select() 选中。
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return !!ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+// 剪贴板读取。回退路径用 execCommand('paste')：现代浏览器出于安全
+// 已基本禁用该命令，因此这里的回退是「尽力而为」，失败即如实上报。
+async function readClipboardText() {
+  if (navigator.clipboard && navigator.clipboard.readText) {
+    try {
+      return { ok: true, text: await navigator.clipboard.readText() };
+    } catch (e) { /* 落到 execCommand 回退 */ }
+  }
+  try {
+    const ta = document.createElement('textarea');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.focus();
+    const ok = document.execCommand('paste');
+    const text = ok ? ta.value : '';
+    document.body.removeChild(ta);
+    return ok ? { ok: true, text } : { ok: false, text: '' };
+  } catch (e) {
+    return { ok: false, text: '' };
+  }
+}
+
+// 三、能力二：一键复制 —— 把该条目全部拍摄位置数据序列化为 JSON。
+// 含来源信息，用户粘到别处后仍能看出这组坐标是怎么来的。
+async function copyGeoEntry(prefix) {
+  const t = geoTargetsOf(prefix);
+  if (!t) return;
+  const g = readGeoEntry(prefix);
+  if (!g) return;
+
+  if (!g.lat && !g.lon && !g.name && !g.address) {
+    showToast('当前没有拍摄位置数据可复制', 'warning', 3000);
+    return;
+  }
+  const payload = {
+    schema: GEO_JSON_SCHEMA,
+    lat: g.lat,
+    lon: g.lon,
+    name: g.name,
+    address: g.address,
+    source: 'copy',
+    updatedAt: new Date().toISOString()
+  };
+  const ok = await writeClipboardText(JSON.stringify(payload, null, 2));
+  if (ok) {
+    showToast('拍摄位置已复制为 JSON', 'success', 2500);
+  } else {
+    // 无法写剪贴板时把内容显示出来，用户可手动选中 —— 比只弹一句
+    // 「复制失败」有用得多。
+    showToast('浏览器拒绝了剪贴板写入，请手动复制下方内容', 'error', 6000);
+    writeMetaScopeLog('[拍摄位置] 剪贴板不可用，JSON 内容：' + JSON.stringify(payload), 'warn');
+  }
+}
+
+// 把校验通过的数据写入某前缀的四个输入框。
+// ⚠ 必须先完成全部校验再写任何一框：部分写入会让用户看到
+//   「经纬度更新了但地点名没变」的错配状态，且无从判断该信哪个。
+function writeGeoEntry(prefix, data) {
+  const t = GEO_TARGETS[prefix];
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set(t.lat, String(data.lat));
+  set(t.lon, String(data.lon));
+  set(t.name, data.name || '');
+  set(t.address, data.address || '');
+}
+
+// 三、能力三：一键粘贴 —— 读 JSON → 校验 → 写入。
+// 失败必须区分原因（空 / 非法 JSON / 缺字段 / 超范围），
+// 全部提示都不静默，且失败时一个字段都不改。
+async function pasteGeoEntry(prefix) {
+  const t = geoTargetsOf(prefix);
+  if (!t) return;
+
+  const r = await readClipboardText();
+  if (!r.ok) {
+    showToast('无法读取剪贴板：浏览器拒绝了读取请求，请手动粘贴到输入框', 'error', 6000);
+    return;
+  }
+  const raw = String(r.text || '').trim();
+  if (!raw) {
+    showToast('剪贴板为空', 'warning', 3000);
+    return;
+  }
+
+  let obj;
+  try {
+    obj = JSON.parse(raw);
+  } catch (e) {
+    showToast('剪贴板内容不是合法 JSON，已取消粘贴', 'error', 5000);
+    return;
+  }
+  // 数组 / null / 原始值都过得了 JSON.parse，故必须显式判对象。
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+    showToast('剪贴板 JSON 必须是一个对象（含 lat / lon / name / address 字段）', 'error', 5000);
+    return;
+  }
+  const missing = ['lat', 'lon'].filter(k => !(k in obj));
+  if (missing.length) {
+    showToast(`粘贴失败：JSON 缺少字段 ${missing.join('、')}`, 'error', 5000);
+    return;
+  }
+  const coordErr = geoCoordError(String(obj.lat).trim(), String(obj.lon).trim());
+  if (coordErr) {
+    showToast(`粘贴失败：${coordErr}`, 'error', 5000);
+    return;
+  }
+
+  // 全部校验通过，此刻才写任何输入框
+  writeGeoEntry(prefix, {
+    lat: Number(obj.lat),
+    lon: Number(obj.lon),
+    name: obj.name,
+    address: obj.address
+  });
+  // 粘贴了坐标就该让位置功能处于可用状态，否则用户看到坐标却什么都没写入
+  const master = document.getElementById(META_FIELD_IDS.locationMaster[prefix]);
+  if (master && !master.checked) {
+    master.checked = true;
+    // p_ 侧的位置区由 toggleLocation 控制显隐，需触发联动
+    if (prefix === 'p' && typeof toggleLocation === 'function') toggleLocation();
+    else setMetaSectionVisible(prefix, 'location', true);
+  }
+  const info = document.getElementById(t.info);
+  if (info) {
+    info.classList.remove('hidden');
+    info.textContent = `已粘贴: ${Number(obj.lat).toFixed(4)}, ${Number(obj.lon).toFixed(4)}`;
+  }
+  showToast('拍摄位置已从剪贴板粘贴', 'success', 2500);
+}
 
 // ── 显式「重排队」出口（设计文档 6.4 / ADR D-4）──────────────
 // 只改状态，零副作用：f.settings / f.outDir 保持不变，不调用任何执行函数。
@@ -674,6 +963,7 @@ function toggleMetaFileSelection(idx, checked) {
   // 只勾选状态变了，行内容无需重排：调统一 sync 保证徽标/按钮/惰性化不脱节
   syncMetaQueueCount();
   syncMetaApplyButton();
+  syncMetaBatchRunButton();
   syncMetaFormInert();
 }
 

@@ -49,6 +49,12 @@ const EXPECTED_ADDED = new Set([
   'metaAddQueueBtn', 'metaScopeNotice', 'me_out_dir',
   'p_manual_date_browse', 'm_manual_date_browse', 'me_manual_date_browse',
   'm_manual_date_source',
+  // v3.13.18 列队执行独立按钮「开始批量列队执行」（与 #metaApplyBtn 并存）。
+  // 拍摄位置复制/粘贴按钮刻意不给 id：三前缀共 6 枚，其唯一身份由
+  // data-action + data-geo-prefix 表达（与 v3.13.14「读创建时间」按钮同理），
+  // 给 id 只会把契约面从 1 项扩到 7 项而零收益。定位用
+  // [data-action="geo-copy"][data-geo-prefix="m"] 即可。
+  'metaBatchRunBtn',
 ]);
 
 if (MODE === 'baseline') {

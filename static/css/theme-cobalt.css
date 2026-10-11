@@ -334,6 +334,12 @@ tr.metaq-running td { background: color-mix(in srgb, var(--accent) 6%, transpare
   text-decoration: underline; text-underline-offset: 2px;
 }
 
+/* ── 拍摄位置工具条（v3.13.18：复制 / 粘贴）─────────────────
+   紧贴「拍摄地点」输入框下方。flex-wrap 保证窄栏（如列队编辑弹窗
+   560px 内的 grid-2）下换行而不撑破布局。 */
+.geo-actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.geo-actions .btn-sm { padding: 4px 10px; font-size: 0.78rem; }
+
 /* ── 动效收敛：只声明被改动的属性 + 尊重 reduced-motion ── */
 .btn, .seg-item span, .metaq-chip { transition: background-color 0.15s, border-color 0.15s, color 0.15s; }
 #metaAddQueueBtn { display: inline-flex; align-items: center; gap: 6px; }
