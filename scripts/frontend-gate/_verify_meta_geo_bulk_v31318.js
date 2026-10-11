@@ -56,9 +56,12 @@ check('S1.4 startMetadataApply 内不再出现列队分支（useFormRun 恒定�
   !/useFormRun/.test(jobsJs), '');
 check('S1.5 startMetadataBatchRun 存在且以 async 函数声明',
   /async function startMetadataBatchRun\(\)/.test(jobsJs), '');
+// v3.13.18 QA 阻塞项修复后，runnable 额外排除 processing（否则会与 forEach 的
+// 跳过逻辑口径不一，出现「items 比 runnable 短」与「全是 processing 时误报
+// 未启用功能」）。两段过滤的结构性要求不变，故同时断言排除项。
 check('S1.6 列队执行保留两段过滤（queue + runnable，未合成一次）',
   /const queue = metaBatchItems\.filter\(f => f\.selected\)/.test(jobsJs)
-  && /const runnable = metaBatchItems\.filter\(f => f\.selected && f\.status !== 'done'\)/.test(jobsJs), '');
+  && /const runnable = metaBatchItems\.filter\(f => f\.selected && f\.status !== 'done' && f\.status !== 'processing'\)/.test(jobsJs), '');
 check('S1.7 #metaApplyBtn 文案恒定，不再随队列状态切换',
   /btn\.textContent = '应用元数据（当前文件）'/.test(metaJs)
   && !/应用元数据 · \$\{/.test(metaJs), '');
@@ -194,7 +197,10 @@ vc.on('error', (...a) => errors.push('console.error: ' + a.map(String).join(' ')
           const url = String(u);
           BACKEND.fetchLog.push({ url, method: (opt && opt.method) || 'GET' });
           if (url.includes('/api/apply_metadata')) {
-            BACKEND.applied.push(...JSON.parse(opt.body).items);
+            const body = JSON.parse(opt.body);
+            // 记录下发体：R8 断言顶层 params 的功能并集，必须看真实请求内容
+            BACKEND.fetchLog[BACKEND.fetchLog.length - 1].raw = body;
+            BACKEND.applied.push(...body.items);
             return { ok: true, status: 200, json: async () => ({ job_id: 'job-geo-' + Date.now() }) };
           }
           // 启动期接口必须给出结构正确的空响应：90-boot/30-params 在
@@ -475,6 +481,78 @@ vc.on('error', (...a) => errors.push('console.error: ' + a.map(String).join(' ')
   await wait(40);
   check('R6.4 未知前缀不抛未捕获异常且有提示（防前缀写错静默失效）',
     errors.length === 0 && toastText().length > 0, `toast="${toastText()}" errors=${errors.length}`);
+
+  // ══ R7 并发防护（v3.13.18 QA 阻塞项2）═════════════════════
+  // 背景：submitMetadataItems 是「先 await fetch、再 beginJob」，而 beginJob 的
+  // 并发拒绝发生在请求之后。若无入口守卫，任务运行中点批量按钮会真的把
+  // POST 发出去：后端起孤儿作业写同一批文件，UI 却因 beginJob 返回 false
+  // 而显示「待转换」，结果同一批文件被处理两次。
+  seedQueue();
+  await wait(60);
+  // 造一个「任务正在运行」的状态：beginJob 后 ActiveJob.id 与 timer 均非空
+  ev('beginJob("job-running-dummy", "metadata");');
+  check('R7.1 前置条件：任务确实处于运行中', ev('isJobRunning()') === true, `isJobRunning=${ev('isJobRunning()')}`);
+  check('R7.2 批量按钮已被纳入任务期禁用集合（beginJob 会禁用它）',
+    $('metaBatchRunBtn').disabled === true, `disabled=${$('metaBatchRunBtn').disabled}`);
+  const statusBefore = ev('JSON.stringify(metaBatchItems.map(f => f.status))');
+  BACKEND.fetchLog.length = 0;
+  BACKEND.applied = [];
+  // 走真实委托派发，不直接调函数：程序化路径同样必须被拦住
+  click('[data-action="meta-batch-run"]');
+  await wait(150);
+  const applyPosts = BACKEND.fetchLog.filter(f => f.url.includes('/api/apply_metadata')).length;
+  check('R7.3 任务运行中点批量按钮：零 /api/apply_metadata 请求（入口早退生效）',
+    applyPosts === 0 && BACKEND.applied.length === 0,
+    `posts=${applyPosts} applied=${BACKEND.applied.length}`);
+  check('R7.4 任务运行中点批量按钮：队列状态零变化（无 processing 被改写为 pending）',
+    ev('JSON.stringify(metaBatchItems.map(f => f.status))') === statusBefore,
+    `before=${statusBefore} after=${ev('JSON.stringify(metaBatchItems.map(f => f.status))')}`);
+  check('R7.5 并发被拒时有明确提示（非静默无反应）',
+    toastText().indexOf('已有任务正在运行') >= 0, toastText());
+  ev('if (isJobRunning()) endJob();');
+
+  // processing 项不得被本轮改写（QA advisory：按钮禁用挡不住程序化调用）
+  seedQueue();
+  ev('metaBatchItems[0].status = "processing"; renderMetaBatchTable();');
+  await wait(60);
+  const procBefore = ev('metaBatchItems[0].status');
+  BACKEND.fetchLog.length = 0;
+  await ev('startMetadataBatchRun()');
+  await wait(150);
+  check('R7.6 执行中项不被本轮改写为 pending（数据层兜底，非仅靠按钮禁用）',
+    ev('metaBatchItems[0].status') === procBefore,
+    `before=${procBefore} after=${ev('metaBatchItems[0].status')}`);
+  check('R7.7 执行中项不进入本轮下发列表（不会与运行中的作业并发写同一文件）',
+    BACKEND.applied.every(i => i.input.indexOf('a.mp4') < 0),
+    JSON.stringify(BACKEND.applied.map(i => i.input)));
+  ev('if (isJobRunning()) endJob();');
+
+  // ══ R8 顶层 params 功能并集（v3.13.18 QA 阻塞项1）═════════
+  // 场景：界面三项全关，但列队项各自带功能开关。这是完全合法的批量提交，
+  // 但顶层 params 若取界面值就是「全关」，与后端只看顶层的门口径不一致 → 400。
+  seedQueue();
+  await wait(60);
+  ['m_apply_date', 'm_apply_location', 'm_apply_spherical'].forEach(id => { $(id).checked = false; });
+  ev('renderMetaBatchTable();');
+  await wait(40);
+  BACKEND.fetchLog.length = 0;
+  BACKEND.applied = [];
+  await ev('startMetadataBatchRun()');
+  await wait(150);
+  const body = (BACKEND.fetchLog.find(f => f.url.includes('/api/apply_metadata')) || {}).raw;
+  check('R8.1 界面三项全关 + 列队项带功能时仍放行执行（不再被误判为未启用功能）',
+    BACKEND.applied.length === 2, `applied=${BACKEND.applied.length}`);
+  check('R8.2 下发顶层 params 的功能开关取本轮可执行项的并集（apply_date 为 true）',
+    !!body && body.params.apply_date === true, body ? JSON.stringify(body.params) : '(无请求)');
+  check('R8.3 并集只反映本轮真正执行项：未开启的两项在顶层保持 false',
+    !!body && body.params.apply_location === false && body.params.apply_spherical === false,
+    body ? `loc=${body.params.apply_location} sph=${body.params.apply_spherical}` : '(无请求)');
+  check('R8.4 per-item params 仍各自保留（不被顶层并集覆盖）',
+    BACKEND.applied.length === 2
+    && BACKEND.applied[0].params.manual_date === '2001-01-01',
+    JSON.stringify(BACKEND.applied.map(i => i.params && i.params.manual_date)));
+  ['m_apply_date', 'm_apply_location', 'm_apply_spherical'].forEach(id => { $(id).checked = true; });
+  ev('if (isJobRunning()) endJob();');
 
   // ══ 收尾 ═════════════════════════════════════════════════
   check('R9.1 页面无 JS 运行时错误', errors.length === 0, errors.slice(0, 3).join(' | '));

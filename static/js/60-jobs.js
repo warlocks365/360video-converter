@@ -307,7 +307,13 @@ const ActiveJob = {
   timer: null,
 };
 
-const PRIMARY_BTN_IDS = ['startBtn', 'metaApplyBtn'];
+// ⚠ metaBatchRunBtn 必须在此列（v3.13.18 QA 阻塞项）：它是第三个「启动任务」
+//   入口，漏掉会导致 beginJob 的 setPrimaryButtonsEnabled(false) 覆盖不到它——
+//   任务运行中按钮仍可点，点下去 POST 会真的发出去（submitMetadataItems 是
+//   「先 await fetch 再 beginJob」，beginJob 的并发拒绝发生在请求之后），
+//   后端起孤儿作业写同一批文件，UI 却因 beginJob 返回 false 而显示待转换，
+//   结果是同一批文件被处理两次。
+const PRIMARY_BTN_IDS = ['startBtn', 'metaApplyBtn', 'metaBatchRunBtn'];
 
 function setPrimaryButtonsEnabled(enabled) {
   PRIMARY_BTN_IDS.forEach(id => {
@@ -801,6 +807,16 @@ async function startMetadataApply() {
 // v3.13.18：只负责列队执行，完全忽略界面设置。
 // 判定规则沿用 ADR-004 D-3：待执行项 = selected && status !== 'done'。
 async function startMetadataBatchRun() {
+  // 并发早退（v3.13.18 QA 阻塞项）：本函数必须自带入口守卫，不能只靠
+  // beginJob 的拒绝 —— submitMetadataItems 是「先 await fetch、再 beginJob」，
+  // 请求在 beginJob 被拒之前就已经发出去了。只加按钮禁用不够：程序化调用
+  // （委托、测试、控制台）绕得过去，且按钮禁用只挡鼠标不挡快捷键/回车。
+  // 这里早退 = 零网络请求 + 零状态改写，是与按钮禁用并列的第二道保险。
+  if (isJobRunning()) {
+    showToast('已有任务正在运行，请等待完成或先取消，再执行本轮列队', 'error', 5000);
+    return;
+  }
+
   const globalParams = {
     ...collectMetaSettings('m'),
     faststart: true,
@@ -810,15 +826,25 @@ async function startMetadataBatchRun() {
   // ⚠ 两段过滤不可合成一次：hasAnyFeature 校验需要区分「有项但都没开功能」
   //   （alert 中止）与「无可执行项」（toast 后退出），合成一次会把中止
   //   误判成「无待转换项」，用户点按钮后什么也没发生却不知道原因。
+  // ⚠ 两处口径必须与下方 forEach 完全一致（selected && !done && !processing）：
+  //   若此处把 processing 算进 runnable 而 forEach 又跳过它，items 就会比
+  //   runnable 短，且「全是 processing」时会误报「未启用任何功能」。
   const queue = metaBatchItems.filter(f => f.selected);
-  const runnable = metaBatchItems.filter(f => f.selected && f.status !== 'done');
+  const runnable = metaBatchItems.filter(f => f.selected && f.status !== 'done' && f.status !== 'processing');
+  // ⚠ 必须按 status 直取，不能用「queue.length - 可执行数」反推：
+  //   那样会把 done 项也算进 runningCount，导致「全部完成」被误报成
+  //   「正在执行中，等本轮结束后再点」—— 而此时根本没有任务在跑，
+  //   用户等的是永远不会到来的下一轮（A8.13 断言抓到的真实缺陷）。
+  const runningCount = queue.filter(f => f.status === 'processing').length;
 
   if (runnable.length === 0) {
-    // 三种「无可执行项」成因不同，提示必须能区分，否则用户无法决定下一步
+    // 「无可执行项」的成因不同，提示必须能区分，否则用户无法决定下一步
     if (queue.length === 0) {
       showToast(metaBatchItems.length > 0
         ? '请先在列队中勾选要转换的文件'
         : '列队为空，请先点「加入批量列队」', 'warning', 4000);
+    } else if (runningCount > 0) {
+      showToast(`勾选的 ${runningCount} 项正在执行中，等本轮结束后再点`, 'info', 4000);
     } else {
       showToast('列队中无待转换项：勾选项均已完成。如需重跑，请在对应行点「重新排队」', 'info', 5000);
     }
@@ -833,6 +859,10 @@ async function startMetadataBatchRun() {
   // 映射会错位（表现为「第一行显示第二行的结果」）。
   metaBatchItems.forEach((f, i) => {
     if (!f.selected || f.status === 'done') return;
+    // ⚠ 排除 processing 项（v3.13.18 QA advisory）：它正在被上一轮任务按
+    // 旧参数处理，若本轮再把它重置为 pending 并重新提交，同一个文件会被
+    // 两个任务同时写。按钮禁用挡不住程序化调用，这里是数据层的兜底。
+    if (f.status === 'processing') return;
     // 逐项校验功能开关：只统计本次真正要跑的项
     const itemParams = f.settings || globalParams;
     if (itemParams.apply_date || itemParams.apply_location || itemParams.apply_spherical) {
@@ -851,14 +881,35 @@ async function startMetadataBatchRun() {
     f.duration = '';
   });
   if (!hasAnyFeature) {
-    alert('选中的文件均未启用任何元数据功能。可点列表上方说明条里的「把界面设置应用到 N 项」，或逐行编辑设置。');
+    // 用户可操作性：告知「怎么解决」，而不只说「哪里错了」。
+    // 首句沿用既有措辞（回归断言以此为锚点），后续补可操作指引 ——
+    // 后端 400 的英文原文（No metadata features enabled）由这里提前拦下，
+    // 用户不会看到；但若后端仍有其它拒绝路径，alert 里的中文口径要保持一致。
+    alert('勾选的文件均未启用任何元数据功能，列队执行已中止。\n\n'
+      + '请任选一种方式后重新执行：\n'
+      + '· 勾选上方「日期元数据 / 拍摄位置 GPS / 全景元数据注入」功能开关，'
+      + '再点说明条里的「把界面设置应用到勾选项」把设置写入列队\n'
+      + '· 或在列表中逐行点铅笔按钮，为该行单独开启所需功能');
     _metaProcessingIndices = [];   // 中止时不要留下悬空映射
     renderMetaBatchTable();
     return;
   }
-  writeMetaScopeLog(`[列队] 按列队顺序执行 ${items.length} 项（不含已完成项），本次忽略界面设置`, 'info');
+
+  // 顶层 params 必须反映**本轮实际执行项**的功能并集（v3.13.18 QA 阻塞项）。
+  // 根因：顶层原先直接取 collectMetaSettings('m')，当界面三项全关而列队各项
+  // 自带设置时，顶层是「全关」而 items 是「全开」——前后端口径不一致，
+  // 后端只看顶层就会 400，把一次完全合法的批量提交误判为「未启用任何功能」。
+  // 取并集后，顶层与 per-item 语义一致：任一项开启即视为本轮开启。
+  const batchParams = {
+    ...globalParams,
+    apply_date: items.some(it => it.params && it.params.apply_date),
+    apply_location: items.some(it => it.params && it.params.apply_location),
+    apply_spherical: items.some(it => it.params && it.params.apply_spherical),
+  };
+
+  writeMetaScopeLog(`[列队] 按列队顺序执行 ${items.length} 项（不含已完成项与执行中项），本次忽略界面设置`, 'info');
   renderMetaBatchTable();
-  await submitMetadataItems(items, globalParams);
+  await submitMetadataItems(items, batchParams);
 }
 
 // 执行分派写入日志（设计文档 5.3）：让用户事后能分辨某一行是哪一轮跑的。
