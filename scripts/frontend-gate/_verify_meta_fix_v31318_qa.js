@@ -502,6 +502,29 @@ console.log('\n──── 第 1 组：重点证伪一 —— 「按界面设�
     stBefore === 'processing' && stAfter === 'processing', `${stBefore} -> ${stAfter}`);
   ev('if (isJobRunning()) endJob();');
 
+  // ── Q3.12 「按数量反推状态」反模式护栏（frontend 自查时发现并修掉的缺陷）──
+  // 反模式：const running = queue.length - 可执行数。会把已done 项也算成 running，
+  // 于是「全部完成」被误报成「正在执行中，等本轮结束后再点」—— 而此时并没有
+  // 任何任务在跑，用户等的是永远不会到来的下一轮（死等）。
+  ev(`metaBatchItems = [
+        {path:"D:\\\\v\\\\d1.mp4",name:"d1.mp4",selected:true,status:"done",statusMsg:"ok",duration:"1s",
+         settings:{apply_date:true,manual_date:"2001-01-01",apply_spherical:false,apply_location:false},
+         outDir:{mode:"inplace",value:""},probed:true},
+        {path:"D:\\\\v\\\\d2.mp4",name:"d2.mp4",selected:true,status:"done",statusMsg:"ok",duration:"2s",
+         settings:{apply_date:true,manual_date:"2002-02-02",apply_spherical:false,apply_location:false},
+         outDir:{mode:"inplace",value:""},probed:true}];
+      renderMetaBatchTable();`);
+  await wait(80);
+  const allDoneToast0 = toastText();
+  click('#metaBatchRunBtn');
+  await wait(200);
+  const allDoneToast = toastText();
+  check('Q3.12 ★全部完成时不得误报「正在执行中」（按数量反推状态的反模式护栏）',
+    !/正在执行中/.test(allDoneToast) && allDoneToast !== allDoneToast0,
+    `toast="${allDoneToast}"（期望提示「均已完成/重新排队」，而非「正在执行中等本轮结束」）`);
+  check('Q3.12b ★全部完成时提示指向「重新排队」出口（用户有可操作出路）',
+    /已完成|重新排队/.test(allDoneToast), `"${allDoneToast}"`);
+
   // ══════════════════════════════════════════════════════════════
   console.log('\n──── 第 4 组：重点证伪四 —— GPS 复制/粘贴真实往返 ────────');
   // ══════════════════════════════════════════════════════════════
