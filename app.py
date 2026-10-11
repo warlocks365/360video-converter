@@ -4707,7 +4707,20 @@ def start_apply_metadata():
         return jsonify({'error': 'No files specified'}), 400
 
     # Check at least one feature is enabled
-    if not (params.get('apply_date') or params.get('apply_location') or params.get('apply_spherical')):
+    # v3.13.18: 判据须与前端 hasAnyFeature 同口径 —— 批量列队执行时，顶层 params 取的是
+    # 界面设置（可能三项全关），而真正要执行的是**各项自己的 params**。旧判据只看顶层，
+    # 会把「界面全关 + 列队项各自带功能」这种完全合法的批量提交误判为「未启用任何功能」
+    # 并返回 400，用户只看到一句英文错误、批量流程根本跑不起来。
+    # 因此改为：顶层开启 **或** 任一项的 per-item params 开启，即放行。
+    # items 非空校验（上面已做）仍兜底空提交，放宽不改变本门的防护目的。
+    _FEATURE_KEYS = ('apply_date', 'apply_location', 'apply_spherical')
+
+    def _enabled(p):
+        return bool(p) and any(p.get(k) for k in _FEATURE_KEYS)
+
+    _top_enabled = _enabled(params)
+    _any_item_enabled = any(_enabled(it.get('params') or {}) for it in items if isinstance(it, dict))
+    if not (_top_enabled or _any_item_enabled):
         return jsonify({'error': 'No metadata features enabled'}), 400
 
     jid = new_job('metadata', items, params)

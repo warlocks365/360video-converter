@@ -140,7 +140,7 @@ const get = (p) => new Promise(resolve => {
   const ver = await get('/api/version');
   let v = '';
   try { v = JSON.parse(ver.body).version; } catch (e) {}
-  check('版本接口返回 3.13.17', v === "3.13.17", `version = "${v}"`);
+  check('版本接口返回 3.13.18', v === "3.13.18", `version = "${v}"`);
 
   // 4b. 缓存策略：界面资源必须 no-store，否则旧版页面可能被 WebView2 缓存复用，
   //     表现为"装了新版本但界面毫无变化"（v3.12.0 实际遇到的风险点）
@@ -149,6 +149,21 @@ const get = (p) => new Promise(resolve => {
   const cssHdr = await get('/css/app.css');
   const cssCC = (cssHdr.headers && cssHdr.headers['cache-control']) || '';
   check('CSS 资源下发 no-store', /no-store/.test(cssCC), `Cache-Control: ${cssCC || '(缺失)'}`);
+
+  // 4c. 打包产物必须真的包含本版新增的前端功能（v3.13.18 起）
+  //     起因：门禁 08 原先只校验静态特征 + 硬编码版本号，对「exe 漏打最新前端资源」零覆盖 ——
+  //     exe 时间戳早于源码时它依然 12/12 全绿，反而掩盖了「发布产物里新功能根本不存在」。
+  //     QA 曾实测：未重建的 exe 首页中 metaBatchRunBtn / geo-copy 出现 0 次。
+  //     这条断言让此类问题在门禁层面自动暴露，不再依赖人工比对时间戳。
+  const homeHtml = home.body || '';
+  for (const [label, needle] of [
+    ['批量列队执行按钮 metaBatchRunBtn', 'metaBatchRunBtn'],
+    ['GPS 一键复制 geo-copy', 'geo-copy'],
+    ['GPS 地图选点 geo-map-pick', 'geo-map-pick'],
+  ]) {
+    const n = (homeHtml.match(new RegExp(needle, 'g')) || []).length;
+    check(`打包产物包含${label}`, n >= 1, `首页命中 ${n} 次`);
+  }
 
   // 5. 关键 API 端点存活
   const apiPaths = ['/api/codecs', '/api/settings', '/api/presets', '/api/sysmon'];
