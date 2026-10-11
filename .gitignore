@@ -42,3 +42,16 @@ build_installer_v*.log
 _extract.py
 _test_*.py
 .edge_tmp_profile/
+
+# ── 发布脚本临时产物 ──
+# rel_* 是 GitHub Release 上传脚本的中转文件（含 tag/正文/响应体），
+# 每次发布会重新生成，属临时产物，不应进版本库。
+rel_*.json
+
+# ── 凭据：绝不入库 ──
+# _cred_helper.sh 一度把 GitHub PAT 明文写在脚本里（发布时供 curl 读取）。
+# 该文件已被删除，此处加规则双保险：即使日后重建，也不会被误提交。
+_cred_helper.sh
+*_cred*.sh
+.env
+.env.*
