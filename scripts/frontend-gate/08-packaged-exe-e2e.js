@@ -201,13 +201,15 @@ const getBytes = (p) => new Promise(resolve => {
   check('关键 API 端点存活', apiBad.length === 0, apiBad.length ? apiBad.join(', ') : '全部 200');
 
   // 5b. v3.14.0 AI 助手后端与资源必须真进包（中继端点存在 + vendor bundle 逐字节一致）
-  // 中继路由必须已打包：未配置 baseURL → 400；若测试机 APPDATA 恰好配了不可达
-  // 端点 → 502。两者都证明"路由存在且守门在跑"；没打包才会 404。
-  // 断言不锁文案——改措辞不回头改门禁。
+  // 中继路由必须已打包。三种形态都证明"路由存在且守门在跑"：
+  //   400 = 未配置 baseURL 的守门拒绝；502 = 已配置但上游不可达；
+  //   200 = 测试机恰好配置了可达端点、转发成功（环境相关，同样证明路由在）。
+  // 只有 404（路由没打包）或超时才是失败。v3.14.2 修正：原断言只收 400/502，
+  // 在"已配置可达端点"的机器上误报 FAIL（实测 200）。
   const relayR = await rawHttp('POST', '/api/agent_relay',
     '{"path":"/chat/completions","body":{"messages":[{"role":"user","content":"x"}]}}');
-  check('中继端点已打包且守门激活（400/502，非 404）',
-    relayR.code === 400 || relayR.code === 502, `HTTP ${relayR.code || relayR.err}`);
+  check('中继端点已打包且守门激活（200/400/502，非 404）',
+    relayR.code === 400 || relayR.code === 502 || relayR.code === 200, `HTTP ${relayR.code || relayR.err}`);
   // 期望值直接读仓库源文件——门禁 08 的语义就是"exe 内容与仓库源码一致"，
   // 升级 vendor 只改 static/agent/ 下文件，不回头改门禁。
   // 取字节必须用 Buffer 流（getBytes）：get() 的字符串 body 经 UTF-8 解码后
