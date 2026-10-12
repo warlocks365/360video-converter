@@ -371,21 +371,29 @@ const WRAPPED = ['startConversion', 'startVR3D', 'startMetadataApply', 'startMet
         const rr = await postJSON(DEV, '/api/agent_relay', { path: p, body: { messages: [{ role: 'user', content: 'x' }] } });
         check(`R5 绕过向量 400 :: ${p}（${why}）`, rr.status === 400, 'HTTP ' + rr.status);
       }
-      // R5b 松散等价向量：契约（team-lead 指定门④）明列 /chat//completions 必须 400。
-      // 实测 HEAD=放行并按**原串**转发（echo 收到 /v1/chat//completions）。
-      // 记为对抗发现（真缺陷：实现与 Spec 矛盾+转发非规范路径）。
+      // R5b 松散等价向量：契约（gate④）明列必须 400。
+      // 第二轮实测 HEAD(24bd097)=精确串相等（path !== '/chat/completions' 一律 400），
+      // 比第一轮 team-lead 消息描述的"归一化转发 200"更严——完全服从 gate④ 契约。
+      // 断言：松散变体既须 400，又须**不触达上游**（echo /__last 保持空）。
       for (const p of ['/chat//completions', '/chat/completions/', '/chat/./completions']) {
+        await postJSON(ECHO, '/__reset', {});
         const rr = await postJSON(DEV, '/api/agent_relay', { path: p, body: { messages: [{ role: 'user', content: 'x' }] } });
-        check(`R5b 松散变体必须 400（契约点名） :: ${p}`,
-          rr.status === 400, 'HTTP ' + rr.status + '（echo 被命中=按原串转发）',
-          rr.status !== 400 ? 'relay SSRF 面契约违反：normpath 等值校验放行了松散变体且转发用原串（base+raw path）。修复=白名单校验后改转发 norm 串（或显式拒绝非精确串）' : '');
+        const seen = (await getJSON(ECHO, '/__last')).data;
+        const reached = seen && typeof seen.url === 'string' && seen.url.length > 0;
+        check(`R5b 松散变体必须 400（精确串相等，契约 gate④） :: ${p}`,
+          rr.status === 400, 'HTTP ' + rr.status,
+          rr.status !== 400 ? 'relay SSRF 面契约违反：松散变体未 400（应精确串相等拒绝）' : '');
+        check(`R5b' 松散变体 400 后不得触达上游（零转发） :: ${p}`,
+          reached === false, 'echo saw ' + JSON.stringify(seen && seen.url),
+          reached ? '被拦截却仍转发到上游——校验与转发脱节' : '');
       }
-      // R5c 松散变体转发原串的直接证据（echo 实收 URL）
+      // R5c 精确串合法路径必须放行并规范到达上游（对照 R5b'：只有精确串触达上游）
       await postJSON(ECHO, '/__reset', {});
-      await postJSON(DEV, '/api/agent_relay', { path: '/chat//completions', body: { messages: [{ role: 'user', content: 'x' }] } });
+      const rc = await postJSON(DEV, '/api/agent_relay', { path: '/chat/completions', body: { messages: [{ role: 'user', content: 'x' }] } });
       const seen5c = (await getJSON(ECHO, '/__last')).data;
-      check('R5c 证据：上游实收 URL=非规范原串（非 /v1/chat/completions）',
-        seen5c.url !== '/v1/chat/completions', 'echo saw ' + String(seen5c.url));
+      check('R5c 精确串 /chat/completions 放行且上游实收规范 URL',
+        rc.status === 200 && seen5c.url === '/v1/chat/completions',
+        `HTTP ${rc.status} echo saw ${JSON.stringify(seen5c && seen5c.url)}`);
       // R6 缺省 path 合法（不带 path 字段 → /chat/completions）
       const r6 = await postJSON(DEV, '/api/agent_relay', { body: { messages: [{ role: 'user', content: 'x' }] } });
       check('R6 缺省 path=chat/completions 放行', r6.status === 200, 'HTTP ' + r6.status);
