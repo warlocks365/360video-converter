@@ -19,6 +19,7 @@
     <h1><span>360</span>&deg; Video Converter <span id="appVersionTag" style="font-size:0.6em;font-weight:400;color:var(--text-muted);"></span></h1>
     <div class="header-actions">
       <button class="btn btn-sm" onclick="openSettings()" id="settingsBtn">API Key</button>
+      <button class="btn btn-sm" id="agentToggleBtn" data-action="agent-toggle" style="display:none" title="AI 助手：用自然语言操控本工具"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3l1.9 5.7L19.6 10l-5.7 1.9L12 17.8l-1.9-5.9L4.4 10l5.7-1.3z"/><path d="M19 15l.9 2.6 2.6.9-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9z"/></svg> AI 助手</button>
       <button class="theme-btn" onclick="toggleTheme()" id="themeBtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
       <div class="dropdown">
         <button class="btn btn-sm" onclick="toggleAboutMenu(event)">&#8505; 关于</button>
@@ -1198,7 +1199,7 @@
 <div class="modal-overlay" id="settingsModal">
   <div class="modal">
     <div class="modal-header">
-      <h3>设置 - 地图与位置</h3>
+      <h3>设置</h3>
       <button class="btn btn-sm" onclick="closeSettings()" aria-label="关闭"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="modal-body" style="padding:20px;">
@@ -1234,6 +1235,63 @@
         </div>
       </div>
       <div id="ffmpegTestResult" style="display:none;margin-top:8px;"></div>
+      <div class="section-divider">AI 助手</div>
+      <div class="info-box" style="font-size:0.8rem;">
+        <label class="check" style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="settings_agent_enabled">
+          启用页内 AI 助手（自然语言操控本工具）
+        </label>
+      </div>
+      <div class="field">
+        <label class="field-label">模型端点 Base URL（OpenAI 兼容）</label>
+        <input class="input" id="settings_agent_base_url" type="text" autocomplete="off" placeholder="本机 llama.cpp: http://127.0.0.1:8888/v1 ｜ 局域网: http://192.168.1.42:8888/v1 ｜ 云端: https://dashscope.aliyuncs.com/compatible-mode/v1">
+      </div>
+      <div class="field">
+        <label class="field-label">API Key（端点需要时填写）</label>
+        <input class="input" id="settings_agent_api_key" type="password" autocomplete="new-password" placeholder="sk-… 或局域网 key；本机无鉴权可留空">
+      </div>
+      <div class="field">
+        <label class="field-label">模型名称</label>
+        <input class="input" id="settings_agent_model" type="text" autocomplete="off" placeholder="如 qwen3.6-27b-q4km / qwen3.5-plus（须与端点 /v1/models 一致）">
+      </div>
+      <div class="field">
+        <label class="field-label">思考模式</label>
+        <select class="input" id="settings_agent_thinking">
+          <option value="default">默认（跟随模型）</option>
+          <option value="on">开启</option>
+          <option value="off">关闭</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label">推理深度</label>
+        <select class="input" id="settings_agent_effort">
+          <option value="auto">自动</option>
+          <option value="low">低</option>
+          <option value="medium">中</option>
+          <option value="high">高</option>
+          <option value="xhigh">最高</option>
+          <option value="max">极限</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label">权限控制</label>
+        <select class="input" id="settings_agent_permission">
+          <option value="readonly">只读（助手只浏览界面，不触发任何任务）</option>
+          <option value="standard">标准（触发任务前逐项向我确认）</option>
+          <option value="full">完全信任（不确认，直接执行）</option>
+        </select>
+      </div>
+      <div class="field">
+        <label class="field-label">执行参数</label>
+        <div style="display:flex;gap:8px;">
+          <input class="input" id="settings_agent_temperature" type="number" min="0" max="2" step="0.1" placeholder="温度(留空不发送)" style="flex:1;">
+          <input class="input" id="settings_agent_max_steps" type="number" min="1" max="100" step="1" placeholder="最大步数" style="flex:1;">
+          <input class="input" id="settings_agent_step_delay" type="number" min="0" max="5" step="0.1" placeholder="步间隔(秒)" style="flex:1;">
+        </div>
+      </div>
+      <div class="info-box" style="font-size:0.78rem;">
+        开启后页面文本（含视频文件路径、参数值）将发送到你配置的模型端点；默认模型/端点为空时 AI 助手不可用。API Key 仅保存在本机设置文件，界面与日志均不回显。
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeSettings()">取消</button>
@@ -1405,6 +1463,7 @@
   <script src="/js/60-jobs.js"></script>
   <script src="/js/70-report.js"></script>
   <script src="/js/80-codec.js"></script>
+  <script src="/js/85-agent.js"></script>
   <script src="/js/90-boot.js"></script>
 
 </body>

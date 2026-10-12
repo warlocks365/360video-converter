@@ -142,8 +142,11 @@ const check = (name, cond, detail) => {
 
   // ── 4c. P0 修复回归（v3.13.2）──
   // P0-5：VR3D 必须提交 collectVR3DParams()（布局选择曾恒被忽略为 top-bottom）
+  // v3.14.0：85-agent 的权限门会包装 startConversion，.toString() 读到的是包装器。
+  // 读源码类断言统一改走 __vcOrig（无包装时即原函数本体，断言强度不变）。
+  const startConversionSrc = (dom.window.startConversion.__vcOrig || dom.window.startConversion).toString();
   check('P0-5：startConversion 的 vr3d 分支调用 collectVR3DParams()',
-    dom.window.startConversion.toString().includes('collectVR3DParams()'),
+    startConversionSrc.includes('collectVR3DParams()'),
     '源码应含 startVR3D(collectVR3DParams())');
   check('P0-5：vr3dLayout 不再挂无效的内联 onchange（调用结果无接收者）',
     $('vr3dLayout').getAttribute('onchange') === null,
@@ -151,7 +154,7 @@ const check = (name, cond, detail) => {
   // P0-4：勾选过滤后，批量编码状态必须按 _encodeProcessingIndices 映射回正确行
   check('P0-4：renderEncodeJob 经 _encodeProcessingIndices 映射行索引',
     dom.window.renderEncodeJob.toString().includes('_encodeProcessingIndices[i]')
-    && dom.window.startConversion.toString().includes('_encodeProcessingIndices = []'),
+    && startConversionSrc.includes('_encodeProcessingIndices = []'),
     '提交时登记勾选行号；渲染时按下标映射');
   check('P0-4（行为）：取消勾选中间任务后，状态只写到正确的行',
     (() => {

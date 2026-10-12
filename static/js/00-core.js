@@ -329,6 +329,8 @@ const DELEGATED_ACTIONS = {
   'report-select-invert':     () => reportSelectInvert(),
   'report-select-clear':      () => reportSelectClear(),
   'report-add-to-queue':      () => addSelectedReportToQueue(),
+  // v3.14.0 AI 助手（85-agent.js）——仅注册 action，派发器零改动
+  'agent-toggle':             () => vcToggleAgentPanel(),
 };
 
 function dispatchDelegatedEvent(e) {

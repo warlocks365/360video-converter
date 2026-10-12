@@ -186,6 +186,26 @@ async function openSettings() {
     document.getElementById('settings_amap_security').value = s.amap_security || '';
     document.getElementById('settings_auto_load').checked = s.auto_load_tasks || false;
     document.getElementById('settings_custom_ffmpeg').value = s.custom_ffmpeg_path || '';
+    // ── v3.14.0 AI 助手字段回填 ──
+    document.getElementById('settings_agent_enabled').checked = !!s.agent_enabled;
+    document.getElementById('settings_agent_base_url').value = s.agent_base_url || '';
+    document.getElementById('settings_agent_model').value = s.agent_model || '';
+    document.getElementById('settings_agent_thinking').value = s.agent_thinking || 'default';
+    document.getElementById('settings_agent_effort').value = s.agent_reasoning_effort || 'auto';
+    document.getElementById('settings_agent_permission').value = s.agent_permission || 'standard';
+    document.getElementById('settings_agent_temperature').value = (s.agent_temperature === '' || s.agent_temperature == null) ? '' : s.agent_temperature;
+    document.getElementById('settings_agent_max_steps').value = s.agent_max_steps || 40;
+    document.getElementById('settings_agent_step_delay').value = (s.agent_step_delay == null || s.agent_step_delay === '') ? '' : s.agent_step_delay;
+    // 密钥掩码协议（Spec §7）：GET 只回哨兵 __KEEP__（已设）或空（未设），明文永不出后端。
+    const keyEl = document.getElementById('settings_agent_api_key');
+    const keySet = s.agent_api_key === '__KEEP__' || s.agent_api_key_set === true;
+    keyEl.value = '';
+    keyEl.placeholder = keySet ? '已保存（留空则保持不变）' : 'sk-… 或局域网 key；本机无鉴权可留空';
+    keyEl.dataset.set = keySet ? '1' : '0';
+    // header「AI 助手」按钮显隐（AC-01/02：关闭时零入口）
+    setDisplay('agentToggleBtn', s.agent_enabled ? '' : 'none');
+    // 权限门读的是 85-agent 的设置缓存，回填时同步（否则改权限要等下次开面板才生效）
+    if (typeof vcSetAgentSettingsCache === 'function') vcSetAgentSettingsCache(s);
   } catch(e) {
     // Fallback to localStorage if backend unreachable
     document.getElementById('settings_amap_key').value = getAmapKey();
@@ -312,20 +332,48 @@ async function saveSettings() {
   const amapSecurity = document.getElementById('settings_amap_security').value.trim();
   const autoLoad = document.getElementById('settings_auto_load').checked;
   const customFfmpeg = document.getElementById('settings_custom_ffmpeg').value.trim();
+  // ── v3.14.0 AI 助手字段收集（Spec §2 掩码协议）──
+  const agentKeyEl = document.getElementById('settings_agent_api_key');
+  const agentKeyVal = agentKeyEl.value.trim();
+  // 非空=用户新填 → 传新值；空且此前已设 → 回传哨兵保旧值；空且未设 → 传空
+  const agentApiKey = agentKeyVal !== '' ? agentKeyVal
+    : (agentKeyEl.dataset.set === '1' ? '__KEEP__' : '');
+  const agentPayload = {
+    agent_enabled: document.getElementById('settings_agent_enabled').checked,
+    agent_base_url: document.getElementById('settings_agent_base_url').value.trim(),
+    agent_api_key: agentApiKey,
+    agent_model: document.getElementById('settings_agent_model').value.trim(),
+    agent_thinking: document.getElementById('settings_agent_thinking').value,
+    agent_reasoning_effort: document.getElementById('settings_agent_effort').value,
+    agent_permission: document.getElementById('settings_agent_permission').value,
+    agent_temperature: document.getElementById('settings_agent_temperature').value.trim(),
+    agent_max_steps: document.getElementById('settings_agent_max_steps').value.trim() || 40,
+    agent_step_delay: document.getElementById('settings_agent_step_delay').value.trim() || 0.4,
+  };
   // Persist all settings to backend (survives pywebview window restart)
   try {
     await fetch('/api/settings', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
+      body: JSON.stringify(Object.assign({
         amap_api_key: amapKey,
         amap_security: amapSecurity,
         auto_load_tasks: autoLoad,
         custom_ffmpeg_path: customFfmpeg
-      })
+      }, agentPayload))
     });
     // Update in-memory cache so map picker picks up new key immediately
     _amapKey = amapKey;
     _amapSecurity = amapSecurity;
+    // 红线：agent key 不写 localStorage（唯一持久化面=后端 _settings.json）
+    setDisplay('agentToggleBtn', agentPayload.agent_enabled ? '' : 'none');
+    // 保存即同步权限门缓存：先重读 GET（拿到后端合并后的完整视图，含哨兵处理结果），
+    // 失败不阻塞保存流程（老行为：保存成功即关窗）。
+    if (typeof vcSetAgentSettingsCache === 'function') {
+      try {
+        const rs = await fetch('/api/settings');
+        vcSetAgentSettingsCache(await rs.json());
+      } catch (e) { /* 缓存滞后一次可接受，下次开设置即修正 */ }
+    }
   } catch(e) {
     // Fallback: save to localStorage if backend unreachable
     localStorage.setItem('amap_api_key', amapKey);

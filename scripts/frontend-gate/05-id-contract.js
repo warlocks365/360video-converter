@@ -55,6 +55,15 @@ const EXPECTED_ADDED = new Set([
   // 给 id 只会把契约面从 1 项扩到 7 项而零收益。定位用
   // [data-action="geo-copy"][data-geo-prefix="m"] 即可。
   'metaBatchRunBtn',
+  // v3.14.0 AI 助手（page-agent 集成）：header 入口按钮 + 设置弹窗 AI 助手组
+  // 10 控件。AI 助手组的「执行参数」三输入框各持独立 id（值语义不同，
+  // class 定位会歧义）；vendor Panel 的 DOM 由 page-agent 运行时挂 body，
+  // 不属于本静态契约面（静态门禁只扫 index.html）。
+  'agentToggleBtn',
+  'settings_agent_enabled', 'settings_agent_base_url', 'settings_agent_api_key',
+  'settings_agent_model', 'settings_agent_thinking', 'settings_agent_effort',
+  'settings_agent_permission', 'settings_agent_temperature',
+  'settings_agent_max_steps', 'settings_agent_step_delay',
 ]);
 
 if (MODE === 'baseline') {
