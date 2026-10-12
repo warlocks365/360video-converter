@@ -5630,21 +5630,18 @@ def agent_relay():
     path = payload.get('path') or '/chat/completions'
     body = payload.get('body')
     # 路径白名单：只放行 OpenAI 兼容的聊天补全（page-agent 运行期唯一用到的端点）。
-    # v3.14.0 对抗复测教训：startswith 前缀匹配可被 `/chat/completions/../settings`
-    # 穿透——urllib 会把 .. 归一化后转发到同 origin 的任意路径（实测 405/GET-only
-    # 端点被命中）。收紧为：归一化后必须与白名单路径完全相等。
-    import posixpath as _pp
-    norm = _pp.normpath(path) if isinstance(path, str) else ''
-    if norm != '/chat/completions':
+    # v3.14.0 教训：startswith 前缀匹配可被 `/chat/completions/../settings` 穿透。
+    # v3.14.1 B1 二次修正（QA 对抗验收 R5b）：先前用 normpath 归一化后转发，会让
+    # `/chat//completions`、`/chat/./completions`、`/chat/completions/` 一类松散
+    # 变体被"归一化放行"（HTTP 200），与 gate④ 契约「松散变体必须 400」矛盾。
+    # 改为**精确串相等**——最严且最简：非精确串（含任何 ../、//、./、尾斜杠、
+    # 大小写、查询串、无前导斜杠）一律 400；转发用的就是这条精确串，语义无歧义。
+    if path != '/chat/completions':
         return jsonify({'error': '中继仅允许 /chat/completions 路径'}), 400
     if not isinstance(body, dict) or 'messages' not in body:
         return jsonify({'error': 'body.messages 缺失'}), 400
 
-    # v3.14.1 B1 修复：转发必须用**归一化后**的路径——校验用 norm、拼接用原串
-    # 会让 `/chat//completions` 一类松散变体以非规范形态打到上游（实测 echo 靶
-    # 收到 /v1/chat//completions）。安全后果有限（同 origin 同端点），但契约要求
-    # "校验放行的语义 == 实际转发的语义"。
-    url = base.rstrip('/') + norm
+    url = base.rstrip('/') + path
     headers = {'Content-Type': 'application/json'}
     key = settings.get('agent_api_key') or ''
     if key:
