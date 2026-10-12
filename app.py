@@ -5538,6 +5538,17 @@ def get_settings():
         'amap_api_key':     _BUILTIN_KEY,
         'amap_security':    _BUILTIN_SEC,
         'custom_ffmpeg_path': '',
+        # ── AI 助手（v3.14.0，page-agent 集成）默认值 ──
+        'agent_enabled':   False,
+        'agent_base_url':  '',
+        'agent_api_key':   '',        # 出参时会被掩码替换（见下）
+        'agent_model':     '',
+        'agent_thinking':  'default',
+        'agent_reasoning_effort': 'auto',
+        'agent_temperature': '',
+        'agent_max_steps': 40,
+        'agent_step_delay': 0.4,
+        'agent_permission': 'standard',
     }
     if os.path.exists(SETTINGS_FILE):
         try:
@@ -5550,6 +5561,13 @@ def get_settings():
         defaults['amap_api_key'] = _BUILTIN_KEY
     if not defaults.get('amap_security'):
         defaults['amap_security'] = _BUILTIN_SEC
+    # v3.14.0: agent_api_key 明文永不出前端——前端从不使用其明文（LLM 请求经
+    # /api/agent_relay 由后端注入 Authorization）。这里只回掩码，防止 GET 响应
+    # 把密钥送进前端 DOM / devtools / 任何日志。amap_api_key 保持明文是因其
+    # 运行期被 20-map.js 直接拼进 /api/geocode 请求，改造面超出本次范围。
+    real_agent_key = defaults.get('agent_api_key') or ''
+    defaults['agent_api_key_set'] = bool(real_agent_key)
+    defaults['agent_api_key'] = ('__KEEP__' if real_agent_key else '')
     return jsonify(defaults)
 
 
@@ -5563,12 +5581,103 @@ def save_settings():
             existing = json.loads(Path(SETTINGS_FILE).read_text(encoding='utf-8'))
         except Exception:
             pass
+    # v3.14.0: agent_api_key 密钥纪律——GET 只回掩码哨兵，前端原样回传哨兵即
+    # "保持原值不变"；弹出计算字段不持久化。明文 key 只存在于本文件与进程内。
+    if isinstance(data, dict):
+        if data.get('agent_api_key') == '__KEEP__':
+            data.pop('agent_api_key')
+        data.pop('agent_api_key_set', None)
     merged = {**existing, **data}
     try:
         Path(SETTINGS_FILE).write_text(json.dumps(merged, indent=2, ensure_ascii=False), encoding='utf-8')
         return jsonify({'ok': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/agent_relay', methods=['POST'])
+def agent_relay():
+    """AI 助手 LLM 请求中继（v3.14.0）。
+
+    存在理由（按权重）：
+    1. 密钥不出后端——前端 customFetch 不发 Authorization，真实 key 只在本进程
+       注入，前端 DOM/devtools/日志永远看不到明文（与门禁 10 凭据纪律同线）；
+    2. WebView2 fetch 到 http:// 局域网端点属混合内容，且跨 origin 需要 CORS——
+       中继后浏览器永远只与 127.0.0.1:8765 同源通信，D4 "外网 API 一律经 Flask
+       代理" 先例的 AI 版；
+    3. 直连绕过环境代理——本机若挂 http_proxy，urllib 默认会走代理，
+       局域网 llama.cpp 端点会被代理劫持成错误响应（实测）。ProxyHandler({})
+       强制直连。
+
+    安全边界：只允许转发到 _settings.json 中用户已保存的 agent_base_url 之下、
+    且路径以白名单开头的请求——请求体里**不接收**任何 URL，前端无法把它当
+    开放代理用（SSRF 面=用户自己配置的那一台服务器）。
+    """
+    try:
+        settings = json.loads(Path(SETTINGS_FILE).read_text(encoding='utf-8')) if os.path.exists(SETTINGS_FILE) else {}
+    except Exception:
+        settings = {}
+    base = (settings.get('agent_base_url') or '').strip()
+    if not base:
+        return jsonify({'error': 'AI 助手未配置模型端点，请在设置 → AI 助手中填写 Base URL'}), 400
+    if not base.startswith(('http://', 'https://')):
+        return jsonify({'error': 'agent_base_url 协议非法（仅 http/https）'}), 400
+
+    try:
+        payload = request.get_json(force=True, silent=False)
+    except Exception:
+        return jsonify({'error': '请求体不是合法 JSON'}), 400
+    path = payload.get('path') or '/chat/completions'
+    body = payload.get('body')
+    # 路径白名单：只放行 OpenAI 兼容的聊天补全（page-agent 运行期唯一用到的端点）
+    if not path.startswith('/chat/completions'):
+        return jsonify({'error': '中继仅允许 /chat/completions 路径'}), 400
+    if not isinstance(body, dict) or 'messages' not in body:
+        return jsonify({'error': 'body.messages 缺失'}), 400
+
+    url = base.rstrip('/') + path
+    headers = {'Content-Type': 'application/json'}
+    key = settings.get('agent_api_key') or ''
+    if key:
+        headers['Authorization'] = 'Bearer ' + key
+
+    data_bytes = json.dumps(body, ensure_ascii=False).encode('utf-8')
+    https = url.startswith('https://')
+
+    def _do(ctx):
+        req = urllib.request.Request(url, data=data_bytes, headers=headers, method='POST')
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),
+            urllib.request.HTTPSHandler(context=ctx) if https else urllib.request.BaseHandler(),
+        )
+        return opener.open(req, timeout=180)
+
+    # SSL 降级重试与 _https_urlopen 同法（证书库过时的用户机场景）
+    try:
+        resp = _do(_get_https_ssl_context())
+    except urllib.error.URLError as e:
+        err = str(e).lower()
+        if https and ('certificate verify failed' in err or 'unable to get local issuer' in err):
+            try:
+                resp = _do(_ssl._create_unverified_context())
+            except urllib.error.HTTPError as he:
+                resp = he
+            except Exception as e2:
+                return jsonify({'error': f'模型端点连接失败：{e2}'}), 502
+        elif isinstance(e, urllib.error.HTTPError):
+            resp = e   # 上游 4xx/5xx：透传状态与 body，让前端展示真实原因
+        else:
+            return jsonify({'error': f'模型端点连接失败：{e}'}), 502
+    except urllib.error.HTTPError as e:
+        resp = e
+    except Exception as e:
+        return jsonify({'error': f'中继内部错误：{e}'}), 502
+
+    raw = resp.read()
+    try:
+        return jsonify(json.loads(raw.decode('utf-8'))), resp.status or 200
+    except Exception:
+        return app.response_class(raw, status=resp.status or 200, mimetype='application/json')
 
 
 @app.route('/api/debug')
