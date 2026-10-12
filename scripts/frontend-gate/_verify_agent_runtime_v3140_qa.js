@@ -120,15 +120,49 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const baseNonLocal = netLog.filter(u => !/^https?:\/\/127\.0\.0\.1:8765/.test(u) && !/^(data:|blob:|about:|file:)/.test(u));
   check('P0-5 空闲 5s 零非本机网络请求（懒加载未触发）', baseNonLocal.length === 0, baseNonLocal.slice(0, 3).join(' '));
 
+  // ═══ A1 组（v3.14.1 修复验证）：enabled=true 重启后 boot 期即恢复按钮，
+  //     且仍不加载 vendor / 零外联（AC-01"开启者也只在点按钮时加载"）═══
+  await rawHttp('POST', '/api/settings', { agent_enabled: true });
+  netLog.length = 0;
+  await send('Page.reload', {});
+  let a1Booted = false;
+  for (let i = 0; i < 30 && !a1Booted; i++) {
+    await sleep(700);
+    a1Booted = await ev(`(typeof vcRestoreAgentUI==='function' && document.readyState==='complete') === true`);
+  }
+  await sleep(2500); // 让 init() 全部 fetch 落定
+  const a1 = sj(await ev(`(function(){ try { return JSON.stringify({
+    display: getComputedStyle(document.getElementById('agentToggleBtn')).display,
+    pa: typeof window.PageAgent,
+    vs: !!document.querySelector('script[src*="page-agent"]')
+  }); } catch(e){ return JSON.stringify({__err:String(e).slice(0,100)}); } })()`));
+  check('A1-1 enabled=true 重启 → boot 期按钮可见（无需打开设置）', a1.display !== 'none', a1.display || JSON.stringify(a1));
+  check('A1-2 恢复显隐不加载 vendor（PageAgent 仍未定义、无 script 节点）',
+    a1.pa === 'undefined' && a1.vs === false, JSON.stringify(a1));
+  const a1NonLocal = netLog.filter(u => !/^https?:\/\/127\.0\.0\.1:8765/.test(u) && !/^(data:|blob:|about:|file:)/.test(u));
+  check('A1-3 重启+恢复全程零外联', a1NonLocal.length === 0, a1NonLocal.slice(0, 3).join(' '));
+  // 恢复出厂（enabled=false）并复位页面，供后续 Q/X 组在默认态下跑
+  await rawHttp('POST', '/api/settings', { agent_enabled: false });
+  await send('Page.reload', {});
+  let a1Reset = false;
+  for (let i = 0; i < 30 && !a1Reset; i++) {
+    await sleep(700);
+    a1Reset = await ev(`document.readyState==='complete' && typeof vcRestoreAgentUI==='function'`) === true;
+  }
+  await sleep(2000);
+  check('A1-4 enabled=false 恢复后按钮隐藏（S2.4b 语义，runtime 实证）',
+    await ev(`getComputedStyle(document.getElementById('agentToggleBtn')).display === 'none'`) === true);
+  netLog.length = 0;
+
   // ═══ Q 组：权限门（浏览器真实 JS）═══
   const qw = sj(await ev(`(function(){
-    const NAMES=['startConversion','startVR3D','startMetadataApply','startMetadataBatchRun','cancelConversion','savePresetDialog','deletePreset','removeSelectedTasks','removeUnselectedBatch','clearMergeList','saveSettings'];
+    const NAMES=['startConversion','startVR3D','startMetadataApply','startMetadataBatchRun','cancelConversion','savePresetDialog','deletePreset','removeSelectedTasks','removeUnselectedBatch','clearMergeList','saveReport','exportReportLog','openExternalUrl','saveSettings'];
     const w=NAMES.filter(n=>typeof window[n]==='function'&&window[n].__vcWrappedForAgent===true).length;
     const o=NAMES.filter(n=>typeof window[n]==='function'&&typeof window[n].__vcOrig==='function').length;
     return JSON.stringify({w,o});
   })()`));
-  check('Q1 11 项包装全部安装', qw.w === 11, 'wrapped=' + qw.w);
-  check('Q2 11 项 __vcOrig 全部保留（07 依赖）', qw.o === 11, 'orig=' + qw.o);
+  check('Q1 14 项包装全部安装（A2 补齐后）', qw.w === 14, 'wrapped=' + qw.w);
+  check('Q2 14 项 __vcOrig 全部保留（07 依赖）', qw.o === 14, 'orig=' + qw.o);
   check('Q3 包装遮蔽原函数文本、__vcOrig 可还原（07 契约双向成立）',
     await ev(`!window.startConversion.toString().includes('collectVR3DParams') && window.startConversion.__vcOrig.toString().includes('collectVR3DParams()')`) === true);
 
