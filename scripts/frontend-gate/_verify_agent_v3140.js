@@ -110,8 +110,14 @@ const API = (url) => {
   check('S2.2 按钮 data-action=agent-toggle', toggleBtn && toggleBtn.dataset.action === 'agent-toggle');
   const core = fs.readFileSync(path.join(ROOT, 'static/js/00-core.js'), 'utf8');
   check('S2.3 agent-toggle 已注册 DELEGATED_ACTIONS', /'agent-toggle':\s*\(\)\s*=>\s*vcToggleAgentPanel\(\)/.test(core));
-  // AC-01：enabled 时 openSettings 显示按钮；初始（未开设置）display:none
-  check('S2.4 初始隐藏（openSettings 前）', toggleBtn && toggleBtn.style.display === 'none', toggleBtn && toggleBtn.style.display);
+  // v3.14.1 A1 行为变更：boot 期即按设置恢复按钮（不再等 openSettings）——
+  // enabled=true 加载完就应显示；enabled=false 才隐藏（S2.4b 验反面）。
+  check('S2.4 boot 期按 enabled=true 恢复显示（A1 修复语义）', toggleBtn && toggleBtn.style.display !== 'none', toggleBtn && toggleBtn.style.display);
+
+  // S2.4b enabled=false → 恢复函数置隐藏（直接喂假设置对象，行为级验证）
+  win.vcRestoreAgentUI(Object.assign({}, AGENT_SETTINGS, { agent_enabled: false }));
+  check('S2.4b enabled=false 恢复后隐藏', toggleBtn.style.display === 'none', toggleBtn.style.display);
+  win.vcRestoreAgentUI(AGENT_SETTINGS);  // 还原 enabled=true 供后续断言
 
   // S3 openSettings 回填（含掩码协议）
   await win.openSettings();
@@ -152,7 +158,7 @@ const API = (url) => {
   check('S5.1 85-agent 载入即安装（无 enable 调用）', /function _installAgentGate/.test(fs.readFileSync(path.join(ROOT, 'static/js/85-agent.js'), 'utf8')));
   // jsdom 里 60/30/40/10 的原函数都在（顶层 function 声明=window 属性），包装后带标记
   check('S5.2 包装标记生效', win.startConversion && win.startConversion.__vcWrappedForAgent === true);
-  check('S5.3 包装名单全覆盖 11 项', ['startConversion','startVR3D','startMetadataApply','startMetadataBatchRun','cancelConversion','savePresetDialog','deletePreset','removeSelectedTasks','removeUnselectedBatch','clearMergeList','saveSettings'].every(n => win[n] && win[n].__vcWrappedForAgent === true));
+  check('S5.3 包装名单全覆盖 14 项（v3.14.1 补 saveReport/exportReportLog/openExternalUrl）', ['startConversion','startVR3D','startMetadataApply','startMetadataBatchRun','cancelConversion','savePresetDialog','deletePreset','removeSelectedTasks','removeUnselectedBatch','clearMergeList','saveReport','exportReportLog','openExternalUrl','saveSettings'].every(n => win[n] && win[n].__vcWrappedForAgent === true));
   // 用户手动路径：__vcAgentActive=false → 直通（saveSettings 刚被真实调用过，证明直通生效）
   check('S5.4 非 agent 期间直通生效（saveSettings 已实际执行）', postedBodies.length > 0);
   // agent 期间 readonly：confirm 不应弹出（拦截在 confirm 前），函数不执行

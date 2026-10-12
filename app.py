@@ -5640,10 +5640,19 @@ def agent_relay():
     if not isinstance(body, dict) or 'messages' not in body:
         return jsonify({'error': 'body.messages 缺失'}), 400
 
-    url = base.rstrip('/') + path
+    # v3.14.1 B1 修复：转发必须用**归一化后**的路径——校验用 norm、拼接用原串
+    # 会让 `/chat//completions` 一类松散变体以非规范形态打到上游（实测 echo 靶
+    # 收到 /v1/chat//completions）。安全后果有限（同 origin 同端点），但契约要求
+    # "校验放行的语义 == 实际转发的语义"。
+    url = base.rstrip('/') + norm
     headers = {'Content-Type': 'application/json'}
     key = settings.get('agent_api_key') or ''
     if key:
+        # v3.14.1 A3 修复：Authorization 头只接受可打印 ASCII（latin-1 编码域），
+        # 含非 ASCII 时 urllib 抛 'latin-1' codec 内部异常并 502 回显原文。
+        # 入口校验 + 错误脱敏，不透出 Python 异常细节。
+        if any(ord(c) > 126 or ord(c) < 32 for c in key):
+            return jsonify({'error': 'API Key 含非法字符（仅支持可打印 ASCII），请在设置中重新输入'}), 400
         headers['Authorization'] = 'Bearer ' + key
 
     data_bytes = json.dumps(body, ensure_ascii=False).encode('utf-8')

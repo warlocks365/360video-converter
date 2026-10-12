@@ -28,6 +28,9 @@ async function init() {
     if (s.auto_load_tasks) {
       await autoLoadTasks();
     }
+    // v3.14.1 A1：AI 助手入口按设置持久恢复——此前按钮显隐只在 openSettings
+    // 回填时赋值，enabled=true 后重启/刷新按钮保持隐藏（违背设置字面语义）。
+    if (typeof vcRestoreAgentUI === 'function') vcRestoreAgentUI(s);
   } catch(e) {}
 
   // Load codec info first, then check availability

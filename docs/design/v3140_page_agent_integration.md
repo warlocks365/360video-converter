@@ -84,16 +84,22 @@ curl -s --noproxy '*' -X POST http://127.0.0.1:8767/api/agent_relay -d '{"path":
 - esc() 在 JS-in-attribute 上下文不充分——agent 文案一律 textContent 或 data-action
 - exe 启动验证勿用 `| head`（断管杀进程）；测试 curl 一律 `--noproxy '*'`
 - 凭证：本文件与代码**不得**出现任何真实 key；默认值留空
-</content>
 
 ## 7. 为什么 agent key 可掩码而 amap key 不行（设计取舍）
 
 实测 grep 结论：`amap_api_key` 在运行期被 `20-map.js:36` 取**明文**拼进 `/api/geocode` 的 query，且 `10-ui.js:185` 回填到输入框、`:331` 另存 localStorage 兜底——对它做掩码会直接破坏地图搜索，改造面超出本次范围，故**保持既有行为不动**。
 
 `agent_api_key` 则设计成**前端永远不需要明文**：所有 LLM 请求经 `customFetch` → `/api/agent_relay`，由后端从 `_settings.json` 自行读取并注入 `Authorization`。因此：
-- GET `/api/settings` 对 `agent_api_key` 返回掩码（已设则 `__SET__:8` 形式，未设则空串）；
+- GET `/api/settings` 对 `agent_api_key` 返回掩码（已设则哨兵 `__KEEP__`，未设则空串；另有布尔 `agent_api_key_set` 供前端摆 placeholder）；
 - 前端**不写 localStorage**（避免第二次持久化面）；
 - POST 收到掩码哨兵 `__KEEP__` 时后端保留旧值，收到空串时清空；
 - 输入框默认显示掩码占位，用户不重新输入就不会覆盖真实 key。
 
 这样 key 的明文只存在于 `_settings.json`（APPDATA）与后端进程内，不经过前端 DOM、不进 localStorage、不进日志。
+
+## 8. 变更记录
+
+| 日期 | 变更内容 | 原因 | 影响范围 |
+|---|---|---|---|
+| 2026-10-12 | v3.14.1 修复轮（QA 对抗验收 B1/B2/A1/A2/A3）：① relay 转发改用归一化路径（`/chat//completions` 等松散变体不再以非规范形态到上游）；② 权限门加**同步链式继承**标记（startConversion→startVR3D 单次确认，链深>0 时内层继承外层决策不再弹）；③ 启动期按设置恢复 agentToggleBtn（90-boot 调 vcRestoreAgentUI）；④ 名单补 saveReport/exportReportLog/openExternalUrl 三个 L2 对齐表E（11→14 项）；⑤ API Key 非 ASCII 入口校验 400+错误脱敏（消除 latin-1 内部异常回显） | 独立对抗验收（_verify_agent_v3140_qa.js 85/89→修复后复验、runtime 43/43） | app.py / 85-agent.js / 90-boot.js |
+| 2026-10-12 | 实测修正：vendor Panel 构造内部自行接线 `agent.onAskUser`（bundle @217760），**ask_user 实际启用**（经助手面板人工应答，无自动副作用，可接受）——派单时"未设置 onAskUser→自动禁用"表述有误，不显式关闭 | QA 证伪第 7 点上报的规格矛盾 | 文档 |

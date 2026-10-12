@@ -30,6 +30,16 @@ function vcSetAgentSettingsCache(s) {
   if (s && typeof s === 'object') _agentSettingsCache = s;
 }
 
+// ── 启动期恢复（90-boot init 读到设置后调用，v3.14.1 A1）──
+// 语义：agent_enabled=true → header 按钮可见 + 权限门缓存就位；
+// 不做任何网络请求、不加载 vendor（保持 AC-01「默认关零注入」——开启者
+// 也只在点按钮时才加载）。
+function vcRestoreAgentUI(s) {
+  if (!s || typeof s !== 'object') return;
+  vcSetAgentSettingsCache(s);
+  setDisplay('agentToggleBtn', s.agent_enabled ? '' : 'none');
+}
+
 // ── 动作元数据（中文标签 + 权限级别，照 FEATURE_CATALOG 表E）──
 const AGENT_ACTIONS = {
   startConversion:        { label: '启动转码任务（单文件/合并/批量）', level: 'L2' },
@@ -42,6 +52,11 @@ const AGENT_ACTIONS = {
   removeSelectedTasks:    { label: '删除勾选的批量任务行',             level: 'L3' },
   removeUnselectedBatch:  { label: '删除未勾选的全部批量任务行',       level: 'L3' },
   clearMergeList:         { label: '清空待合并文件列表',               level: 'L3' },
+  // v3.14.1 A2：与 FEATURE_CATALOG 表E 对齐补齐——三者都有真实外部副作用
+  //（写盘下载/起系统浏览器），此前 Spec 名单遗漏，agent 可无确认触发。
+  saveReport:             { label: '保存报告文件到磁盘',               level: 'L2' },
+  exportReportLog:        { label: '导出任务日志文件',                 level: 'L2' },
+  openExternalUrl:        { label: '在系统浏览器打开外部链接',         level: 'L2' },
   saveSettings:           { label: '修改应用设置（含模型端点）',       level: 'FORBIDDEN' },
 };
 
@@ -56,6 +71,11 @@ function agentLog(msg, level) {
 }
 
 // ── 权限门：包装一个 window 函数 ─────────────────────
+// v3.14.1 B2：同步链式调用继承外层决策——startConversion 的 vr3d 分支内部
+// 调用同为包装函数的 startVR3D，若每层各自弹确认，standard 档会连弹两窗。
+// 判定=调用栈深度标记：只在 orig.apply 同步执行期间递增（async 函数体在首个
+// await 前同步运行，链式调用恰在此窗口内发生），异步续体不算链式、独立确认。
+let _gatedChainDepth = 0;
 function _wrapAgentAction(name) {
   const orig = window[name];
   if (typeof orig !== 'function') return false;   // 防未来重构悄悄改签名：包装失败要能被发现
@@ -63,6 +83,12 @@ function _wrapAgentAction(name) {
   const wrapped = function () {
     if (!window.__vcAgentActive) {
       return orig.apply(this, arguments);          // 用户手动操作零影响
+    }
+    if (_gatedChainDepth > 0) {
+      // 链式内层：外层已通过确认/拦截，继承其决策，不再重复弹
+      agentLog('链式调用继承外层决策: ' + name, 'info');
+      _gatedChainDepth++;
+      try { return orig.apply(this, arguments); } finally { _gatedChainDepth--; }
     }
     const perm = (_agentSettingsCache && _agentSettingsCache.agent_permission) || 'standard';
     // 禁区：agent 永远不得改设置（模型端点自我改写=失控回路）
@@ -79,7 +105,8 @@ function _wrapAgentAction(name) {
       }
     }
     agentLog('放行（权限=' + perm + '）: ' + name);
-    return orig.apply(this, arguments);
+    _gatedChainDepth++;
+    try { return orig.apply(this, arguments); } finally { _gatedChainDepth--; }
   };
   wrapped.__vcWrappedForAgent = true;
   // 暴露原函数：门禁/套件按 .toString() 读源码做静态断言（07 的 P0-4/P0-5），
