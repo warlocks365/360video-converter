@@ -10,6 +10,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
+const crypto = require('crypto');
 
 const EXE = path.resolve(__dirname, '../../dist/360VideoConverter.exe');
 const PORT = 8765;
@@ -53,6 +54,29 @@ const get = (p) => new Promise(resolve => {
   });
   req.on('error', e => resolve({ err: e.message }));
   req.on('timeout', () => { req.destroy(); resolve({ err: 'timeout' }); });
+});
+
+// v3.14.0：POST 探针（中继端点存活校验）+ 取字节（sha1 逐字节校验必须用 Buffer，
+// 字符串解码会破坏字节数）。均走原生 http，node http 不经系统代理，与既有教训一致。
+const rawHttp = (method, p, payload) => new Promise(resolve => {
+  const req = http.request({ host: '127.0.0.1', port: PORT, path: p, method, timeout: 4000,
+    headers: { 'Content-Type': 'application/json' } }, res => {
+    let d = ''; res.on('data', c => d += c);
+    res.on('end', () => resolve({ code: res.statusCode, body: d }));
+  });
+  req.on('error', e => resolve({ code: 0, body: '', err: e.message }));
+  req.on('timeout', () => { req.destroy(); resolve({ code: 0, body: '', err: 'timeout' }); });
+  req.end(payload);
+});
+
+const getBytes = (p) => new Promise(resolve => {
+  const req = http.get({ host: '127.0.0.1', port: PORT, path: p, timeout: 8000 }, res => {
+    const chunks = [];
+    res.on('data', c => chunks.push(c));   // 不设 encoding → c 是 Buffer
+    res.on('end', () => resolve(Buffer.concat(chunks)));
+  });
+  req.on('error', () => resolve(Buffer.alloc(0)));
+  req.on('timeout', () => { req.destroy(); resolve(Buffer.alloc(0)); });
 });
 
 (async () => {
@@ -158,6 +182,8 @@ const get = (p) => new Promise(resolve => {
   const homeHtml = home.body || '';
   for (const [label, needle] of [
     ['批量列队执行按钮 metaBatchRunBtn', 'metaBatchRunBtn'],
+    ['AI 助手入口 agentToggleBtn', 'agentToggleBtn'],
+    ['AI 助手设置组 settings_agent_enabled', 'settings_agent_enabled'],
     ['GPS 一键复制 geo-copy', 'geo-copy'],
     ['GPS 地图选点 geo-map-pick', 'geo-map-pick'],
   ]) {
@@ -173,6 +199,28 @@ const get = (p) => new Promise(resolve => {
     if (r.code !== 200) apiBad.push(`${a}(${r.code || r.err})`);
   }
   check('关键 API 端点存活', apiBad.length === 0, apiBad.length ? apiBad.join(', ') : '全部 200');
+
+  // 5b. v3.14.0 AI 助手后端与资源必须真进包（中继端点存在 + vendor bundle 逐字节一致）
+  // 中继路由必须已打包：未配置 baseURL → 400；若测试机 APPDATA 恰好配了不可达
+  // 端点 → 502。两者都证明"路由存在且守门在跑"；没打包才会 404。
+  // 断言不锁文案——改措辞不回头改门禁。
+  const relayR = await rawHttp('POST', '/api/agent_relay',
+    '{"path":"/chat/completions","body":{"messages":[{"role":"user","content":"x"}]}}');
+  check('中继端点已打包且守门激活（400/502，非 404）',
+    relayR.code === 400 || relayR.code === 502, `HTTP ${relayR.code || relayR.err}`);
+  // 期望值直接读仓库源文件——门禁 08 的语义就是"exe 内容与仓库源码一致"，
+  // 升级 vendor 只改 static/agent/ 下文件，不回头改门禁。
+  // 取字节必须用 Buffer 流（getBytes）：get() 的字符串 body 经 UTF-8 解码后
+  // 字节数与 sha 都会失真，证明不了"逐字节一致"。
+  const vendorBytes = await getBytes('/agent/page-agent.iife.js');
+  const vendorSrc = path.resolve(__dirname, '../../static/agent/page-agent.iife.js');
+  const srcBytes = fs.readFileSync(vendorSrc);
+  const gotSha = crypto.createHash('sha1').update(vendorBytes).digest('hex');
+  const expectSha = crypto.createHash('sha1').update(srcBytes).digest('hex');
+  check('vendor bundle 已随包分发（字节数=仓库源文件）',
+    vendorBytes.length === srcBytes.length, `exe=${vendorBytes.length} / 源=${srcBytes.length}`);
+  check('vendor bundle 内容与仓库源文件 sha1 逐字节一致', gotSha === expectSha,
+    `exe sha1=${gotSha.slice(0, 16)}… 源 sha1=${expectSha.slice(0, 16)}…`);
 
   // 收尾：结束整棵进程树（必须用 taskkill，见文件顶部说明）
   cleanup();
