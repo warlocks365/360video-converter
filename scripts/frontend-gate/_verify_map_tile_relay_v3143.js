@@ -1,6 +1,8 @@
-// 地图修复验证：CDP 驱动 WebView2 页面（加载 dev 8766 新代码），打开地图选点，
-// 断言瓦片真实渲染（naturalWidth>0）且请求走同源 /api/osm_tile（不再直连 OSM 域）
+// 地图修复验证：CDP 驱动 WebView2 页面，打开地图选点，
+// 断言瓦片真实渲染（naturalWidth>0）且请求走同源 /api/osm_tile（不再直连 OSM 域）。
+// 用法：node _diag_map_verify.js [可选 navigate-url] —— 不传则在 exe 当前页验证（打包代码）
 const http = require('http');
+const NAV = process.argv[2] || '';
 http.get({ host: '127.0.0.1', port: 9222, path: '/json/list' }, r => {
   let b = ''; r.on('data', c => b += c); r.on('end', () => {
     const t = JSON.parse(b).find(x => x.type === 'page');
@@ -23,8 +25,7 @@ http.get({ host: '127.0.0.1', port: 9222, path: '/json/list' }, r => {
     };
     ws.onopen = async () => {
       await send('Network.enable'); await send('Runtime.enable'); await send('Page.enable');
-      await send('Page.navigate', { url: 'http://127.0.0.1:8766/' });
-      await new Promise(r => setTimeout(r, 4000));
+      if (NAV) { await send('Page.navigate', { url: NAV }); await new Promise(r => setTimeout(r, 4000)); }
       console.log('页面:', await ev('location.href'));
       console.log('tileLayer URL:', await ev('(function(){try{return document.querySelector("#mapContainer")?"n/a":"not-init";}catch(e){return "x";}})()'));
       console.log('openMapPicker:', await ev('(function(){try{openMapPicker("encode");return "opened";}catch(e){return "THROW:"+e.message;}})()'));
