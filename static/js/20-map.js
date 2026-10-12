@@ -173,7 +173,12 @@ function createMapInstance() {
       zoomControl: true,
     });
     // OSM tiles — global coverage, WGS-84 coordinate system
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // v3.14.3：瓦片改走同源后端中继 /api/osm_tile（后端直连 OSM + 本地磁盘缓存）。
+    // 原因：部分网络环境下 WebView2 浏览器栈到 *.tile.openstreetmap.org 的连接
+    // 被按 SNI 重置（ERR_CONNECTION_RESET，2026-10-13 用户实报），而本机后端
+    // urllib 直连可达；沿用 D4 先例「外网资源一律经 Flask 代理」（geocode/nominatim）。
+    // attribution 保留 OSM 版权署名（使用政策要求）。
+    L.tileLayer('/api/osm_tile/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 19,
     }).addTo(mapInstance);

@@ -4585,6 +4585,85 @@ def nominatim_proxy():
         return jsonify({'error': err_str}), 502
 
 
+# ── v3.14.3 地图瓦片中继 ─────────────────────────────────────────
+# 背景（2026-10-13 用户实报「地图选点不显示」）：WebView2 内对
+# *.tile.openstreetmap.org 的连接被网络中间设备按 SNI 重置
+# （net::ERR_CONNECTION_RESET），而同页 baidu/github/aliyun 全通、
+# 同机 curl 直连 OSM 也 200 —— 即干扰只作用于浏览器栈到 OSM 域的连接。
+# 地图代码自 v3.13.18 起零改动，故非代码回归而是外部网络条件变化。
+#
+# 修法沿用本项目 D4 先例（外网 API 一律经 Flask 代理：geocode/nominatim）：
+# 瓦片改走同源 /api/osm_tile，由**后端** urllib 直连 OSM（本机已实证可达），
+# 绕开被干扰的浏览器直连路径；并加本地磁盘缓存降低对 OSM 的请求频率
+# （OSM 瓦片使用政策要求缓存与合规 UA，此处两者都满足）。
+_TILE_CACHE_DIR = os.path.join(PRESETS_DIR, 'tilecache')
+os.makedirs(_TILE_CACHE_DIR, exist_ok=True)
+_TILE_CACHE_MAX_FILES = 4000          # 约 4000×~15KB ≈ 60MB 上限
+_TILE_UA = '360VideoConverter/3.14 (self-hosted desktop tool; contact: warlocks365@users.noreply.github.com)'
+
+@app.route('/api/osm_tile/<int:z>/<int:x>/<int:y>.png')
+def osm_tile_proxy(z, x, y):
+    # 参数边界：Web 墨卡托瓦片坐标合法域
+    if not (0 <= z <= 19 and 0 <= x < (1 << z) and 0 <= y < (1 << z)):
+        return jsonify({'error': '瓦片坐标越界'}), 400
+    sub = 'abc'[(x + y) % 3]
+    upstream = f'https://{sub}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+    cache_path = os.path.join(_TILE_CACHE_DIR, f'{z}_{x}_{y}.png')
+
+    # 1) 磁盘缓存命中（瓦片不可变，命中即回，零上游请求）
+    if os.path.isfile(cache_path):
+        try:
+            with open(cache_path, 'rb') as f:
+                data = f.read()
+            resp = app.response_class(data, mimetype='image/png')
+            resp.headers['Cache-Control'] = 'public, max-age=604800'  # 7 天浏览器缓存
+            return resp
+        except Exception:
+            pass  # 缓存读失败则回源
+
+    # 2) 回源（后端直连，绕开浏览器栈被干扰的路径；SSL 降级与 geocode 同法）
+    req = urllib.request.Request(upstream, headers={'User-Agent': _TILE_UA})
+    try:
+        try:
+            resp_obj = urllib.request.urlopen(req, timeout=10, context=_get_https_ssl_context())
+        except urllib.error.URLError as e:
+            err_str = str(e)
+            if ('CERTIFICATE VERIFY FAILED' in err_str or
+                    'certificate verify failed' in err_str or
+                    'unable to get local issuer certificate' in err_str):
+                resp_obj = urllib.request.urlopen(
+                    req, timeout=10, context=_ssl._create_unverified_context())
+            else:
+                raise
+        data = resp_obj.read()
+    except urllib.error.HTTPError as e:
+        return jsonify({'error': f'OSM 上游 HTTP {e.code}'}), 502
+    except Exception as e:
+        return jsonify({'error': f'瓦片获取失败: {e}'}), 502
+
+    # 3) 写磁盘缓存（尽力而为；超限做惰性淘汰）
+    try:
+        with open(cache_path, 'wb') as f:
+            f.write(data)
+        try:
+            if len(os.listdir(_TILE_CACHE_DIR)) > _TILE_CACHE_MAX_FILES:
+                # 惰性淘汰：删最旧的一半（单线程顺序删，避免引入后台线程）
+                files = sorted(
+                    (os.path.join(_TILE_CACHE_DIR, n) for n in os.listdir(_TILE_CACHE_DIR)),
+                    key=os.path.getmtime)
+                for old in files[: len(files) // 2]:
+                    try: os.remove(old)
+                    except Exception: pass
+        except Exception:
+            pass
+    except Exception:
+        pass
+
+    resp = app.response_class(data, mimetype='image/png')
+    resp.headers['Cache-Control'] = 'public, max-age=604800'
+    return resp
+
+
 @app.route('/api/convert', methods=['POST'])
 def start_convert():
     data = request.json
