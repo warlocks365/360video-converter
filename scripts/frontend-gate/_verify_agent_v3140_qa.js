@@ -67,9 +67,11 @@ const QA_SETTINGS = {
   agent_temperature: '1.3', agent_max_steps: 17, agent_step_delay: 0.9,
 };
 
+// v3.14.1 A2：名单 11→14（补 saveReport/exportReportLog/openExternalUrl 三个 L2，对齐表E）
 const WRAPPED = ['startConversion', 'startVR3D', 'startMetadataApply', 'startMetadataBatchRun',
   'cancelConversion', 'savePresetDialog', 'deletePreset', 'removeSelectedTasks',
-  'removeUnselectedBatch', 'clearMergeList', 'saveSettings'];
+  'removeUnselectedBatch', 'clearMergeList', 'saveReport', 'exportReportLog',
+  'openExternalUrl', 'saveSettings'];
 
 (async () => {
   // ═══ G/M/T/S 组：jsdom ═══
@@ -124,9 +126,9 @@ const WRAPPED = ['startConversion', 'startVR3D', 'startMetadataApply', 'startMet
     warns.concat(errors).filter(w => /85-agent/.test(w)).join(' | ') || 'clean');
 
   // ── G 组：包装存在性 + __vcOrig 保留（07 依赖）──
-  check('G1 11 项全部 __vcWrappedForAgent', WRAPPED.every(n => win[n] && win[n].__vcWrappedForAgent === true),
+  check('G1 14 项全部 __vcWrappedForAgent（A2 补齐后）', WRAPPED.every(n => win[n] && win[n].__vcWrappedForAgent === true),
     WRAPPED.filter(n => !(win[n] && win[n].__vcWrappedForAgent === true)).join(','));
-  check('G2 11 项 __vcOrig 均为原函数（function）', WRAPPED.every(n => win[n] && typeof win[n].__vcOrig === 'function'));
+  check('G2 14 项 __vcOrig 均为原函数（function）', WRAPPED.every(n => win[n] && typeof win[n].__vcOrig === 'function'));
   check('G3 __vcOrig 源码可被静态断言读取（07 契约）',
     win.startConversion.__vcOrig.toString().includes('collectVR3DParams()')
     && win.deletePreset.__vcOrig.toString().includes('删除预设')
@@ -148,7 +150,7 @@ const WRAPPED = ['startConversion', 'startVR3D', 'startMetadataApply', 'startMet
   let confirmCalls = [];
   const setConfirm = (ret) => { confirmCalls = []; win.confirm = (msg) => { confirmCalls.push(String(msg)); return typeof ret === 'function' ? ret(msg) : ret; }; };
 
-  // ── G5 readonly：11 项逐个拦截，零 confirm、零原函数副作用 ──
+  // ── G5 readonly：14 项逐个拦截，零 confirm、零原函数副作用 ──
   win.vcSetAgentSettingsCache(Object.assign({}, QA_SETTINGS, { agent_permission: 'readonly' }));
   win.__vcAgentActive = true;
   clearCalls(); setConfirm(true);
@@ -156,7 +158,7 @@ const WRAPPED = ['startConversion', 'startVR3D', 'startMetadataApply', 'startMet
   for (const n of WRAPPED) { try { win[n](); } catch (e) { /* async 拒绝另行断言 */ } }
   await sleep(400);
   const readonlyToast = (doc.getElementById('toastNotification') || {}).textContent || '';
-  check('G5 readonly：11 项零 confirm 弹出', confirmCalls.length === 0, confirmCalls.join(' | '));
+  check('G5 readonly：14 项零 confirm 弹出', confirmCalls.length === 0, confirmCalls.join(' | '));
   check('G6 readonly：deletePreset 零 DELETE 请求', DEL_P1() === DEL0);
   check('G7 readonly：saveSettings 零 POST', POSTS().length === 0);
   check('G8 readonly：拦截 toast 含「只读」', /只读/.test(readonlyToast), readonlyToast.slice(0, 50));
@@ -224,6 +226,50 @@ const WRAPPED = ['startConversion', 'startVR3D', 'startMetadataApply', 'startMet
   win.saveSettings();
   await sleep(400);
   check('G16 非 agent 期：saveSettings 手动保存正常（门零误伤）', POSTS().length > POST0);
+  win.__vcAgentActive = false;
+
+  // ── A2 专项：三个新增 L2 包装函数真被门控（不只挂标记，行为实证）──
+  // 探针选 openExternalUrl（直接 fetch /api/open_external，副作用最干净可观测）。
+  // saveReport/exportReportLog 有前置 guard（无数据即 alert 早退、不发请求），
+  // 其 readonly 拦截已由 G5 全 14 项零 confirm 覆盖；此处聚焦 openExternalUrl 三档。
+  const EXT = () => fetchCalls.filter(c => /\/api\/open_external/.test(c.url)).length;
+  // A2-a readonly：agent 触发 openExternalUrl → 拦截、零 /api/open_external
+  win.vcSetAgentSettingsCache(Object.assign({}, QA_SETTINGS, { agent_permission: 'readonly' }));
+  win.__vcAgentActive = true; clearCalls(); setConfirm(true);
+  win.openExternalUrl('https://qa-probe.example/x');
+  await sleep(300);
+  check('A2-a readonly：openExternalUrl 被拦（零 /api/open_external + 零 confirm）',
+    EXT() === 0 && confirmCalls.length === 0, 'ext=' + EXT() + ' confirm=' + confirmCalls.length);
+  const rtExt = (doc.getElementById('toastNotification') || {}).textContent || '';
+  check('A2-a2 readonly 拦截 toast 含新增函数标签「外部链接」', /外部链接|只读/.test(rtExt), rtExt.slice(0, 50));
+  // A2-b standard：确认 → 放行发出请求；拒绝 → 零请求
+  win.vcSetAgentSettingsCache(Object.assign({}, QA_SETTINGS, { agent_permission: 'standard' }));
+  clearCalls(); setConfirm(false);
+  win.openExternalUrl('https://qa-probe.example/y');
+  await sleep(300);
+  check('A2-b standard：确认弹出且文案含「外部链接」',
+    confirmCalls.length === 1 && /外部链接/.test(confirmCalls[0]), confirmCalls.join('|'));
+  check('A2-b2 standard 拒绝 → 零 /api/open_external', EXT() === 0, 'ext=' + EXT());
+  clearCalls(); setConfirm(true);
+  win.openExternalUrl('https://qa-probe.example/z');
+  await sleep(300);
+  check('A2-b3 standard 确认 → 放行发出 /api/open_external', EXT() === 1, 'ext=' + EXT());
+  // A2-c full：直通零 gate 确认（原函数无自带 confirm）
+  win.vcSetAgentSettingsCache(Object.assign({}, QA_SETTINGS, { agent_permission: 'full' }));
+  clearCalls(); setConfirm(true);
+  win.openExternalUrl('https://qa-probe.example/w');
+  await sleep(300);
+  check('A2-c full：openExternalUrl 直通发出请求且 gate 零确认',
+    EXT() === 1 && !confirmCalls.some(c => /AI 助手即将执行/.test(c)), 'ext=' + EXT() + ' confirm=' + confirmCalls.join('|'));
+  // A2-d 非 agent 期零误伤：手动 openExternalUrl 直通
+  win.__vcAgentActive = false;
+  clearCalls(); setConfirm(true);
+  win.openExternalUrl('https://qa-probe.example/manual');
+  await sleep(300);
+  check('A2-d 非 agent 期：openExternalUrl 手动直通（门零误伤）', EXT() === 1 && confirmCalls.length === 0, 'ext=' + EXT());
+  // A2-e 三新增函数 __vcOrig 均保留（07/源码读取契约对新函数同样成立）
+  check('A2-e saveReport/exportReportLog/openExternalUrl __vcOrig 齐备',
+    ['saveReport', 'exportReportLog', 'openExternalUrl'].every(n => win[n] && typeof win[n].__vcOrig === 'function'));
   win.__vcAgentActive = false;
 
   // ── M 组：十字段三环映射（回填→提交；落盘在 R 组用真实后端验）──
