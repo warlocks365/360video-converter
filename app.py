@@ -5629,8 +5629,13 @@ def agent_relay():
         return jsonify({'error': '请求体不是合法 JSON'}), 400
     path = payload.get('path') or '/chat/completions'
     body = payload.get('body')
-    # 路径白名单：只放行 OpenAI 兼容的聊天补全（page-agent 运行期唯一用到的端点）
-    if not path.startswith('/chat/completions'):
+    # 路径白名单：只放行 OpenAI 兼容的聊天补全（page-agent 运行期唯一用到的端点）。
+    # v3.14.0 对抗复测教训：startswith 前缀匹配可被 `/chat/completions/../settings`
+    # 穿透——urllib 会把 .. 归一化后转发到同 origin 的任意路径（实测 405/GET-only
+    # 端点被命中）。收紧为：归一化后必须与白名单路径完全相等。
+    import posixpath as _pp
+    norm = _pp.normpath(path) if isinstance(path, str) else ''
+    if norm != '/chat/completions':
         return jsonify({'error': '中继仅允许 /chat/completions 路径'}), 400
     if not isinstance(body, dict) or 'messages' not in body:
         return jsonify({'error': 'body.messages 缺失'}), 400
