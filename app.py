@@ -5622,6 +5622,13 @@ def agent_relay():
         return jsonify({'error': 'AI 助手未配置模型端点，请在设置 → AI 助手中填写 Base URL'}), 400
     if not base.startswith(('http://', 'https://')):
         return jsonify({'error': 'agent_base_url 协议非法（仅 http/https）'}), 400
+    # v3.14.2 容错：用户可能把**完整聊天端点**（…/v1/chat/completions）粘进 Base URL
+    # 输入框（2026-10-13 用户实报）。若不剥离，中继会拼出
+    # …/chat/completions/chat/completions 双路径，上游 404「File Not Found」
+    # （llama.cpp 对未知路由的典型响应）。剥离尾段后与白名单路径拼接，语义不变。
+    base = base.rstrip('/')
+    if base.endswith('/chat/completions'):
+        base = base[: -len('/chat/completions')]
 
     try:
         payload = request.get_json(force=True, silent=False)

@@ -338,9 +338,15 @@ async function saveSettings() {
   // 非空=用户新填 → 传新值；空且此前已设 → 回传哨兵保旧值；空且未设 → 传空
   const agentApiKey = agentKeyVal !== '' ? agentKeyVal
     : (agentKeyEl.dataset.set === '1' ? '__KEEP__' : '');
+  // v3.14.2 容错：Base URL 输入框允许粘完整聊天端点（…/v1/chat/completions）——
+  // 保存时剥离尾段归一为根地址，避免中继拼出双路径 404（后端 relay 亦有同规则剥离兜底）
+  const rawBaseUrl = document.getElementById('settings_agent_base_url').value.trim().replace(/\/+$/, '');
+  const normBaseUrl = rawBaseUrl.endsWith('/chat/completions')
+    ? rawBaseUrl.slice(0, -'/chat/completions'.length)
+    : rawBaseUrl;
   const agentPayload = {
     agent_enabled: document.getElementById('settings_agent_enabled').checked,
-    agent_base_url: document.getElementById('settings_agent_base_url').value.trim(),
+    agent_base_url: normBaseUrl,
     agent_api_key: agentApiKey,
     agent_model: document.getElementById('settings_agent_model').value.trim(),
     agent_thinking: document.getElementById('settings_agent_thinking').value,

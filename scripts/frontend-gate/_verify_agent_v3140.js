@@ -153,6 +153,13 @@ const API = (url) => {
   const ls = [];
   for (let i = 0; i < win.localStorage.length; i++) { const k = win.localStorage.key(i); if (/agent/i.test(k)) ls.push(k); }
   check('S4.5 agent 字段零写 localStorage', ls.length === 0, ls.join(','));
+  // S4.6 v3.14.2：Base URL 粘完整聊天端点 → 保存时归一为根地址（防双路径 404）
+  doc.getElementById('settings_agent_base_url').value = 'http://127.0.0.1:8888/v1/chat/completions';
+  await win.saveSettings();
+  await new Promise(r => setTimeout(r, 300));
+  const body2 = postedBodies[postedBodies.length - 1] || {};
+  check('S4.6 完整端点保存时归一为根地址', body2.agent_base_url === 'http://127.0.0.1:8888/v1', body2.agent_base_url);
+  doc.getElementById('settings_agent_base_url').value = AGENT_SETTINGS.agent_base_url; // 还原
 
   // S5 权限门：包装已安装 + 行为
   check('S5.1 85-agent 载入即安装（无 enable 调用）', /function _installAgentGate/.test(fs.readFileSync(path.join(ROOT, 'static/js/85-agent.js'), 'utf8')));
@@ -241,6 +248,23 @@ const API = (url) => {
     await postJSON(DEV, '/api/settings', { agent_base_url: '', agent_api_key: '' });
     const r6 = await postJSON(DEV, '/api/agent_relay', { path: '/chat/completions', body: { messages: [{ role: 'user', content: 'x' }] } });
     check('B6 空 baseURL → 400 + 中文行动指引', r6.status === 400 && /AI 助手未配置/.test(JSON.stringify(r6.data)), 'HTTP ' + r6.status);
+
+    // B6b v3.14.2 回归：Base URL 粘**完整聊天端点**时必须剥离尾段再拼接。
+    // 用户实报缺陷（2026-10-13）：完整端点 + 白名单路径 = 双路径，
+    // 上游 llama.cpp 回 404 "File Not Found"。用临时 echo 靶做字节级判定：
+    // 剥离后上游实收 /v1/chat/completions；未剥离则实收 /v1/chat/completions/chat/completions。
+    const echoPort = 8793;
+    const echoSrv = http.createServer((rq, rs) => {
+      let b = ''; rq.on('data', c => b += c);
+      rq.on('end', () => { rs.writeHead(200, { 'Content-Type': 'application/json' }); rs.end(JSON.stringify({ got: rq.url })); });
+    });
+    await new Promise(r => echoSrv.listen(echoPort, '127.0.0.1', r));
+    await postJSON(DEV, '/api/settings', { agent_base_url: `http://127.0.0.1:${echoPort}/v1/chat/completions`, agent_api_key: '', agent_model: 'm' });
+    const r6b = await postJSON(DEV, '/api/agent_relay', { path: '/chat/completions', body: { messages: [{ role: 'user', content: 'x' }] } });
+    check('B6b 完整端点 Base URL 被剥离尾段（上游实收规范单路径，无双路径 404）',
+      r6b.status === 200 && r6b.data && r6b.data.got === '/v1/chat/completions',
+      'HTTP ' + r6b.status + ' 上游实收 ' + (r6b.data && r6b.data.got));
+    echoSrv.close();
 
     // 恢复出厂：清掉本套件写入的测试值（fake-test-key-123 是假值但同样不留盘）
     const done = await postJSON(DEV, '/api/settings', { agent_base_url: '', agent_model: '', agent_api_key: '' });
