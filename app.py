@@ -7,9 +7,6 @@ Supports: codec selection (H.264/H.265/NVENC/QSV/AMF), date metadata from filena
 """
 
 import os, sys, json, re, time, subprocess, threading, uuid as uuid_mod, struct, tempfile
-import logging
-
-logger = logging.getLogger('360vc')  # v3.15.0：此前多处 logger. 调用其实一直 NameError（被 try 吞掉）
 import ctypes
 import platform as platform_module
 import urllib.request
@@ -615,10 +612,7 @@ def log_line(jid, msg, level='info'):
         j = jobs.get(jid)
         if j:
             ts = datetime.now().strftime('%H:%M:%S')
-            # v3.15.0 CLI：单调 seq 游标（agent 增量轮询防日志洪水，前端旧消费只用
-            # ts/msg/level 三键，附加 seq 键零破坏——门禁 03/07 行为回归覆盖）
-            j['_seq'] = j.get('_seq', 0) + 1
-            j['log'].append({'ts': ts, 'msg': msg, 'level': level, 'seq': j['_seq']})
+            j['log'].append({'ts': ts, 'msg': msg, 'level': level})
             if len(j['log']) > 800:
                 j['log'] = j['log'][-800:]
 
@@ -5610,129 +5604,6 @@ def load_tasks_file():
         return jsonify(data)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-
-# ── v3.15.0 CLI 指令集（page-agent 原生调用通道）────────────────
-# 设计契约：docs/design/v3150_cli_command_set.md
-# /api/cli 是 AI 助手的唯一可执行面：权限（表E）在内核后端强制，前端不可绕过；
-# GUI 来源不经过本入口（GUI 直接调原端点，行为零变化）。
-import cli_kernel as _cli
-
-_cli_client = app.test_client()  # 进程内转发：不过网络栈/不受系统代理影响/threaded 安全
-
-def _read_agent_permission():
-    try:
-        if os.path.exists(SETTINGS_FILE):
-            raw = json.loads(Path(SETTINGS_FILE).read_text(encoding='utf-8'))
-            p = raw.get('agent_permission', 'standard')
-            return p if p in ('readonly', 'standard', 'full') else 'standard'
-    except Exception:
-        pass
-    return 'standard'
-
-def _cli_task_list():
-    out = []
-    if os.path.exists(TASKS_FILE):
-        out.append({'path': TASKS_FILE, 'default': True})
-    # 预设文件（保存的任务清单）供 agent 发现
-    try:
-        for n in sorted(os.listdir(PRESETS_DIR)):
-            if n.lower().endswith('.json') and n not in ('_settings.json', '_last_task.json'):
-                out.append({'path': os.path.join(PRESETS_DIR, n), 'default': False})
-    except Exception:
-        pass
-    return out
-
-def _cli_job_status(jid, since_seq=0):
-    with job_lock:
-        j = jobs.get(jid)
-        if not j:
-            return None, 'job 不存在或快照已过期'
-        finished = j.get('status') in ('completed', 'cancelled', 'failed')
-        end = j.get('end_time') or time.time()
-        dur = max(1e-9, end - j.get('start_time', time.time()))
-        done_items = sum(1 for it in j['items'] if it.get('done'))
-        failed = [{'idx': i, 'reason': (it.get('error') or '')[:200]} for i, it in enumerate(j['items'])
-                  if it.get('done') and it.get('error') and it.get('error') != 'Skipped by user']
-        lines = [l for l in j['log'] if l.get('seq', 0) > since_seq][-120:]
-        cur = j.get('current_output') or ''
-        return {
-            'job_id': j['id'], 'status': j['status'], 'mode': j['mode'],
-            'finished': finished, 'seq': j.get('_seq', len(j['log'])),
-            'overall_progress': round(j.get('overall_progress', 0), 1),
-            'file_progress': round(j.get('file_progress', 0), 1),
-            'current_index': j.get('current_index', 0), 'total': j.get('total', 0),
-            'current_file': os.path.basename(cur) if cur else '',
-            'done_items': done_items, 'failed_items': failed,
-            'elapsed_sec': round(time.time() - j.get('start_time', time.time()), 1),
-            'avg_sec_per_file': round(dur / max(1, done_items), 1) if done_items else None,
-            'eta_sec': (round((j.get('total', 0) - done_items) * (dur / max(1, done_items)))
-                        if done_items and not finished else None),
-            'paused': bool(j.get('paused')), 'error': j.get('error'),
-            'log': {'from_seq': since_seq, 'lines': lines, 'truncated': len(lines) >= 120},
-        }, None
-
-def _cli_job_log(jid, since_seq=0):
-    with job_lock:
-        j = jobs.get(jid)
-        if not j:
-            return None, 'job 不存在或快照已过期'
-        lines = [l for l in j['log'] if l.get('seq', 0) > since_seq]
-        return {'from_seq': since_seq, 'lines': lines[-400:], 'seq': j.get('_seq', len(j['log']))}, None
-
-def _cli_forward(method, endpoint, json_body=None, query=None):
-    qs = ('?' + urllib.parse.urlencode({k: v for k, v in (query or {}).items() if v is not None})) if query else ''
-    kw = {'query_string': qs.lstrip('?')} if query else {}
-    if json_body is not None:
-        kw['json'] = json_body
-    r = _cli_client.open(endpoint, method=method, **kw)
-    try:
-        data = r.get_json(silent=True)
-    except Exception:
-        data = None
-    return r.status_code, (data if data is not None else (r.get_data(as_text=True) or '')[:400])
-
-def _cli_has_active_job():
-    """GUI 的单活动互斥在前端 ActiveJob，CLI 直连后端绕过它——内核层补同一语义。
-    pending/running 均视为活动（new_job 出生即 pending，worker 置 running）。"""
-    with job_lock:
-        for jid, j in jobs.items():
-            if j.get('status') in ('pending', 'running'):
-                return jid, j.get('mode', '?')
-    return None, None
-
-def _cli_ctx():
-    return {'permission': _read_agent_permission, 'forward': _cli_forward,
-            'job_status': _cli_job_status, 'job_log': _cli_job_log,
-            'task_list': _cli_task_list, 'has_active_job': _cli_has_active_job}
-
-@app.route('/api/cli', methods=['POST'])
-def cli_exec():
-    body = request.get_json(silent=True) or {}
-    cmdline = str(body.get('cmdline') or '')
-    source = str(body.get('source') or 'agent-cli')
-    if len(cmdline.encode('utf-8')) > 200000:
-        return jsonify(_cli.envelope('ERR_USAGE', error=_cli._err('ERR_USAGE', '命令行超长(>200KB)', '拆分为多条命令'))), 400
-    env = _cli.execute(cmdline, source, _cli_ctx())
-    logger.info('CLI[%s] %s -> %s', source, cmdline[:160], env['code'])
-    status = _cli.HTTP_BY_CODE.get(env['code'], 500)
-    return jsonify(env), status
-
-@app.route('/api/cli_confirm', methods=['POST'])
-def cli_confirm_route():
-    body = request.get_json(silent=True) or {}
-    token = str(body.get('token') or '')
-    approve = bool(body.get('approve'))
-    rec, env = _cli.resolve_confirm(token, approve)
-    if rec is not None and approve and env['data'].get('state') == 'approved':
-        env = _cli.finalize_confirm(token, _cli_ctx())
-    elif rec is not None and not approve and env['data'].get('state') == 'declined':
-        # Spec §4.2：用户取消 → 明确 ERR_PERMISSION_DECLINED（agent 靠 code 处置，
-        # 不靠读 state 字符串），HTTP 406。
-        env = _cli.envelope('ERR_PERMISSION_DECLINED',
-                            error=_cli._err('ERR_PERMISSION_DECLINED', '用户已取消该操作', '尊重决定，中止该子任务并上报用户'),
-                            cmd=rec['name'])
-    return jsonify(env), _cli.HTTP_BY_CODE.get(env['code'], 500)
 
 
 # ── App Settings ───────────────────────────────────────────────

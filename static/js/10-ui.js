@@ -204,8 +204,6 @@ async function openSettings() {
     keyEl.dataset.set = keySet ? '1' : '0';
     // header「AI 助手」按钮显隐（AC-01/02：关闭时零入口）
     setDisplay('agentToggleBtn', s.agent_enabled ? '' : 'none');
-    // v3.15.0：控制台卡同步显隐
-    if (typeof vcCliVisibilitySync === 'function') vcCliVisibilitySync(!!s.agent_enabled);
     // 权限门读的是 85-agent 的设置缓存，回填时同步（否则改权限要等下次开面板才生效）
     if (typeof vcSetAgentSettingsCache === 'function') vcSetAgentSettingsCache(s);
   } catch(e) {
@@ -374,7 +372,6 @@ async function saveSettings() {
     _amapSecurity = amapSecurity;
     // 红线：agent key 不写 localStorage（唯一持久化面=后端 _settings.json）
     setDisplay('agentToggleBtn', agentPayload.agent_enabled ? '' : 'none');
-    if (typeof vcCliVisibilitySync === 'function') vcCliVisibilitySync(!!agentPayload.agent_enabled);
     // 保存即同步权限门缓存：先重读 GET（拿到后端合并后的完整视图，含哨兵处理结果），
     // 失败不阻塞保存流程（老行为：保存成功即关窗）。
     if (typeof vcSetAgentSettingsCache === 'function') {

@@ -1115,27 +1115,6 @@
       <div class="log-line"><span class="log-ts">--:--:--</span><span class="log-msg info">等待开始转换...</span></div>
     </div>
   </div>
-
-  <!-- v3.15.0 命令控制台（AI 助手 CLI 通道）：仅 agent_enabled 时显示；
-       注意保持 .param-group 计数=9 不变（门禁08 断言），故用普通 card -->
-  <div class="card" id="cliConsoleCard" style="display:none;">
-    <div class="card-title">命令控制台（AI 助手 CLI 通道）</div>
-    <div class="info-box" id="cliManualSummary" style="font-size:0.78rem;margin-bottom:8px;"></div>
-    <textarea class="input" id="cliInput" rows="3" spellcheck="false"
-      placeholder="vc 命令，例如：vc help ｜ vc file scan --dir G:/264 ｜ vc job status --id &lt;job_id&gt; --since-seq 0"
-      style="font-family:var(--mono,monospace);font-size:0.8rem;resize:vertical;"></textarea>
-    <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
-      <button class="btn btn-primary" id="cliRunBtn" data-action="cli-run" type="button">执行命令</button>
-      <span style="font-size:0.75rem;color:var(--text-muted);">结果以单个 JSON 块呈现（信封 {ok, code, data, error}）</span>
-    </div>
-    <div id="cliConfirmBar" style="display:none;align-items:center;gap:8px;margin-top:8px;padding:8px 10px;border:1px solid var(--warning);border-radius:6px;">
-      <span style="font-size:0.8rem;">待确认操作：</span>
-      <span id="cliConfirmSummary" style="font-size:0.78rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
-      <button class="btn btn-sm" data-action="cli-approve" type="button">批准执行</button>
-      <button class="btn btn-sm" data-action="cli-decline" type="button">取消</button>
-    </div>
-    <pre id="cliResult" style="display:none;margin-top:8px;padding:8px 10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;font-size:0.75rem;white-space:pre-wrap;word-break:break-all;max-height:280px;overflow:auto;"></pre>
-  </div>
   </div>
   </div>
 
@@ -1485,7 +1464,6 @@
   <script src="/js/70-report.js"></script>
   <script src="/js/80-codec.js"></script>
   <script src="/js/85-agent.js"></script>
-  <script src="/js/86-cli.js"></script>
   <script src="/js/90-boot.js"></script>
 
 </body>

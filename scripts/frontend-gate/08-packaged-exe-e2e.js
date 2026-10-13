@@ -136,8 +136,6 @@ const getBytes = (p) => new Promise(resolve => {
   const assets = [
     '/js/00-core.js', '/js/10-ui.js', '/js/20-map.js', '/js/30-params.js', '/js/40-files.js',
     '/js/50-meta.js', '/js/60-jobs.js', '/js/70-report.js', '/js/80-codec.js', '/js/90-boot.js',
-    // v3.15.0 补录：85-agent（v3.14.0 遗漏）与 86-cli 随新模块同步清单
-    '/js/85-agent.js', '/js/86-cli.js', '/agent/page-agent.iife.js',
     '/css/app.css', '/leaflet/leaflet.js', '/leaflet/leaflet.css',
   ];
   let missing = [];
@@ -166,7 +164,7 @@ const getBytes = (p) => new Promise(resolve => {
   const ver = await get('/api/version');
   let v = '';
   try { v = JSON.parse(ver.body).version; } catch (e) {}
-  check('版本接口返回 3.15.1', v === "3.15.1", `version = "${v}"`);
+  check('版本接口返回 3.14.4', v === "3.14.4", `version = "${v}"`);
 
   // 4b. 缓存策略：界面资源必须 no-store，否则旧版页面可能被 WebView2 缓存复用，
   //     表现为"装了新版本但界面毫无变化"（v3.12.0 实际遇到的风险点）
@@ -186,8 +184,6 @@ const getBytes = (p) => new Promise(resolve => {
     ['批量列队执行按钮 metaBatchRunBtn', 'metaBatchRunBtn'],
     ['AI 助手入口 agentToggleBtn', 'agentToggleBtn'],
     ['AI 助手设置组 settings_agent_enabled', 'settings_agent_enabled'],
-    ['CLI 控制台 cliConsoleCard', 'cliConsoleCard'],
-    ['CLI 输入区 cliInput', 'cliInput'],
     ['GPS 一键复制 geo-copy', 'geo-copy'],
     ['GPS 地图选点 geo-map-pick', 'geo-map-pick'],
   ]) {
