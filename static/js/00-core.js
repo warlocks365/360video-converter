@@ -331,6 +331,10 @@ const DELEGATED_ACTIONS = {
   'report-add-to-queue':      () => addSelectedReportToQueue(),
   // v3.14.0 AI 助手（85-agent.js）——仅注册 action，派发器零改动
   'agent-toggle':             () => vcToggleAgentPanel(),
+  // v3.15.0 CLI 控制台桥（86-cli.js）
+  'cli-run':                  () => cliRun(),
+  'cli-approve':              () => cliApprove(),
+  'cli-decline':              () => cliDecline(),
 };
 
 function dispatchDelegatedEvent(e) {

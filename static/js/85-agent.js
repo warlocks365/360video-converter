@@ -38,6 +38,8 @@ function vcRestoreAgentUI(s) {
   if (!s || typeof s !== 'object') return;
   vcSetAgentSettingsCache(s);
   setDisplay('agentToggleBtn', s.agent_enabled ? '' : 'none');
+  // v3.15.0：命令控制台随助手开关显隐（关闭时零注入面，AC-01 同源纪律）
+  if (typeof vcCliVisibilitySync === 'function') vcCliVisibilitySync(!!s.agent_enabled);
 }
 
 // ── 动作元数据（中文标签 + 权限级别，照 FEATURE_CATALOG 表E）──

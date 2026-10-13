@@ -64,6 +64,10 @@ const EXPECTED_ADDED = new Set([
   'settings_agent_model', 'settings_agent_thinking', 'settings_agent_effort',
   'settings_agent_permission', 'settings_agent_temperature',
   'settings_agent_max_steps', 'settings_agent_step_delay',
+  // v3.15.0 命令控制台卡（86-cli.js）：7 个新 id。结果块/确认条必须可被
+  // agent 读 DOM，故保留 id（class 定位会让 jsdom 断言与 CDP 取证歧义）。
+  'cliConsoleCard', 'cliManualSummary', 'cliInput', 'cliRunBtn',
+  'cliConfirmBar', 'cliConfirmSummary', 'cliResult',
 ]);
 
 if (MODE === 'baseline') {
