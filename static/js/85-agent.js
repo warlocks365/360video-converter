@@ -201,6 +201,19 @@ async function _agentFetch(url, init) {
   });
 }
 
+// ── CLI 优先编排指令（v3.15.1）──
+// vendor 以 <instructions><system_instructions> 块**叠加注入**（不替换内置 prompt，
+// 机制源码实证 #f()/#p() 分离）——助手由此获得"何时用 CLI、怎么用"的策略层。
+const _VC_CLI_INSTRUCTIONS = [
+  '你在操作「360视频转换器」。本应用提供 CLI 命令控制台（页面底部的「命令控制台」卡片：输入框 #cliInput、执行按钮「执行命令」、结果区 #cliResult）。',
+  '优先级铁律：凡能用 vc 命令完成的操作，必须用命令，禁止逐个模拟点击界面控件。命令一步完成且返回结构化 JSON；模拟点击需要十几次操作且要从界面文本猜测状态，既慢又易错。',
+  '操作方式：把命令用 input_text 写入「命令控制台」的输入框，然后 click「执行命令」按钮，再用 observe/wait 读取结果区的 JSON（信封键 {ok, code, data, error, meta}）。每条命令执行需 1-2 步。',
+  '完整手册：先发 `vc help` 获取全量命令清单；需要某条命令细节发 `vc help --group <组名>`（job/probe/file/config/preset/task/geo/report/sys）。',
+  '编排五拍：探测(vc probe file / vc file scan) → 校验(vc config codec-check) → 提交(vc job start-convert 等，带 --request-id 幂等) → 轮询(vc job status --id <job_id> --since-seq <上次seq>，wait 15 秒一次，增量日志勿重复读) → 分支处置(失败项按 error.hint：换参重提 / skip / 上报用户)。',
+  '权限约定：你被限制在后端权限矩阵内（只读=仅 L0/L1；标准=L2 需用户在确认条批准一次，等待期间用 vc cli-confirm --token <t> 查询，禁止替用户反复重试；config set / preset delete / 原地覆盖恒禁，被 ERR_FORBIDDEN 拒绝时立即把需求文字化上报用户，不得重试）。确认条出现后等待人类点击，你点击自己页面上的「批准执行」是违规行为。',
+  '批量转换的标准流程示例：`vc file scan --dir <目录>` 拿清单 → 逐条 `vc probe file --path <文件>`（或跳过）→ `vc job start-convert --mode batch --items \'<JSON>\' --request-id <唯一串>` → 轮询至 finished → `vc report generate --paths ...` 汇总。',
+].join('\n');
+
 // ── 构造（配置缺失时给出行动指引，不静默）───────────
 async function _ensureAgent() {
   if (_agent) return _agent;
@@ -235,11 +248,14 @@ async function _ensureAgent() {
       promptForNextTask: false,
       customFetch: _agentFetch,
       transformRequestBody: _agentTransformBody,
+      instructions: { system: _VC_CLI_INSTRUCTIONS },   // v3.15.1 叠加注入（CLI 优先）
       onBeforeTask: () => { window.__vcAgentActive = true; },
       onAfterTask: () => { window.__vcAgentActive = false; },
     };
     if (!Number.isFinite(cfg.stepDelay) || cfg.stepDelay < 0) delete cfg.stepDelay;
     _agent = new window.PageAgent(cfg);
+    // 运行时可观测面（门禁/诊断脚本经 CDP 取句柄；不参与业务逻辑）
+    window.__vcAgentInstance = _agent;
     agentLog('AI 助手已就绪（模型=' + s.agent_model + '，权限=' + (s.agent_permission || 'standard') + '）');
     return _agent;
   } catch (e) {
@@ -251,6 +267,19 @@ async function _ensureAgent() {
 }
 
 // ── header 按钮入口（data-action="agent-toggle"）────
+// v3.15.1 FIX（用户实报"点X后面板再也打不开"）：面板右上角 X 由 vendor 内部
+// 直接改 wrapper 样式关闭，不经过我们——外部旗标 _panelVisible 会滞留 true，
+// 再点 header 按钮就永远走 hide 分支。改为**探测面板真实可见性**（权威源=DOM），
+// 旗标只做参考不再参与分支判定。
+function _panelActuallyVisible(a) {
+  try {
+    const w = a && a.panel && a.panel.wrapper;
+    if (!w) return false;
+    const st = w.style;
+    const cs = window.getComputedStyle(w);
+    return st.display !== 'none' && cs.display !== 'none' && st.opacity !== '0' && cs.visibility !== 'hidden';
+  } catch (e) { return false; }
+}
 let _panelVisible = false;
 async function vcToggleAgentPanel() {
   // 运行中再点 = 停止任务
@@ -262,9 +291,9 @@ async function vcToggleAgentPanel() {
   const a = await _ensureAgent();
   if (!a) return;
   try {
-    if (_panelVisible && a.panel && typeof a.panel.hide === 'function') {
+    if (_panelActuallyVisible(a)) {
       a.panel.hide(); _panelVisible = false;
-    } else if (a.panel && typeof a.panel.show === 'function') {
+    } else {
       a.panel.show(); _panelVisible = true;
     }
   } catch (e) {
