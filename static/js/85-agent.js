@@ -201,7 +201,11 @@ async function _agentFetch(url, init) {
 
 // ── 构造（配置缺失时给出行动指引，不静默）───────────
 async function _ensureAgent() {
-  if (_agent) return _agent;
+  // v3.14.5 FIX①：X 按钮在面板非运行态时调的是 PageAgent.dispose()（vendor 源码
+  // #D(){running?stop():dispose()} 实证）——wrapper.remove() 永久销毁整个实例，
+  // 对死实例 panel.show() 无效=再点按钮永远打不开。判活：disposed 的实例不再复用。
+  if (_agent && !_agent.disposed) return _agent;
+  if (_agent && _agent.disposed) _agent = null;   // 清死引用，走下方重建路径
   if (window.__vcAgentBroken) return null;
   let s = {};
   try {
@@ -235,6 +239,9 @@ async function _ensureAgent() {
       transformRequestBody: _agentTransformBody,
       onBeforeTask: () => { window.__vcAgentActive = true; },
       onAfterTask: () => { window.__vcAgentActive = false; },
+      // v3.14.5 FIX②：vendor dispose 回调里清掉我方实例引用（与判活双保险），
+      // 下次点「AI 助手」按钮即干净重建（vendor 源码实证 onDispose?.(this) 会被调用）。
+      onDispose: () => { _agent = null; window.__vcAgentActive = false; agentLog('AI 助手面板已关闭（实例销毁，下次打开将重建）'); },
     };
     if (!Number.isFinite(cfg.stepDelay) || cfg.stepDelay < 0) delete cfg.stepDelay;
     _agent = new window.PageAgent(cfg);
@@ -256,7 +263,8 @@ async function _ensureAgent() {
 function _panelActuallyVisible(a) {
   try {
     const w = a && a.panel && a.panel.wrapper;
-    if (!w) return false;
+    // 节点已被 vendor dispose 移出 DOM（wrapper.remove()）——样式虽残留但不再可见
+    if (!w || !w.isConnected) return false;
     const st = w.style;
     const cs = window.getComputedStyle(w);
     return st.display !== 'none' && cs.display !== 'none' && st.opacity !== '0' && cs.visibility !== 'hidden';
