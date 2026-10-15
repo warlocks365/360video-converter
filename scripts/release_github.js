@@ -27,7 +27,32 @@ const fs = require('fs');
 const path = require('path');
 
 // FIX（2026-09-30 迁移）：勿硬编码用户名 —— 从主目录推导，跨机器可用
-const PG = path.join(require('os').homedir(), '.workbuddy', 'binaries', 'PortableGit', 'versions', '1.2.0');
+// FIX（2026-10-15）：勿硬编码 PortableGit 版本号 —— 1.2.0 已升级到 1.3.0 导致
+// spawnSync 返回 undefined.stdout 崩溃。改为：优先读 versions/current 指针文件
+// （内容=当前版本号）；指针缺失/失效则扫描 versions/ 目录取存在的版本兜底。
+const PG_ROOT = path.join(require('os').homedir(), '.workbuddy', 'binaries', 'PortableGit', 'versions');
+function resolvePortableGit() {
+  const cand = [];
+  try {
+    const cur = fs.readFileSync(path.join(PG_ROOT, 'current'), 'utf8').trim();
+    if (cur) cand.push(path.join(PG_ROOT, cur));
+  } catch (e) { /* 指针不存在，走目录扫描 */ }
+  try {
+    fs.readdirSync(PG_ROOT)
+      .filter(n => /^\d+\.\d+\.\d+$/.test(n))
+      .sort()
+      .forEach(n => cand.push(path.join(PG_ROOT, n)));
+  } catch (e) { /* 目录不可读 */ }
+  for (const c of cand) {
+    if (fs.existsSync(path.join(c, 'cmd', 'git.exe'))) return c;
+  }
+  return null;
+}
+const PG = resolvePortableGit();
+if (!PG) {
+  console.error('✗ 未找到 PortableGit（尝试 ' + PG_ROOT + '）。请确认 WorkBuddy 运行时已安装。');
+  process.exit(1);
+}
 const GIT = PG + '/cmd/git.exe';
 const WINCRED = PG + '/mingw64/bin/git-credential-wincred.exe';
 const GH = 'C:/Program Files/GitHub CLI/gh.exe';
