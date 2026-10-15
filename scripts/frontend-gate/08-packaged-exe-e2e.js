@@ -164,7 +164,7 @@ const getBytes = (p) => new Promise(resolve => {
   const ver = await get('/api/version');
   let v = '';
   try { v = JSON.parse(ver.body).version; } catch (e) {}
-  check('版本接口返回 3.14.6', v === "3.14.6", `version = "${v}"`);
+  check('版本接口返回 3.14.7', v === "3.14.7", `version = "${v}"`);
 
   // 4b. 缓存策略：界面资源必须 no-store，否则旧版页面可能被 WebView2 缓存复用，
   //     表现为"装了新版本但界面毫无变化"（v3.12.0 实际遇到的风险点）

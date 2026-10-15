@@ -325,6 +325,10 @@ const DELEGATED_ACTIONS = {
   'report-filter-row-change': (el) => onReportFilterRowChange(el),
   'report-filter-remove':     (el) => removeReportFilterRow(el.dataset.row),
   // v3.14.6 列队筛选（共享引擎 45-filter.js）+ 弹窗批量应用 + 状态导入导出
+  // v3.14.7 FIX：筛选栏开关/添加条件两按钮此前无任何事件接线（无 onclick、无
+  // data-action、无本地监听）→ 点击静默无反应（用户实报）。统一走中央委托。
+  'meta-filter-toggle':       () => toggleMetaFilterBar(),
+  'meta-filter-add':          () => metaFilterAddRow(),
   'meta-filter-row-change':   (el) => onMetaFilterRowChange(el),
   'meta-filter-remove':       (el) => removeMetaFilterRow(el.dataset.row),
   'meta-edit-apply-checked':  () => applyMetaEditToChecked(),
