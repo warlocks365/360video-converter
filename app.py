@@ -3790,6 +3790,51 @@ def native_dialog_api():
     return jsonify({'path': resolve_real_path(result)})
 
 
+# ── 批量列队状态 JSON 导入/导出（v3.14.6）──────────────────────────
+# 系统原生对话框（native_dialog）只返回路径字符串；浏览器无法直接读写磁盘，
+# 故补一对按绝对路径读写 .json 文本的端点。仅允许 .json 扩展，写入建父目录。
+@app.route('/api/read_json_file', methods=['POST'])
+def read_json_file_api():
+    """读取用户经原生打开对话框选中的 .json 文件，返回原文字符串。"""
+    data = request.json or {}
+    file_path = resolve_real_path((data.get('path') or '').strip())
+    if not file_path:
+        return jsonify({'error': '未提供文件路径'}), 400
+    if not file_path.lower().endswith('.json'):
+        return jsonify({'error': '仅支持 .json 文件'}), 400
+    if not os.path.isfile(file_path):
+        return jsonify({'error': f'文件不存在：{os.path.basename(file_path)}'}), 404
+    try:
+        raw = Path(file_path).read_text(encoding='utf-8')
+    except UnicodeDecodeError:
+        return jsonify({'error': '文件不是 UTF-8 编码，无法解析'}), 422
+    except Exception as e:
+        return jsonify({'error': f'读取失败：{e}'}), 500
+    return jsonify({'content': raw, 'path': file_path})
+
+
+@app.route('/api/write_json_file', methods=['POST'])
+def write_json_file_api():
+    """把前端序列化的状态字符串写入用户经原生保存对话框选定的 .json 路径。"""
+    data = request.json or {}
+    file_path = resolve_real_path((data.get('path') or '').strip())
+    content = data.get('content')
+    if not file_path:
+        return jsonify({'success': False, 'error': '未提供保存路径'}), 400
+    if not file_path.lower().endswith('.json'):
+        file_path += '.json'
+    if not isinstance(content, str) or not content.strip():
+        return jsonify({'success': False, 'error': '写入内容为空'}), 400
+    try:
+        parent = os.path.dirname(file_path)
+        if parent and not os.path.isdir(parent):
+            os.makedirs(parent, exist_ok=True)
+        Path(file_path).write_text(content, encoding='utf-8')
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'写入失败：{e}'}), 500
+    return jsonify({'success': True, 'path': file_path})
+
+
 @app.route('/api/scan', methods=['POST'])
 def scan():
     """Recursively scan a directory for video files."""

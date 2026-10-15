@@ -260,7 +260,9 @@ const check = (name, cond, detail) => {
     { filename: 'C.mp4', path: 'G:/x/C.mp4', size: 300, moov: { has_moov: false },
       probeData: { format: { tags: {}, duration: '30' }, streams: [ { codec_type: 'video', codec_name: 'h264', width: 1920, height: 1080, r_frame_rate: '30/1', bit_rate: '3000000', pix_fmt: 'yuv420p' } ] } },
   ];`);
-  dom.window.eval(`reportFilterList = [ { field: 'vcodec', value: 'h264' }, { field: 'resolution', value: '4096x2048' } ]; renderReportFilterRows(); renderReport();`);
+  // v3.14.6：条件升级为 {field, op, value} 三元；旧二元由 renderReportFilterRows 内
+  // filterNormalizeLegacy 就地迁移。此处显式给 op（新口径），并保留旧形态回归（见下）。
+  dom.window.eval(`reportFilterList = [ { field: 'vcodec', op: 'equals', value: 'h264' }, { field: 'resolution', op: 'equals', value: '4096x2048' } ]; renderReportFilterRows(); renderReport();`);
   check('场景9: 双条件 AND 叠加（vcodec=h264 且 4096x2048 → 仅 A）',
     dom.window.eval('getVisibleReportItems().length') === 1
     && dom.window.eval("getVisibleReportItems()[0].item.filename") === 'A.mp4',
@@ -268,9 +270,15 @@ const check = (name, cond, detail) => {
   check('场景9: 值集合下拉收集（vcodec 去重值 h264/hevc）',
     dom.window.eval("JSON.stringify(collectReportFieldValues('vcodec'))") === '["h264","hevc"]',
     dom.window.eval("JSON.stringify(collectReportFieldValues('vcodec'))"));
-  check('场景9: 筛选行渲染出值下拉（report-filter-value）',
-    $('reportFilterRows').innerHTML.split('report-filter-value').length - 1 === 2,
-    `值下拉数=${$('reportFilterRows').innerHTML.split('report-filter-value').length - 1}`);
+  // v3.14.6：行控件从「字段+值」2 个扩为「字段+op+值」3 个（report-filter-op 新增）
+  // 标签级精确计数（class 名含 report-filter-value 的 wrapper 会重复计数，须按元素数）
+  check('场景9: 筛选行渲染出 op+值控件（op select 2 + value 控件 2）',
+    $('reportFilterRows').querySelectorAll('select.report-filter-op').length === 2
+    && $('reportFilterRows').querySelectorAll('.report-filter-value').length === 2,
+    `op=${$('reportFilterRows').querySelectorAll('select.report-filter-op').length} value=${$('reportFilterRows').querySelectorAll('.report-filter-value').length}`);
+  check('场景9b: 旧二元条件（无 op）经迁移后 AND 语义不变（反向兼容）',
+    (function(){ dom.window.eval(`reportFilterList = [ { field: 'vcodec', value: 'h264' }, { field: 'resolution', value: '4096x2048' } ]; renderReport();`); return dom.window.eval('getVisibleReportItems().length') === 1 && dom.window.eval("getVisibleReportItems()[0].item.filename") === 'A.mp4'; })(),
+    `legacy visible=${dom.window.eval('getVisibleReportItems().length')}`);
   // 加入元数据批量队列（目标选择器 = meta）
   dom.window.eval(`reportSelectedPaths = new Set(['G:/x/A.mp4', 'G:/x/B.mp4']); document.getElementById('reportQueueTarget').value = 'meta';`);
   const before9 = dom.window.eval('metaBatchItems.length');

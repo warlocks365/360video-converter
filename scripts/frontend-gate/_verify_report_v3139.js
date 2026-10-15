@@ -92,12 +92,18 @@ const check = (name, cond, detail) => {
     JSON.stringify(valOpts.sort()) === JSON.stringify(['1920x1080', '4096x2048']),
     valOpts.join(' | '));
   // R1.3: 空值剔除 —— location_name 仅 A 有
-  dom.window.eval(`reportFilterList = [{ field: 'location_name', value: '' }]; renderReportFilterRows();`);
-  const locOpts = [...d.querySelectorAll('#reportFilterRows select[data-part="value"] option')].map(o => o.value).filter(v => Boolean(v) && v !== '__EMPTY__');
-  check('R1.3: location_name 值集合不含空串（仅凤凰岭景区）',
-    locOpts.length === 1 && locOpts[0] === '凤凰岭景区', locOpts.join(' | '));
+  // v3.14.6：location_name/address/filename 升级为 text 型（自由文本包含/不包含匹配，
+  // 用户需求维度）——值控件由下拉变为输入框，收集函数仍供 collect 型字段使用。
+  dom.window.eval(`reportFilterList = [{ field: 'location_name', op: 'contains', value: '' }]; renderReportFilterRows();`);
+  const locInput = d.querySelector('#reportFilterRows input.report-filter-value[data-part="value"]');
+  check('R1.3: location_name 为 text 型（输入框存在、空值待填）',
+    !!locInput && locInput.value === '', locInput ? locInput.tagName + ':' + locInput.value : 'no-input');
+  // collectReportFieldValues 对 text 字段仍可工作（被 collect 型字段复用其数据源）
+  check('R1.3b: location_name 收集值仍精确（仅凤凰岭景区，无空串）',
+    dom.window.eval("JSON.stringify(collectReportFieldValues('location_name'))") === '["凤凰岭景区"]',
+    dom.window.eval("JSON.stringify(collectReportFieldValues('location_name'))"));
   // R1.4: 布尔字段 是/否
-  dom.window.eval(`reportFilterList = [{ field: 'moov', value: '' }]; renderReportFilterRows();`);
+  dom.window.eval(`reportFilterList = [{ field: 'moov', op: 'equals', value: '' }]; renderReportFilterRows();`);
   const boolOpts = [...d.querySelectorAll('#reportFilterRows select[data-part="value"] option')].map(o => o.value);
   check('R1.4: moov 布尔字段值下拉 = 是/否',
     boolOpts[0] === '是' && boolOpts[1] === '否', boolOpts.join('|'));
@@ -204,14 +210,19 @@ const check = (name, cond, detail) => {
     selInv === 0, `size=${selInv}`);
 
   // ══ R5（v3.13.11）：空值筛选 —— 筛出该元数据项无内容的文件 ══
-  dom.window.eval(`reportFilterList = [{ field: 'location_name', value: '__EMPTY__' }]; renderReportFilterRows(); renderReport();`);
+  // v3.14.6：空值判断升级为独立 op（empty）——旧 __EMPTY__ 哨兵值由
+  // filterNormalizeLegacy 迁移为 op:'empty'；下拉不再含哨兵选项（避免 op 重复表达）。
+  dom.window.eval(`reportFilterList = [{ field: 'location_name', op: 'empty', value: '' }]; renderReportFilterRows(); renderReport();`);
   const locOpts5 = [...d.querySelectorAll('#reportFilterRows select[data-part="value"] option')].map(o => ({ v: o.value, t: o.textContent }));
-  check('R5.1: 值下拉含（空值）选项',
-    locOpts5.some(o => o.v === '__EMPTY__' && o.t === '（空值）'), JSON.stringify(locOpts5));
-  check('R5.2: location_name 选空值 → 仅无地名条目可见（B、C）',
+  check('R5.1: 空值 op 生效时值下拉不再含 __EMPTY__ 哨兵（已由 op 取代）',
+    !locOpts5.some(o => o.v === '__EMPTY__'), JSON.stringify(locOpts5));
+  check('R5.1b: 旧 __EMPTY__ 哨兵值经迁移后仍筛空值（反向兼容）',
+    dom.window.eval("(function(){ reportFilterList=[{field:'location_name',value:'__EMPTY__'}]; renderReportFilterRows(); return JSON.stringify(getVisibleReportItems().map(x=>x.item.filename)); })()") === '["B.mp4","C.mp4"]',
+    dom.window.eval("(function(){ reportFilterList=[{field:'location_name',value:'__EMPTY__'}]; renderReportFilterRows(); return JSON.stringify(getVisibleReportItems().map(x=>x.item.filename)); })()"));
+  check('R5.2: location_name 空值 → 仅无地名条目可见（B、C）',
     dom.window.eval("JSON.stringify(getVisibleReportItems().map(v => v.item.filename))") === '["B.mp4","C.mp4"]',
     dom.window.eval("JSON.stringify(getVisibleReportItems().map(v => v.item.filename))"));
-  dom.window.eval(`reportFilterList = [{ field: 'location_name', value: '__EMPTY__' }, { field: 'vcodec', value: 'h264' }]; renderReport();`);
+  dom.window.eval(`reportFilterList = [{ field: 'location_name', op: 'empty', value: '' }, { field: 'vcodec', op: 'equals', value: 'h264' }]; renderReport();`);
   check('R5.3: 空值 AND 编码器=h264 → 仅 C（B 是 hevc）',
     dom.window.eval("JSON.stringify(getVisibleReportItems().map(v => v.item.filename))") === '["C.mp4"]',
     dom.window.eval("JSON.stringify(getVisibleReportItems().map(v => v.item.filename))"));

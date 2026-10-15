@@ -505,6 +505,13 @@ tr:hover td { background: var(--surface-hover); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Map Modal ────────────────────────────────── */
+/* FIX (v3.14.6) 用户实报三症状一因：mapModal 与 metaEditModal 同为
+   .modal-overlay(z-index:100) 且 mapModal 在 DOM 更前 → 同层序后者优先，
+   地图被编辑窗压在下面；点地图落穿到 metaEditModal 遮罩触发 its onclick
+   关闭编辑窗并复位 _metaEditIndex → 坐标"点了没反应"。
+   地图选点永远应位于所有编辑面之上：z-index 抬到独立层级（低于下拉 200
+   与 toast 100000，高于常规 modal 100）。 */
+#mapModal { z-index: 130; }
 /* Map picker needs more vertical room than a standard modal */
 #mapModal .modal.large {
   max-height: 92vh;

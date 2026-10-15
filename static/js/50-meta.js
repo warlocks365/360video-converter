@@ -460,11 +460,150 @@ function outDirChipHtml(f) {
 }
 
 
+// ── 列队筛选（v3.14.6，引擎=45-filter.js，与元数据报告同一套 AND 叠加语义）──
+// 条件行 = {field, op, value}；未生效行不参与过滤。字段值不依赖重新探测——
+// 全部取自列队条目自身已有数据（settings 快照/probeData/状态/outDir）。
+let metaFilterList = [];                 // [{field, op, value}]
+let _metaBatchVisibleSet = null;         // 渲染缓存：当前可见下标集（null=全量）
+
+const META_FILTER_GROUPS = [
+  { label: '项目状态', fields: [
+    ['status', '转换状态', { kind: 'collect' }],
+    ['size_mb', '文件大小', { kind: 'collect' }],
+  ] },
+  { label: '任务开关', fields: [
+    ['apply_spherical', '全景元数据', { kind: 'bool' }],
+    ['apply_date', '日期写入', { kind: 'bool' }],
+    ['apply_location', 'GPS 写入', { kind: 'bool' }],
+  ] },
+  { label: '全景细分', fields: [
+    ['pano_type', 'pano 类型（360/180）', { kind: 'collect' }],
+    ['stereo_mode', '立体模式', { kind: 'collect' }],
+  ] },
+  { label: '字符串匹配', fields: [
+    ['filename', '文件名', { kind: 'text' }],
+    ['location_name', '拍摄地址', { kind: 'text' }],
+    ['location_address', '详细地址', { kind: 'text' }],
+    ['date_in_name', '文件名日期', { kind: 'text' }],
+    ['manual_date', '设定日期', { kind: 'text' }],
+  ] },
+  { label: '输出归属', fields: [
+    ['outdir_mode', '输出模式', { kind: 'collect' }],
+  ] },
+];
+
+const META_STATUS_LABELS = { pending: '待转换', processing: '处理中', done: '已完成', error: '失败' };
+const META_OUTDIR_MODE_LABELS = { global: '全局目录', snapshot: '指定目录', inplace: '原地覆盖' };
+
+function metaFieldKind(field) {
+  for (const g of META_FILTER_GROUPS) {
+    const hit = g.fields.find(([v]) => v === field);
+    if (hit) return (hit[2] && hit[2].kind) || 'collect';
+  }
+  return 'collect';
+}
+
+// 条目 → 字段匹配值（统一字符串；bool 字段回 '是'/'否'）。
+function metaItemFilterValue(f, field) {
+  if (!f) return '';
+  const s = f.settings || {};
+  switch (field) {
+    case 'status': return META_STATUS_LABELS[f.status] || '待转换';
+    case 'size_mb': return f.size_mb ? String(f.size_mb) : '';
+    case 'apply_spherical': return s.apply_spherical ? '是' : '否';
+    case 'apply_date': return s.apply_date ? '是' : '否';
+    case 'apply_location': return s.apply_location ? '是' : '否';
+    case 'pano_type': return s.apply_spherical ? (s.pano_type || '360') : '';
+    case 'stereo_mode': return s.apply_spherical ? (s.stereo_mode || 'mono') : '';
+    case 'filename': return f.name || '';
+    case 'location_name': return s.location_name || '';
+    case 'location_address': return s.location_address || '';
+    case 'date_in_name': return f.date_in_name || '';
+    case 'manual_date': return s.manual_date || '';
+    case 'outdir_mode': return META_OUTDIR_MODE_LABELS[(f.outDir && f.outDir.mode) || 'global'] || '';
+    default: return '';
+  }
+}
+
+// 字段可选值收集（collect 型下拉数据源 = 当前列队实际出现的值）
+function collectMetaFieldValues(field) {
+  const set = new Set();
+  metaBatchItems.forEach(f => {
+    const v = filterNormValue(metaItemFilterValue(f, field));
+    if (v) set.add(v);
+  });
+  return [...set].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+}
+
+function renderMetaFilterRows(force) {
+  const box = document.getElementById('metaFilterRows');
+  if (!box) return;
+  // 结构签名：只有字段/操作符变化才重建行（text 输入框重建会丢焦点；
+  // value 变更由控件自身保持）。force=导入/新增/删除行时显式重建。
+  const sig = metaFilterList.map(f => `${f.field || ''}|${f.op || ''}`).join(';') + '#' + metaFilterList.length;
+  if (!force && box.dataset.sig === sig) return;
+  box.dataset.sig = sig;
+  box.innerHTML = renderFilterRowsHtml({
+    list: metaFilterList,
+    groups: META_FILTER_GROUPS,
+    changeAction: 'meta-filter-row-change',
+    removeAction: 'meta-filter-remove',
+    kindOf: metaFieldKind,
+    rowHint: '<div style="color:var(--text-muted);font-size:0.75rem;">尚未添加筛选条件，全部条目可见</div>',
+    valueCtlFor: (f, i, kind) => {
+      if (kind === 'bool') {
+        return '<select class="input report-filter-value" data-action="meta-filter-row-change" data-row="' + i + '" data-part="value">' +
+          ['是', '否'].map(v => '<option value="' + v + '"' + (f.value === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>';
+      }
+      if (kind === 'collect') {
+        const vals = collectMetaFieldValues(f.field);
+        return '<select class="input report-filter-value" data-action="meta-filter-row-change" data-row="' + i + '" data-part="value">' +
+          '<option value="">（选择值）</option>' +
+          '<option value="' + FILTER_EMPTY_SENTINEL + '"' + (f.value === FILTER_EMPTY_SENTINEL ? ' selected' : '') + '>（空值）</option>' +
+          vals.map(v => '<option value="' + esc(v) + '"' + (f.value === v ? ' selected' : '') + '>' + esc(v) + '</option>').join('') +
+          '</select>';
+      }
+      return '<input class="input report-filter-value" type="text" placeholder="输入匹配文本" data-action="meta-filter-row-change" data-row="' + i + '" data-part="value" value="' + esc(f.value || '') + '">';
+    },
+  });
+}
+
+function onMetaFilterRowChange(el) {
+  if (!filterRowChange(metaFilterList, el)) return;
+  if (el.dataset.part !== 'value') renderMetaFilterRows();
+  renderMetaBatchTable();
+}
+
+function removeMetaFilterRow(row) {
+  metaFilterList.splice(parseInt(row, 10), 1);
+  renderMetaFilterRows();
+  renderMetaBatchTable();
+}
+
+function toggleMetaFilterBar() {
+  const bar = document.getElementById('metaFilterBar');
+  if (!bar) return;
+  const willShow = bar.classList.contains('hidden');
+  bar.classList.toggle('hidden', !willShow);
+  const btn = document.getElementById('metaFilterToggleBtn');
+  if (btn) btn.classList.toggle('btn-accent', willShow);
+  if (willShow) renderMetaFilterRows();
+}
+
+function metaFilterAddRow() {
+  metaFilterList.push({ field: '', op: '', value: '' });
+  renderMetaFilterRows();
+  const bar = document.getElementById('metaFilterBar');
+  if (bar) bar.classList.remove('hidden');
+}
+
+
 function renderMetaBatchTable() {
   const tbody = document.getElementById('metaBatchTableBody');
   if (!tbody) return;
 
   if (metaBatchItems.length === 0) {
+    _metaBatchVisibleSet = null;
     tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">选择文件后点「加入批量列队」或「添加文件」加入队列</td></tr>';
     syncMetaQueueCount();
     syncMetaApplyButton();
@@ -476,7 +615,15 @@ function renderMetaBatchTable() {
     return;
   }
 
+  // v3.14.6 列队筛选：可见下标集（null=无生效条件=全量可见）。
+  // 仍遍历全部条目并保留真实 i（编辑/移除按钮的 data-idx 必须指向 metaBatchItems
+  // 原下标，绝不能用可见序号，否则筛选后点编辑会改错条目）。
+  _metaBatchVisibleSet = filterVisibleIndexSet(metaBatchItems, metaFilterList, metaItemFilterValue);
+  const visibleCount = _metaBatchVisibleSet ? _metaBatchVisibleSet.size : metaBatchItems.length;
+
   tbody.innerHTML = metaBatchItems.map((f, i) => {
+    const hidden = _metaBatchVisibleSet && !_metaBatchVisibleSet.has(i);
+    const rowStyle = hidden ? ' style="display:none;"' : '';
     const checked = f.selected ? 'checked' : '';
     const isRunning = f.status === 'processing';
 
@@ -536,7 +683,7 @@ function renderMetaBatchTable() {
       : '';
     const dis = isRunning ? ' disabled' : '';
 
-    return `<tr${rowCls ? ` class="${rowCls}"` : ''}>
+    return `<tr${rowCls ? ` class="${rowCls}"` : ''}${rowStyle}>
       <td><input type="checkbox" ${checked}${dis} data-action="toggle-meta-file-selection" data-idx="${i}" aria-label="选择第 ${i + 1} 项"></td>
       <td class="col-idx">${i + 1}</td>
       <td class="col-name" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(f.path)}">${esc(f.name)}</td>
@@ -555,6 +702,13 @@ function renderMetaBatchTable() {
   syncMetaApplyButton();
   syncMetaBatchRunButton();
   syncMetaFormInert();
+  // v3.14.6 筛选计数徽标：仅筛选生效时显示「筛选后 N / 共 M」
+  const fc = document.getElementById('metaFilterCount');
+  if (fc) {
+    if (_metaBatchVisibleSet) fc.textContent = `筛选后 ${visibleCount} / 共 ${metaBatchItems.length} 个`;
+    else fc.textContent = '';
+  }
+  renderMetaFilterRows();
 }
 
 
@@ -968,9 +1122,24 @@ function toggleMetaFileSelection(idx, checked) {
 }
 
 
+// v3.14.6: 全选语义（与报告侧同口径）——
+//   checked=true ：只把「筛选可见」项置选中（隐藏项不可见，静默置选中=看不见的地雷）
+//   checked=false：清空全部选中（"全不选"对用户就是全部清除的意思）
+// 无筛选时 _metaBatchVisibleSet=null → 与旧行为完全等价。
 function selectAllMetaFiles(checked) {
-  metaBatchItems.forEach(f => f.selected = checked);
+  const vis = _metaBatchVisibleSet;
+  metaBatchItems.forEach((f, i) => {
+    if (checked) { if (!vis || vis.has(i)) f.selected = true; }
+    else f.selected = false;
+  });
   renderMetaBatchTable();
+}
+
+// 可见项下标数组（null 筛选=全量）。按钮/统计的筛选协同统一走这里。
+function metaVisibleIndices() {
+  const vis = _metaBatchVisibleSet;
+  if (!vis) return metaBatchItems.map((_, i) => i);
+  return metaBatchItems.map((_, i) => i).filter(i => vis.has(i));
 }
 
 
@@ -1043,6 +1212,35 @@ function editMetaFileSettings(idx) {
   document.getElementById('metaEditModal').classList.add('active');
 }
 
+
+// v3.14.6 批量编辑 GPS 赋值规则（用户要求明确定义）：
+//   编辑弹窗内选定的 GPS（及全部设置）对「所有勾选项」执行
+//   **同值复制** —— 每个勾选项写入与本条目完全相同的经纬度/地点/地址，
+//   不做逐条差异化、不做坐标偏移或平均；执行中的项自动跳过（参数不可改写）。
+// 源条目：弹窗打开时取其 DOM 采集值；弹窗未开（如从其它入口触发）时
+// 取「第一个勾选项」的 settings 为源，保证规则在任何入口一致。
+function applyMetaEditToChecked() {
+  const targets = metaBatchItems.filter(f => f.selected && f.status !== 'processing');
+  if (targets.length === 0) {
+    showToast('没有可应用的勾选项（需先勾选，且执行中的项不可改写）', 'warning', 4000);
+    return;
+  }
+  let settings;
+  if (_metaEditIndex >= 0 && metaBatchItems[_metaEditIndex]) {
+    settings = collectMetaSettings('me');
+  } else {
+    settings = { ...(metaBatchItems.find(f => f.selected) || {}).settings || {} };
+  }
+  let n = 0;
+  targets.forEach(f => {
+    f.settings = { ...settings };
+    if (f.status === 'done') { f.status = 'pending'; f.statusMsg = ''; f.duration = ''; }
+    n++;
+  });
+  renderMetaBatchTable();
+  closeMetaEditModal();
+  showToast(`已把本条目设置（GPS 同值复制）应用到 ${n} 个勾选项${n !== targets.length ? '（执行中已跳过）' : ''}`, 'success', 4200);
+}
 
 // ── 编辑弹窗「输出位置」三态（设计文档 4.3）──────────────────
 // 分段是原生 radio（name=me_out_mode），故：
@@ -1545,3 +1743,165 @@ function sphericalLabel(sphInfo) {
   return '已注入 (GSpherical)';
 }
 
+
+
+// ══ v3.14.6 列队状态 JSON 导入/导出 ══════════════════════════
+// 序列化范围（用户要求的三要素）：
+//   ① 筛选条件 metaFilterList（引擎原样存取，跨版本兼容靠 normaliz 过滤）
+//   ② 勾选状态 + 各项编辑设置（settings/outDir/status/duration）
+//   ③ 视图态（全选复选框的语义由可见集推导，无需单独存）
+// 版本契约：kind+version 双校验；不兼容版本**拒绝导入**并给出可读原因，
+// 绝不猜测解析（防止旧/新格式半读入产出错乱队列）。文件读写走后端端点
+// （原生对话框只返回路径，浏览器无法直接读写磁盘）。
+
+const META_STATE_SCHEMA = 'meta-batch-state';
+const META_STATE_VERSION = 1;
+
+function metaStateSnapshot() {
+  return {
+    kind: META_STATE_SCHEMA,
+    version: META_STATE_VERSION,
+    app_version: (window.__vcAppVersion || ''),
+    exported_at: new Date().toISOString(),
+    filters: metaFilterList.map(f => ({ field: f.field || '', op: f.op || '', value: f.value == null ? '' : f.value })),
+    items: metaBatchItems.map(f => ({
+      path: f.path,
+      name: f.name || '',
+      size_mb: f.size_mb || '',
+      date_in_name: f.date_in_name || '',
+      selected: !!f.selected,
+      status: f.status || 'pending',
+      statusMsg: f.statusMsg || '',
+      duration: f.duration || '',
+      probed: !!f.probed,
+      settings: f.settings || {},
+      outDir: f.outDir || { mode: 'global', value: '' },
+    })),
+  };
+}
+
+function metaStateValidate(parsed) {
+  if (!parsed || typeof parsed !== 'object') return '文件内容不是 JSON 对象';
+  if (parsed.kind !== META_STATE_SCHEMA) return '不是本工具导出的列队状态文件（缺少 ' + META_STATE_SCHEMA + ' 标识）';
+  const v = parseInt(parsed.version, 10);
+  if (!Number.isFinite(v)) return '文件缺少有效的 version 字段';
+  if (v > META_STATE_VERSION) {
+    return '文件版本（v' + v + '）高于本程序支持的版本（v' + META_STATE_VERSION + '），请升级程序后再导入';
+  }
+  if (!Array.isArray(parsed.items)) return '文件缺少 items 数组（可能已损坏）';
+  return null;
+}
+
+// 导出：原生保存对话框 → 后端写盘。取消（无 path）静默返回，不弹错。
+async function exportMetaBatchState() {
+  if (metaBatchItems.length === 0) {
+    showToast('列队为空，没有可导出的状态', 'warning', 3000);
+    return;
+  }
+  let dlg;
+  try {
+    dlg = await (await fetch('/api/native_dialog', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'save_file', file_filter: 'json', title: '导出批量列队状态',
+                             default_name: 'meta-batch-state-' + new Date().toISOString().slice(0, 10) + '.json',
+                             path_type: 'save' }),
+    })).json();
+  } catch (e) { showToast('打开保存对话框失败：' + (e.message || e), 'error', 5000); return; }
+  if (!dlg || !dlg.path) return;   // 用户取消
+
+  const content = JSON.stringify(metaStateSnapshot(), null, 2);
+  try {
+    const r = await (await fetch('/api/write_json_file', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: dlg.path, content }),
+    })).json();
+    if (r && r.success) showToast('已导出 ' + metaBatchItems.length + ' 项状态（含筛选与勾选）到：' + r.path, 'success', 5000);
+    else showToast('导出失败：' + ((r && r.error) || '未知错误'), 'error', 5000);
+  } catch (e) { showToast('导出失败：' + (e.message || e), 'error', 5000); }
+}
+
+// 导入：原生打开对话框 → 后端读盘 → 校验 → 全量替换当前列队。
+// 明确不做增量合并：合并语义（同名文件保留旧/新设置）在本场景没有明确赢家，
+// 且"还原"字面含义就是替换（用户 Ctrl+Z 之外的恢复点是重新导入旧文件）。
+async function importMetaBatchState() {
+  let dlg;
+  try {
+    dlg = await (await fetch('/api/native_dialog', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'open_file', file_filter: 'json', title: '导入批量列队状态',
+                             path_type: 'open' }),
+    })).json();
+  } catch (e) { showToast('打开文件对话框失败：' + (e.message || e), 'error', 5000); return; }
+  if (!dlg || !dlg.path) return;   // 用户取消
+
+  let content;
+  try {
+    const r = await (await fetch('/api/read_json_file', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: dlg.path }),
+    })).json();
+    if (r.error) { showToast('读取失败：' + r.error, 'error', 5000); return; }
+    content = r.content;
+  } catch (e) { showToast('读取失败：' + (e.message || e), 'error', 5000); return; }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch (e) {
+    showToast('文件不是合法 JSON（' + (e.message || e).slice(0, 80) + '），无法导入', 'error', 6000);
+    return;
+  }
+  const verr = metaStateValidate(parsed);
+  if (verr) { showToast(verr, 'error', 6000); return; }
+
+  // 覆盖前确认：当前列队非空时告知将丢失（破坏性操作的明确告知）
+  if (metaBatchItems.length > 0) {
+    if (!confirm('导入将替换当前列队的全部 ' + metaBatchItems.length + ' 项（含勾选与编辑设置），确定继续？')) return;
+  }
+
+  const restoredItems = [];
+  let skipped = 0;
+  parsed.items.forEach(raw => {
+    if (!raw || typeof raw !== 'object' || !raw.path) { skipped++; return; }
+    const settings = (raw.settings && typeof raw.settings === 'object') ? raw.settings : {};
+    restoredItems.push({
+      path: String(raw.path),
+      name: raw.name ? String(raw.name) : String(raw.path).split(/[\\/]/).pop(),
+      size_mb: raw.size_mb || '',
+      date_in_name: raw.date_in_name ? String(raw.date_in_name) : '',
+      selected: !!raw.selected,
+      status: (['pending', 'done', 'error'].indexOf(raw.status) >= 0) ? raw.status : 'pending',
+      statusMsg: raw.statusMsg ? String(raw.statusMsg) : '',
+      duration: raw.duration ? String(raw.duration) : '',
+      probed: !!raw.probed,
+      settings: Object.assign({}, settings),
+      outDir: (raw.outDir && typeof raw.outDir === 'object')
+        ? { mode: ['global', 'snapshot', 'inplace'].indexOf(raw.outDir.mode) >= 0 ? raw.outDir.mode : 'global', value: String(raw.outDir.value || '') }
+        : { mode: 'global', value: '' },
+      probeData: null,
+    });
+  });
+
+  // 筛选还原：只保留字段仍存在于当前分组的行（版本迁移的常见差异），
+  // 无法识别的行丢弃但**不**阻断导入（筛选项不是数据本体）。
+  const knownFields = new Set();
+  META_FILTER_GROUPS.forEach(g => g.fields.forEach(([v]) => knownFields.add(v)));
+  const restoredFilters = (Array.isArray(parsed.filters) ? parsed.filters : [])
+    .filter(f => f && f.field && knownFields.has(f.field))
+    .map(f => ({ field: f.field, op: f.op || '', value: f.value == null ? '' : f.value }));
+  const droppedFilters = (Array.isArray(parsed.filters) ? parsed.filters.length : 0) - restoredFilters.length;
+
+  metaBatchItems = restoredItems;
+  metaFilterList = restoredFilters;
+  _metaEditIndex = -1;
+  renderMetaBatchTable();
+  renderMetaFilterRows(true);
+  // 探测：异步补全元数据（沿用既有逐项探测路径，恢复徽章显示）
+  restoredItems.forEach((f, i) => { if (!f.probed) probeMetaFile(i); });
+
+  const note = droppedFilters > 0 ? '，' + droppedFilters + ' 条筛选条件因版本差异已忽略' : '';
+  const skipNote = skipped > 0 ? '，' + skipped + ' 条无效条目已跳过' : '';
+  showToast('已导入 ' + restoredItems.length + ' 项（含勾选/设置/筛选）' + skipNote + note,
+            restoredItems.length > 0 ? 'success' : 'warning', 5000);
+  writeMetaScopeLog('[导入] 从 ' + String(dlg.path).split(/[\\/]/).pop() + ' 还原 ' + restoredItems.length + ' 项' + skipNote + note, 'info');
+}

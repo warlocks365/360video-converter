@@ -38,7 +38,7 @@ const EMOJI_RE = /[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
 const FRONTEND_FILES = [
   'static/index.html',
   'static/js/00-core.js', 'static/js/10-ui.js', 'static/js/20-map.js', 'static/js/30-params.js',
-  'static/js/40-files.js', 'static/js/50-meta.js', 'static/js/60-jobs.js',
+  'static/js/40-files.js', 'static/js/45-filter.js', 'static/js/50-meta.js', 'static/js/60-jobs.js',
   'static/js/70-report.js', 'static/js/80-codec.js', 'static/js/90-boot.js',
 ];
 

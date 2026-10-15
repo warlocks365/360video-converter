@@ -835,7 +835,15 @@
           <button class="btn btn-sm" onclick="selectAllMetaFiles(false)">全不选</button>
           <button class="btn btn-sm" onclick="removeSelectedMetaFiles()">移除选中</button>
           <button class="btn btn-sm btn-danger" onclick="clearMetaFiles()">清空列表</button>
+          <button class="btn btn-sm" id="metaFilterToggleBtn" type="button" title="打开/关闭筛选条件栏（多条件 AND 叠加，与元数据报告同一引擎）"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg> 筛选</button>
+          <button class="btn btn-sm" data-action="meta-io-export" type="button" title="把当前筛选条件、勾选状态与各项编辑设置导出为 JSON 文件"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 导出状态</button>
+          <button class="btn btn-sm" data-action="meta-io-import" type="button" title="从 JSON 文件还原筛选条件、勾选状态与各项编辑设置"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> 导入状态</button>
           <span id="metaQueueCount" class="badge" aria-live="polite"></span>
+          <span id="metaFilterCount" class="report-filter-count" aria-live="polite"></span>
+        </div>
+        <div id="metaFilterBar" class="report-filter-bar hidden" style="margin-bottom:8px;">
+          <div id="metaFilterRows"></div>
+          <button class="btn btn-sm" type="button" id="metaFilterAddBtn" title="添加一条筛选条件（多条件之间为 AND 关系）"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg> 添加条件</button>
         </div>
         <div class="table-wrap" style="max-height:500px;overflow-y:auto;">
           <table>
@@ -1448,6 +1456,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeMetaEditModal()">取消</button>
+      <button class="btn" data-action="meta-edit-apply-checked" type="button" title="把本条目编辑的设置（含 GPS）同值复制到所有勾选项；执行中的项自动跳过。不启动任何转换。">应用到全部勾选项</button>
       <button class="btn btn-primary" onclick="saveMetaFileSettings()">保存设置</button>
     </div>
   </div>
@@ -1459,6 +1468,7 @@
   <script src="/js/20-map.js"></script>
   <script src="/js/30-params.js"></script>
   <script src="/js/40-files.js"></script>
+  <script src="/js/45-filter.js"></script>
   <script src="/js/50-meta.js"></script>
   <script src="/js/60-jobs.js"></script>
   <script src="/js/70-report.js"></script>

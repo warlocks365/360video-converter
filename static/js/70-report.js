@@ -169,18 +169,31 @@ function moovBadgeHtml(item) {
 
 // ══ C2: 批量结果筛选（纯前端，对 reportData 过滤后重渲染）═════════
 
-// FIX (v3.13.9): 多条件筛选叠加 —— reportFilterList 为条件数组 [{field, value}]，
-// 行间 AND 叠加；值下拉的选项 = 当前数据在该字段上的去重值集合（无需手动输入）。
-let reportFilterList = [];   // [{field, value}]；value 为空 = 该行不参与过滤
+// FIX (v3.13.9): 多条件筛选叠加（行间 AND）。
+// v3.14.6: 条件形态升级为 [{field, op, value}]，匹配/渲染引擎抽到 45-filter.js
+// 与元数据批量列队共用（统一"包含/不包含/空值/非空"语义）；旧 [{field,value}]
+// 数据在加载/导入时经 filterNormalizeLegacy 就地迁移（精确匹配→equals）。
+let reportFilterList = [];   // [{field, op, value}]；未生效行不参与过滤
 
+// 字段形态：第三元 meta.kind（bool=是/否 | collect=去重下拉 | text=文本输入）。
+// text 字段（文件名/拍摄地址/详细地址）的值不来自元数据枚举，用自由文本匹配。
 const REPORT_FILTER_GROUPS = [
-  { label: '容器', fields: [['moov', 'moov 状态'], ['container_format', '封装格式'], ['file_size', '文件大小'], ['duration', '时长']] },
-  { label: '视频流', fields: [['vcodec', '编码器'], ['resolution', '分辨率'], ['fps', '帧率'], ['vbitrate', '码率'], ['pix_fmt', 'pix_fmt']] },
-  { label: '音频流', fields: [['acodec', '音频编码'], ['sample_rate', '采样率'], ['channels', '声道数']] },
-  { label: '球面元数据', fields: [['gspherical', '是否 GSpherical'], ['pano_type', 'pano 类型（360/180）'], ['stereo_mode', '立体模式']] },
-  { label: '时间', fields: [['creation_time', 'creation_time']] },
-  { label: '位置 GPS', fields: [['gps_coord', '经纬度'], ['location_name', '地点名称'], ['location_address', '详细地址']] },
+  { label: '容器', fields: [['moov', 'moov 状态', { kind: 'bool' }], ['container_format', '封装格式', { kind: 'collect' }], ['file_size', '文件大小', { kind: 'collect' }], ['duration', '时长', { kind: 'collect' }]] },
+  { label: '视频流', fields: [['vcodec', '编码器', { kind: 'collect' }], ['resolution', '分辨率', { kind: 'collect' }], ['fps', '帧率', { kind: 'collect' }], ['vbitrate', '码率', { kind: 'collect' }], ['pix_fmt', 'pix_fmt', { kind: 'collect' }]] },
+  { label: '音频流', fields: [['acodec', '音频编码', { kind: 'collect' }], ['sample_rate', '采样率', { kind: 'collect' }], ['channels', '声道数', { kind: 'collect' }]] },
+  { label: '球面元数据', fields: [['gspherical', '是否 GSpherical', { kind: 'bool' }], ['pano_type', 'pano 类型（360/180）', { kind: 'collect' }], ['stereo_mode', '立体模式', { kind: 'collect' }]] },
+  { label: '时间', fields: [['creation_time', 'creation_time', { kind: 'collect' }]] },
+  { label: '文件', fields: [['filename', '文件名', { kind: 'text' }]] },
+  { label: '位置 GPS', fields: [['gps_coord', '经纬度', { kind: 'collect' }], ['location_name', '拍摄地址（地点名称）', { kind: 'text' }], ['location_address', '详细地址', { kind: 'text' }]] },
 ];
+
+function reportFieldKind(field) {
+  for (const g of REPORT_FILTER_GROUPS) {
+    const hit = g.fields.find(([v]) => v === field);
+    if (hit) return (hit[2] && hit[2].kind) || 'collect';
+  }
+  return 'collect';
+}
 
 // 收集当前数据在指定字段上的去重值集合（值下拉的数据源）
 function collectReportFieldValues(field) {
@@ -195,37 +208,38 @@ function collectReportFieldValues(field) {
 function renderReportFilterRows() {
   const box = document.getElementById('reportFilterRows');
   if (!box) return;
-  box.innerHTML = reportFilterList.map((f, i) => {
-    const fieldSel = '<select class="input report-filter-field" data-action="report-filter-row-change" data-row="' + i + '" data-part="field">' +
-      '<option value="">— 选择筛选字段 —</option>' +
-      REPORT_FILTER_GROUPS.map(g => '<optgroup label="' + esc(g.label) + '">' +
-        g.fields.map(([v, l]) => '<option value="' + esc(v) + '"' + (f.field === v ? ' selected' : '') + '>' + esc(l) + '</option>').join('') +
-        '</optgroup>').join('') +
-      '</select>';
-    const isBool = REPORT_BOOL_FIELDS.includes(f.field);
-    let valueCtl;
-    if (!f.field) {
-      valueCtl = '<select class="input report-filter-value" data-action="report-filter-row-change" data-row="' + i + '" data-part="value" disabled><option value="">先选字段</option></select>';
-    } else if (isBool) {
-      valueCtl = '<select class="input report-filter-value" data-action="report-filter-row-change" data-row="' + i + '" data-part="value">' +
-        ['是', '否'].map(v => '<option value="' + v + '"' + (f.value === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>';
-    } else {
-      const vals = collectReportFieldValues(f.field);
-      valueCtl = '<select class="input report-filter-value" data-action="report-filter-row-change" data-row="' + i + '" data-part="value">' +
-        '<option value="">（全部）</option>' +
-        '<option value="' + REPORT_FILTER_EMPTY + '"' + (f.value === REPORT_FILTER_EMPTY ? ' selected' : '') + '>（空值）</option>' +
-        vals.map(v => '<option value="' + esc(v) + '"' + (f.value === v ? ' selected' : '') + '>' + esc(v) + '</option>').join('') +
-        '</select>';
-    }
-    return '<div class="report-filter-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">' +
-      fieldSel + valueCtl +
-      '<button class="btn btn-sm" type="button" data-action="report-filter-remove" data-row="' + i + '" title="删除此条件" aria-label="删除此条件">' + ico("trash", 14) + '</button></div>';
-  }).join('') || '<div style="color:var(--text-muted);font-size:0.75rem;">尚未添加筛选条件，全部条目可见</div>';
+  // 旧形态（无 op）就地迁移
+  if (reportFilterList.some(f => f && !f.op && f.field)) reportFilterList = filterNormalizeLegacy(reportFilterList);
+  box.innerHTML = renderFilterRowsHtml({
+    list: reportFilterList,
+    groups: REPORT_FILTER_GROUPS,
+    changeAction: 'report-filter-row-change',
+    removeAction: 'report-filter-remove',
+    kindOf: reportFieldKind,
+    rowHint: '<div style="color:var(--text-muted);font-size:0.75rem;">尚未添加筛选条件，全部条目可见</div>',
+    valueCtlFor: (f, i, kind) => {
+      if (kind === 'bool') {
+        return '<select class="input report-filter-value" data-action="report-filter-row-change" data-row="' + i + '" data-part="value">' +
+          ['是', '否'].map(v => '<option value="' + v + '"' + (f.value === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>';
+      }
+      if (kind === 'collect') {
+        const vals = collectReportFieldValues(f.field);
+        return '<select class="input report-filter-value" data-action="report-filter-row-change" data-row="' + i + '" data-part="value">' +
+          '<option value="">（选择值）</option>' +
+          (f.op === 'empty' || f.op === 'non_empty' ? '' : '<option value="' + FILTER_EMPTY_SENTINEL + '"' + (f.value === FILTER_EMPTY_SENTINEL ? ' selected' : '') + '>（空值）</option>') +
+          vals.map(v => '<option value="' + esc(v) + '"' + (f.value === v ? ' selected' : '') + '>' + esc(v) + '</option>').join('') +
+          '</select>';
+      }
+      return '<input class="input report-filter-value" type="text" placeholder="输入匹配文本" data-action="report-filter-row-change" data-row="' + i + '" data-part="value" value="' + esc(f.value || '') + '">';
+    },
+  });
 }
 
 
 // 取某个文件条目在指定筛选字段上的可匹配值（统一转字符串；布尔字段返回 '是'/'否'）
 function reportItemFilterValue(item, field) {
+  // v3.14.6: 文件名是条目级字段（不依赖 probeData），先行返回
+  if (field === 'filename') return item && !item.error ? (item.filename || '') : '';
   if (!item || item.error || !item.probeData) return '';
   const d = item.probeData;
   const fmt = d.format || {};
@@ -279,21 +293,11 @@ function reportItemFilterValue(item, field) {
 
 // 返回当前筛选下可见的条目：[{item, idx}]，idx 是 reportData 中的固定下标
 // （reportData 顺序不会因筛选改变，故 idx 可安全用作复选框的 data-idx）
-// 空值筛选哨兵：值下拉固定提供「（空值）」选项，用于筛出该元数据项无内容的文件
-const REPORT_FILTER_EMPTY = '__EMPTY__';
-
 function getVisibleReportItems() {
+  const keep = filterVisibleIndexSet(reportData, reportFilterList, reportItemFilterValue);
   const all = reportData.map((item, idx) => ({ item, idx }));
-  const conds = reportFilterList.filter(f => f.field && f.value);
-  if (conds.length === 0) return all;
-  // 多条件 AND 叠加；值下拉选项来自数据本身 → 精确匹配（大小写不敏感）；
-  // 哨兵值 = 匹配"该字段无内容"的条目
-  return all.filter(({ item }) => conds.every(f => {
-    const val = reportItemFilterValue(item, f.field);
-    if (REPORT_BOOL_FIELDS.includes(f.field)) return val === f.value;
-    if (f.value === REPORT_FILTER_EMPTY) return String(val).trim() === '';
-    return String(val).toLowerCase() === String(f.value).toLowerCase();
-  }));
+  if (!keep) return all;
+  return all.filter(({ idx }) => keep.has(idx));
 }
 
 
@@ -304,21 +308,20 @@ function wireReportFilterEvents() {
   // （report-filter-row-change / report-filter-remove）；添加按钮走本地监听。
   const addBtn = document.getElementById('reportFilterAddBtn');
   if (addBtn) addBtn.addEventListener('click', () => {
-    reportFilterList.push({ field: '', value: '' });
+    reportFilterList.push({ field: '', op: '', value: '' });
     renderReportFilterRows();
   });
 }
 
-// 中央委托 handler：行内字段/值下拉变更
+// 中央委托 handler：行内 字段/操作符/值 控件变更（v3.14.6 交共享引擎裁决）
 function onReportFilterRowChange(el) {
-  const f = reportFilterList[parseInt(el.dataset.row, 10)];
-  if (!f) return;
-  if (el.dataset.part === 'field') {
-    if (f.field !== el.value) { f.field = el.value; f.value = ''; renderReportFilterRows(); renderReport(); }
-  } else {
-    f.value = el.value;
-    renderReport();
-  }
+  const changed = filterRowChange(reportFilterList, el);
+  if (!changed) return;
+  // 字段/操作符变更会改变值控件形态（下拉↔输入框）→ 必须重渲染行；
+  // 仅值变更不必重排 DOM（保住输入焦点），只重渲染结果。
+  if (el.dataset.part === 'value') { renderReport(); return; }
+  renderReportFilterRows();
+  renderReport();
 }
 
 // 中央委托 handler：删除一行筛选条件

@@ -143,10 +143,15 @@ for (const f of files) {
   }
 }
 
+// 回调/形参白名单：引擎（45-filter.js renderFilterRowsHtml）以回调形参向消费方
+// 注入渲染钩子，strip 后形参名形如"被调用"，属正当词法，不计未定义。
+// （消费方调用处传的是具名函数/箭头函数，非全局引用。）
+const CALLBACK_PARAMS = new Set(['kindOf', 'valueCtlFor', 'accessor', 'valueCollect']);
+
 // 未定义的被调用者
 const undef = [];
 for (const [name, sites] of called) {
-  if (defined.has(name) || GLOBALS.has(name)) continue;
+  if (defined.has(name) || GLOBALS.has(name) || CALLBACK_PARAMS.has(name)) continue;
   undef.push({ name, count: sites.length, files: [...new Set(sites.map(s => s.file))] });
 }
 

@@ -64,6 +64,10 @@ const EXPECTED_ADDED = new Set([
   'settings_agent_model', 'settings_agent_thinking', 'settings_agent_effort',
   'settings_agent_permission', 'settings_agent_temperature',
   'settings_agent_max_steps', 'settings_agent_step_delay',
+  // v3.14.6 列队筛选栏 + 状态导入/导出按钮（45-filter.js 共享引擎）。
+  // metaFilterBar/AddBtn/ToggleBtn/Rows/Count 为 agent 与 e2e 取句柄面。
+  'metaFilterBar', 'metaFilterToggleBtn', 'metaFilterAddBtn', 'metaFilterRows',
+  'metaFilterCount',
 ]);
 
 if (MODE === 'baseline') {

@@ -324,6 +324,12 @@ const DELEGATED_ACTIONS = {
   // FIX (v3.13.9): 单条件筛选控件已重构为多条件行容器，旧委托条目移除
   'report-filter-row-change': (el) => onReportFilterRowChange(el),
   'report-filter-remove':     (el) => removeReportFilterRow(el.dataset.row),
+  // v3.14.6 列队筛选（共享引擎 45-filter.js）+ 弹窗批量应用 + 状态导入导出
+  'meta-filter-row-change':   (el) => onMetaFilterRowChange(el),
+  'meta-filter-remove':       (el) => removeMetaFilterRow(el.dataset.row),
+  'meta-edit-apply-checked':  () => applyMetaEditToChecked(),
+  'meta-io-export':           () => exportMetaBatchState(),
+  'meta-io-import':           () => importMetaBatchState(),
   'toggle-report-select':     (el, e) => toggleReportSelect(Number(el.dataset.idx), e.target.checked),
   'report-select-all':        () => reportSelectVisibleAll(),
   'report-select-invert':     () => reportSelectInvert(),
