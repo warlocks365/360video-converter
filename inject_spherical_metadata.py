@@ -477,44 +477,120 @@ def _parse_gsph_xml(xml_bytes):
                 'stereo_mode': None, 'source_count': None}
 
 
+def _iter_top_level_boxes(f, fsize):
+    """顺序遍历 MP4 顶层盒，yield (btype:bytes, offset:int, size:int)。
+    只读每个盒的 8/16 字节头，不触碰 mdat 内容，任意大小文件都安全。"""
+    off = 0
+    while off + 8 <= fsize:
+        f.seek(off)
+        hdr = f.read(8)
+        if len(hdr) < 8:
+            break
+        size = struct.unpack('>I', hdr[:4])[0]
+        btype = hdr[4:8]
+        if size == 1:
+            ext = f.read(8)
+            if len(ext) < 8:
+                break
+            size = struct.unpack('>Q', ext)[0]
+        elif size == 0:
+            size = fsize - off
+        if size < 8 or off + size > fsize:
+            break
+        yield btype, off, size
+        off += size
+
+
+def _find_uuid_in_range(f, start, end, overlap=16):
+    """在 [start,end) 字节区间分块搜索 SPHERICAL_UUID，命中返回其绝对偏移，否则 -1。
+    块间保留 overlap 字节重叠，防止 UUID 恰好跨块边界被漏检。合并大文件的 moov
+    可达数十 MB（每 chunk 一条 stco + 每帧 stsz/ctts），一次性读入会占内存，
+    故分块扫描。"""
+    CHUNK = 8 * 1024 * 1024
+    UL = len(SPHERICAL_UUID)
+    pos = start
+    carry = b''
+    carry_abs = start
+    while pos < end:
+        f.seek(pos)
+        blk = f.read(min(CHUNK, end - pos))
+        if not blk:
+            break
+        buf = carry + blk
+        idx = buf.find(SPHERICAL_UUID)
+        if idx >= 0:
+            return carry_abs + idx
+        # 保留尾部 overlap 字节作为下一块前缀，跨边界不漏检
+        keep_len = max(overlap, UL)
+        if len(blk) >= keep_len:
+            carry = blk[-keep_len:]
+            carry_abs = pos + len(blk) - keep_len
+        else:
+            carry = buf[-keep_len:]
+            carry_abs = max(start, pos + len(blk) - len(carry))
+        pos += len(blk)
+    return -1
+
+
 def read_gspherical(path, head_mb=4, tail_mb=4):
     """Read GSpherical metadata from an MP4 without loading the whole file.
 
-    Scans only the file head and tail (where the moov box lives — faststart
-    puts moov near the front, non-faststart near the end), finds the GSpherical
-    UUID box, parses the XML, and returns::
+    FIX（v3.14.8 合并标签"丢失"误报根因）：旧实现盲扫文件头尾各 4MB 字节窗，
+    合并/超长视频的重编码产物 moov 可达数十 MB，GSpherical UUID 位于 moov 内
+    mdia 之后——一旦距文件头超过 4MB（faststart）或不足文件尾 4MB（非
+    faststart），标签就被漏检，报告/元数据工具把**已正确注入**的文件误标为
+    "无全景元数据"（ffprobe 却能识别）。改为：遍历顶层盒精确定位 moov，只在
+    moov 区间内分块搜索 UUID——不受固定窗大小限制，任意 moov 位置/尺寸都命中。
+
+    返回::
 
         { spherical, projection, pano_type, stereo_mode, source_count }
 
     ``pano_type`` is '360' (full equirectangular panorama) or '180' (VR180
     cropped front-hemisphere), derived from the crop-offset fields.
     Returns ``{spherical: False, ...}`` when no GSpherical UUID is present.
+    head_mb/tail_mb 参数保留（兼容旧调用签名），不再参与扫描逻辑。
     """
-    HEAD = head_mb * 1024 * 1024
-    TAIL = tail_mb * 1024 * 1024
+    NEG = {'spherical': False, 'projection': None, 'pano_type': None,
+           'stereo_mode': None, 'source_count': None}
     try:
         fsize = os.path.getsize(path)
+        if fsize <= 0:
+            return dict(NEG)
         with open(path, 'rb') as f:
-            # --- search head ---
-            head = f.read(min(HEAD, fsize))
-            idx = head.find(SPHERICAL_UUID)
-            if idx >= 0:
-                xs = idx + len(SPHERICAL_UUID)
-                return _parse_gsph_xml(head[xs:xs + 4096])
-            # --- search tail (non-faststart: moov after mdat) ---
-            if fsize > HEAD:
-                tail_start = max(HEAD, fsize - TAIL)
-                f.seek(tail_start)
-                tail = f.read(fsize - tail_start)
-                idx = tail.find(SPHERICAL_UUID)
+            # 1) 定位 moov 盒（可能在文件头附近，也可能在 mdat 之后）
+            moov_region = None
+            for btype, off, size in _iter_top_level_boxes(f, fsize):
+                if btype == b'moov':
+                    moov_region = (off + 8, off + size)   # moov 内部（跳过 8 字节盒头）
+                    break
+            if moov_region is None:
+                # 兜底：非法盒结构 / 非标准顶层布局（如裸 mdat、加密盒），
+                # 退回旧的头尾窗口扫描，至少不弱于原行为。
+                HEAD = head_mb * 1024 * 1024
+                TAIL = tail_mb * 1024 * 1024
+                head = f.read(min(HEAD, fsize))
+                idx = head.find(SPHERICAL_UUID)
                 if idx >= 0:
                     xs = idx + len(SPHERICAL_UUID)
-                    return _parse_gsph_xml(tail[xs:xs + 4096])
-        return {'spherical': False, 'projection': None, 'pano_type': None,
-                'stereo_mode': None, 'source_count': None}
+                    return _parse_gsph_xml(head[xs:xs + 4096])
+                if fsize > HEAD:
+                    f.seek(max(HEAD, fsize - TAIL))
+                    tail = f.read(fsize - max(HEAD, fsize - TAIL))
+                    idx = tail.find(SPHERICAL_UUID)
+                    if idx >= 0:
+                        xs = idx + len(SPHERICAL_UUID)
+                        return _parse_gsph_xml(tail[xs:xs + 4096])
+                return dict(NEG)
+
+            # 2) 只在 moov 区间内精确搜索 UUID
+            uoff = _find_uuid_in_range(f, moov_region[0], moov_region[1])
+            if uoff >= 0:
+                f.seek(uoff + len(SPHERICAL_UUID))
+                return _parse_gsph_xml(f.read(4096))
+        return dict(NEG)
     except Exception:
-        return {'spherical': False, 'projection': None, 'pano_type': None,
-                'stereo_mode': None, 'source_count': None}
+        return dict(NEG)
 
 
 if __name__ == '__main__':
